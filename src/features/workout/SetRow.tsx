@@ -2,6 +2,7 @@ import type { WorkoutSet } from '@/db/schema';
 import { NumberField } from '@/components/ui';
 import { completeSet, removeSet, updateSet } from '@/db/mutations';
 import { isChildSet } from '@/domain/sets';
+import { useRestTimer } from './RestTimer';
 
 const TYPE_LABELS: Record<string, string> = {
   warmup: 'W',
@@ -25,6 +26,7 @@ export default function SetRow({
   onCompleted,
   weightHint,
   repsHint,
+  restSeconds,
 }: {
   set: WorkoutSet;
   index: number;
@@ -32,14 +34,20 @@ export default function SetRow({
   /** Last session's numbers for this set, shown as a placeholder until logged. */
   weightHint?: number;
   repsHint?: number;
+  /** How long to rest after this set. Omitted for child sets, which run straight on. */
+  restSeconds?: number;
 }) {
   const child = isChildSet(set);
   const label = TYPE_LABELS[set.type] ?? '';
+  const rest = useRestTimer();
 
   const handleComplete = async () => {
     const next = !set.completed;
     await completeSet(set.id, next);
-    if (next) onCompleted?.(set);
+    if (!next) return;
+    onCompleted?.(set);
+    // Drop sets and rest-pause clusters run straight on; only a top set rests.
+    if (!child && set.type !== 'warmup' && restSeconds) rest.start(restSeconds);
   };
 
   return (

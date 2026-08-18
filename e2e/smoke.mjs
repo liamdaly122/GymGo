@@ -46,6 +46,27 @@ await step('log a set', async () => {
   await page.waitForTimeout(300);
 });
 
+await step('ticking a set starts the rest timer at the compound default', async () => {
+  const timer = page.getByRole('timer');
+  await timer.waitFor({ timeout: 5000 });
+  const text = await timer.innerText();
+  // Barbell Squat is a compound, so the seed gives it 180s.
+  if (!/3:00|2:5\d/.test(text)) throw new Error(`expected a 3:00 rest, timer said: ${text.replace(/\n/g, ' | ')}`);
+});
+
+await step('+30s extends the rest', async () => {
+  await page.getByRole('button', { name: '+30s' }).click();
+  await page.waitForTimeout(200);
+  const text = await page.getByRole('timer').innerText();
+  if (!/3:[23]\d/.test(text)) throw new Error(`expected the rest extended past 3:20, saw: ${text.replace(/\n/g, ' | ')}`);
+});
+
+await step('skip dismisses the rest timer', async () => {
+  await page.getByRole('button', { name: 'Skip' }).click();
+  await page.waitForTimeout(300);
+  if (await page.getByRole('timer').count() !== 0) throw new Error('rest timer still showing after skip');
+});
+
 await step('header shows the volume', async () => {
   const text = await page.locator('header').innerText();
   if (!text.includes('500')) throw new Error(`expected 500 kg tonnage, header said: ${text.replace(/\n/g,' | ')}`);

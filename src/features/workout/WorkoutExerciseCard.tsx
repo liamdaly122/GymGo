@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { WorkoutExerciseView } from '@/db/queries';
-import { usePreviousPerformance } from '@/db/queries';
+import { usePreviousPerformance, useSettings } from '@/db/queries';
 import { addSet, removeExerciseFromWorkout, updateSet } from '@/db/mutations';
 import { Button, Card } from '@/components/ui';
 import { formatDayLabel } from '@/lib/dates';
@@ -23,7 +23,12 @@ export default function WorkoutExerciseCard({
   workoutId: string;
 }) {
   const previous = usePreviousPerformance(entry.exercise?.id, workoutId);
+  const settings = useSettings();
   const workingSets = previous?.working_sets ?? [];
+
+  // Per-exercise rest wins over the global default: the brief's defaults are
+  // 150-180s for compounds and 60-90s for isolation, which the seed applies.
+  const restSeconds = entry.exercise?.default_rest_seconds ?? settings?.default_rest_seconds ?? 120;
 
   /** Copies last session's numbers into any set not yet logged. Never overwrites. */
   const applyLastTime = async () => {
@@ -107,6 +112,7 @@ export default function WorkoutExerciseCard({
             index={setIndex}
             weightHint={hint?.weight_kg}
             repsHint={hint?.reps}
+            restSeconds={restSeconds}
           />
         );
       })}

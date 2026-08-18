@@ -13,8 +13,18 @@ import { useElapsed } from '@/hooks/useElapsed';
 import { totalTonnage, totalWorkingSets } from '@/domain/volume';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
 import WorkoutExerciseCard from './WorkoutExerciseCard';
+import { RestTimerBar, RestTimerProvider } from './RestTimer';
+import { useWakeLock } from '@/hooks/useWakeLock';
 
 export default function ActiveWorkoutScreen() {
+  return (
+    <RestTimerProvider>
+      <ActiveWorkout />
+    </RestTimerProvider>
+  );
+}
+
+function ActiveWorkout() {
   const { workoutId } = useParams<{ workoutId: string }>();
   const navigate = useNavigate();
   const view = useWorkout(workoutId);
@@ -22,6 +32,10 @@ export default function ActiveWorkoutScreen() {
   const [confirmingFinish, setConfirmingFinish] = useState(false);
 
   const elapsed = useElapsed(view?.workout.started_at);
+
+  // Hold the screen awake for as long as the session is open. iOS drops the
+  // lock whenever the page hides, so the hook re-acquires on visibilitychange.
+  useWakeLock(view?.workout.finished_at === null);
 
   if (view === undefined) {
     return <div className="grid min-h-dvh place-items-center text-sm text-muted">Loading…</div>;
@@ -100,6 +114,8 @@ export default function ActiveWorkoutScreen() {
       <Button variant="secondary" className="mt-4 w-full" onClick={() => setPicking(true)}>
         Add exercise
       </Button>
+
+      <RestTimerBar />
 
       {picking ? (
         <ExercisePicker
