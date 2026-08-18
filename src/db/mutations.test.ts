@@ -44,6 +44,37 @@ describe('routine edits cannot reach finished workouts', () => {
     expect(copied[0]!.id).not.toBe(routineExercises[0]!.id);
   });
 
+  it('lays out the number of sets the routine plans for, unticked', async () => {
+    const routineId = await createRoutine('Lower A');
+    await addExerciseToRoutine(routineId, EXERCISE_A, { target_sets: 4 });
+    const workoutId = await startWorkoutFromRoutine(routineId);
+
+    const workoutExercises = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
+    const sets = await db.sets.where({ workout_exercise_id: workoutExercises[0]!.id }).toArray();
+
+    expect(sets).toHaveLength(4);
+    expect(sets.every((set) => !set.completed)).toBe(true);
+    expect(sets.map((set) => set.set_index).sort()).toEqual([0, 1, 2, 3]);
+  });
+
+  it('discards planned sets that were never logged, so a plan is not fake history', async () => {
+    const routineId = await createRoutine('Lower A');
+    await addExerciseToRoutine(routineId, EXERCISE_A, { target_sets: 3 });
+    const workoutId = await startWorkoutFromRoutine(routineId);
+    const workoutExercises = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
+    const planned = (await db.sets.where({ workout_exercise_id: workoutExercises[0]!.id }).toArray())
+      .sort((a, b) => a.set_index - b.set_index);
+
+    await updateSet(planned[0]!.id, { weight_kg: 80, reps: 8 });
+    await completeSet(planned[0]!.id);
+    await finishWorkout(workoutId);
+
+    const remaining = (await db.sets.where({ workout_exercise_id: workoutExercises[0]!.id }).toArray())
+      .filter((set) => set.deleted_at === null);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.weight_kg).toBe(80);
+  });
+
   it('leaves a finished workout untouched when the routine is edited afterwards', async () => {
     const routineId = await createRoutine('Lower A');
     const routineExerciseId = await addExerciseToRoutine(routineId, EXERCISE_A, {
@@ -54,8 +85,12 @@ describe('routine edits cannot reach finished workouts', () => {
 
     const workoutId = await startWorkoutFromRoutine(routineId);
     const workoutExercises = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
-    const setId = await addSet(workoutExercises[0]!.id, { weight_kg: 100, reps: 5 });
-    await completeSet(setId);
+
+    // Starting the routine laid out its planned sets; log the first one.
+    const planned = (await db.sets.where({ workout_exercise_id: workoutExercises[0]!.id }).toArray())
+      .sort((a, b) => a.set_index - b.set_index);
+    await updateSet(planned[0]!.id, { weight_kg: 100, reps: 5 });
+    await completeSet(planned[0]!.id);
     await finishWorkout(workoutId);
 
     // Now rewrite the routine completely.
@@ -71,9 +106,11 @@ describe('routine edits cannot reach finished workouts', () => {
     expect(afterEdit).toHaveLength(1);
     expect(afterEdit[0]!.exercise_id).toBe(EXERCISE_A);
 
-    const sets = await db.sets.where({ workout_exercise_id: afterEdit[0]!.id }).toArray();
-    expect(sets[0]!.weight_kg).toBe(100);
-    expect(sets[0]!.reps).toBe(5);
+    const kept = (await db.sets.where({ workout_exercise_id: afterEdit[0]!.id }).toArray())
+      .filter((set) => set.deleted_at === null);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]!.weight_kg).toBe(100);
+    expect(kept[0]!.reps).toBe(5);
   });
 });
 

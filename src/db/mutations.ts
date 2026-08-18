@@ -141,13 +141,42 @@ export async function startWorkoutFromRoutine(
     ...freshSyncFields(),
   }));
 
-  await db.transaction('rw', db.workouts, db.workout_exercises, db.outbox, async () => {
+  /*
+   * Lay out the sets the routine plans for, empty and unticked.
+   *
+   * The routine says "3 sets of 5 to 8"; starting it should put three rows on
+   * screen ready to type into, not an exercise with nothing under it. They
+   * count for nothing until ticked, and finishWorkout discards any left
+   * untouched, so an abandoned plan never becomes fake history.
+   */
+  const plannedSets: WorkoutSet[] = copied.flatMap((we, index) => {
+    const source = routineExercises[index];
+    const targetSets = Math.max(1, source?.target_sets ?? 1);
+    return Array.from({ length: targetSets }, (_unused, setIndex) => ({
+      id: newId(),
+      workout_exercise_id: we.id,
+      parent_set_id: null,
+      set_index: setIndex,
+      type: 'working' as const,
+      weight_kg: 0,
+      reps: 0,
+      rir: source?.target_rir ?? null,
+      is_amrap: false,
+      completed: false,
+      completed_at: null,
+      ...freshSyncFields(),
+    }));
+  });
+
+  await db.transaction('rw', db.workouts, db.workout_exercises, db.sets, db.outbox, async () => {
     await db.workouts.add(workout);
     if (copied.length > 0) await db.workout_exercises.bulkAdd(copied);
+    if (plannedSets.length > 0) await db.sets.bulkAdd(plannedSets);
   });
 
   await enqueue('workouts', workout.id, 'put', workout);
   for (const we of copied) await enqueue('workout_exercises', we.id, 'put', we);
+  for (const set of plannedSets) await enqueue('sets', set.id, 'put', set);
 
   return workout.id;
 }
@@ -449,4 +478,42 @@ export async function updateSettings(changes: Partial<Omit<Settings, keyof SyncF
   const patch = { ...changes, updated_at: nowIso() };
   await db.settings.update(SETTINGS_ID, patch);
   await enqueue('settings', SETTINGS_ID, 'put', patch);
+}
+
+/**
+ * Moves an exercise up or down within a routine.
+ *
+ * Positions are rewritten across the whole routine rather than swapped in
+ * place, so a list that has drifted out of sequence (through deletions, say)
+ * comes back consecutive rather than preserving the gaps.
+ */
+export async function moveRoutineExercise(
+  routineId: string,
+  routineExerciseId: string,
+  direction: 'up' | 'down',
+): Promise<void> {
+  const ordered = (await db.routine_exercises.where({ routine_id: routineId }).toArray())
+    .filter((re) => re.deleted_at === null)
+    .sort((a, b) => a.position - b.position);
+
+  const index = ordered.findIndex((re) => re.id === routineExerciseId);
+  if (index === -1) return;
+  const target = direction === 'up' ? index - 1 : index + 1;
+  if (target < 0 || target >= ordered.length) return;
+
+  const reordered = [...ordered];
+  const [moved] = reordered.splice(index, 1);
+  reordered.splice(target, 0, moved!);
+
+  const now = nowIso();
+  await db.transaction('rw', db.routine_exercises, db.outbox, async () => {
+    for (const [position, row] of reordered.entries()) {
+      if (row.position === position) continue;
+      await db.routine_exercises.update(row.id, { position, updated_at: now });
+    }
+  });
+
+  for (const [position, row] of reordered.entries()) {
+    await enqueue('routine_exercises', row.id, 'put', { position, updated_at: now });
+  }
 }

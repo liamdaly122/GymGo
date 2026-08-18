@@ -142,6 +142,74 @@ await step('history lists both sessions', async () => {
 
 await page.screenshot({ path: 'e2e/shot-history.png' });
 
+// ---------------------------------------------------------------------------
+// The brief's central rule: editing a routine must never change a workout
+// already performed. Verified through the real UI, not just the unit tests.
+// ---------------------------------------------------------------------------
+
+await step('create a routine and add an exercise', async () => {
+  await page.goto(`${BASE}#/routines`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'New' }).click();
+  await page.getByLabel('Routine name').fill('Lower A');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await page.getByRole('button', { name: 'Start this workout' }).waitFor();
+  await page.getByRole('button', { name: 'Add exercise' }).click();
+  await page.getByPlaceholder('Add to routine').fill('barbell squat');
+  await page.getByRole('button', { name: /^Barbell Squat/ }).first().click();
+  await page.waitForTimeout(400);
+});
+
+await step('set the routine to 3 sets of 5 to 8', async () => {
+  await page.getByLabel('Barbell Squat target sets').fill('3');
+  await page.getByLabel('Barbell Squat rep range low').fill('5');
+  await page.getByLabel('Barbell Squat rep range high').fill('8');
+  await page.locator('body').click();
+  await page.waitForTimeout(400);
+});
+
+let routineWorkoutUrl = '';
+await step('start a workout from the routine and log it', async () => {
+  await page.getByRole('button', { name: 'Start this workout' }).click();
+  await page.getByRole('button', { name: 'Add set' }).waitFor();
+  // The exercise came across from the routine without being picked again.
+  const body = await page.locator('body').innerText();
+  if (!/Barbell Squat/.test(body)) throw new Error('routine exercise was not copied into the workout');
+  await page.getByLabel('Set 1 weight in kilograms').fill('120');
+  await page.getByLabel('Set 1 repetitions').fill('5');
+  await page.getByLabel(/Mark set 1 done/).click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Finish', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish and save' }).click();
+  await page.waitForTimeout(800);
+  routineWorkoutUrl = page.url();
+});
+
+await step('rewrite the routine completely', async () => {
+  await page.goto(`${BASE}#/routines`, { waitUntil: 'networkidle' });
+  await page.getByRole('link', { name: /Lower A/ }).click();
+  await page.getByRole('button', { name: 'Start this workout' }).waitFor();
+  // Swap the exercise out for a different one and change every target.
+  await page.getByLabel(/Remove Barbell Squat from routine/).click();
+  await page.waitForTimeout(400);
+  await page.getByRole('button', { name: 'Add exercise' }).click();
+  await page.getByPlaceholder('Add to routine').fill('leg press');
+  await page.getByRole('button', { name: /^Leg Press/ }).first().click();
+  await page.waitForTimeout(500);
+});
+
+await step('the finished workout is untouched by that rewrite', async () => {
+  await page.goto(routineWorkoutUrl, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(700);
+  const body = await page.locator('body').innerText();
+  if (!/Barbell Squat/.test(body)) {
+    throw new Error('finished workout lost its exercise when the routine was edited');
+  }
+  if (/Leg Press/.test(body)) {
+    throw new Error('finished workout picked up an exercise added to the routine afterwards');
+  }
+  if (!/120kg/.test(body)) throw new Error('finished workout lost its logged weight');
+});
+
 console.log(errors.length ? `\nBrowser errors:\n${errors.join('\n')}` : '\nNo browser errors.');
 await browser.close();
 process.exit(errors.length ? 1 : 0);
