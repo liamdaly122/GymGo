@@ -111,6 +111,24 @@ exercise** — it is what makes both the generator and swap suggestions work.
 - Schema changes go through a Supabase migration file in `supabase/migrations`,
   never through the dashboard.
 
+## Testing
+
+Three layers, each earning its place:
+
+- `npm run test` — Vitest. `src/domain/` is pure so the counting rules are
+  tested directly; `src/db/` is tested against `fake-indexeddb`, which is where
+  the immutability guarantee and the backup round trip live.
+- `npm run test:e2e` — drives a real browser through the app. This is what
+  caught the seeding race that StrictMode double-mounting exposed, and it is
+  where the "editing a routine cannot change a finished workout" rule is proved
+  through the UI rather than only in a unit test.
+- `npm run test:offline` — installs the service worker against a production
+  build, cuts the network, then logs a workout. This is the gym-basement case
+  the whole architecture exists for, so it is not optional before a release.
+
+When a bug is found by driving the app, add the regression test at the lowest
+layer that can catch it.
+
 ## Conventions
 
 - Commit after every working slice.
