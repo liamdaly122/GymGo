@@ -1,8 +1,60 @@
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import Layout from './components/Layout';
+import { useAppInit } from './hooks/useAppInit';
+import HomeScreen from './features/home/HomeScreen';
+import ActiveWorkoutScreen from './features/workout/ActiveWorkoutScreen';
+import ExerciseLibraryScreen from './features/exercises/ExerciseLibraryScreen';
+import ExerciseDetailScreen from './features/exercises/ExerciseDetailScreen';
+import HistoryScreen from './features/history/HistoryScreen';
+import WorkoutDetailScreen from './features/history/WorkoutDetailScreen';
+import RoutinesScreen from './features/routines/RoutinesScreen';
+import RoutineEditorScreen from './features/routines/RoutineEditorScreen';
+import SettingsScreen from './features/settings/SettingsScreen';
+
 export default function App() {
+  const { state, error } = useAppInit();
+
+  if (state === 'seeding') {
+    return (
+      <div className="grid min-h-dvh place-items-center px-6 text-center">
+        <p className="text-sm text-muted">Preparing your exercise database…</p>
+      </div>
+    );
+  }
+
+  if (state === 'failed') {
+    return (
+      <div className="grid min-h-dvh place-items-center px-6 text-center">
+        <div>
+          <p className="text-sm text-white">Could not open the local database.</p>
+          <p className="mt-2 text-xs text-muted">{error?.message}</p>
+          <p className="mt-4 text-xs text-muted">
+            If this device is in private browsing, storage is unavailable.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <main className="mx-auto max-w-md p-6">
-      <h1 className="text-2xl font-semibold tracking-tight">GymGo</h1>
-      <p className="mt-2 text-sm text-(--color-muted)">Scaffold up. Schema next.</p>
-    </main>
+    // HashRouter keeps deep links working from a static host and from an
+    // installed PWA without needing server-side rewrites.
+    <HashRouter>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<HomeScreen />} />
+          <Route path="/routines" element={<RoutinesScreen />} />
+          <Route path="/routines/:routineId" element={<RoutineEditorScreen />} />
+          <Route path="/history" element={<HistoryScreen />} />
+          <Route path="/history/:workoutId" element={<WorkoutDetailScreen />} />
+          <Route path="/exercises" element={<ExerciseLibraryScreen />} />
+          <Route path="/exercises/:exerciseId" element={<ExerciseDetailScreen />} />
+          <Route path="/settings" element={<SettingsScreen />} />
+        </Route>
+        {/* The active workout is full screen: no tab bar competing with set entry. */}
+        <Route path="/workout/:workoutId" element={<ActiveWorkoutScreen />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </HashRouter>
   );
 }

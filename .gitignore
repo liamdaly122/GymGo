@@ -13,3 +13,6 @@ dist-ssr
 npm-debug.log*
 coverage
 .vercel
+
+# Smoke test screenshots
+e2e/*.png

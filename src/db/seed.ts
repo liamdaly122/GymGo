@@ -60,21 +60,44 @@ function defaultSettings(gymId: string): Settings {
 }
 
 /**
- * Populates an empty database. Safe to call on every start: it does nothing if
- * exercises already exist, so it never fights the user's own edits.
+ * Shared by concurrent callers so the work happens exactly once.
+ *
+ * React StrictMode mounts effects twice in development, and two tabs can open
+ * at the same moment in production. Without this, two callers both observe an
+ * empty table and both try to insert, and the loser fails with a constraint
+ * error on every row.
  */
-export async function seedIfEmpty(): Promise<void> {
-  const count = await db.exercises.count();
-  if (count > 0) return;
+let seedInFlight: Promise<void> | null = null;
+
+async function doSeed(): Promise<void> {
+  if ((await db.exercises.count()) > 0) return;
 
   const seedExercises = await loadSeedExercises();
   const gym = defaultGym();
+
   await db.transaction('rw', db.exercises, db.gyms, db.settings, async () => {
+    // Re-checked inside the transaction. Dexie serialises read-write
+    // transactions over the same tables, so whichever caller arrives second
+    // sees the rows the first one wrote and backs out here.
+    if ((await db.exercises.count()) > 0) return;
+
     await db.exercises.bulkAdd(seedExercises.map((ex) => ({ ...ex, ...syncFields() })));
-    await db.gyms.add(gym);
+    if ((await db.gyms.count()) === 0) await db.gyms.add(gym);
     const existing = await db.settings.get(SETTINGS_ID);
     if (!existing) await db.settings.add(defaultSettings(gym.id));
   });
+}
+
+/**
+ * Populates an empty database. Safe to call on every start, and safe to call
+ * concurrently: it does nothing if exercises already exist, so it never fights
+ * the user's own edits.
+ */
+export async function seedIfEmpty(): Promise<void> {
+  seedInFlight ??= doSeed().finally(() => {
+    seedInFlight = null;
+  });
+  return seedInFlight;
 }
 
 /**

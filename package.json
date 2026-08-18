@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b --noEmit",
     "seed:build": "tsx scripts/build-seed.ts",
-    "seed:check": "tsx scripts/check-seed.ts"
+    "seed:check": "tsx scripts/check-seed.ts",
+    "test:smoke": "node e2e/smoke.mjs"
   },
   "dependencies": {
     "dexie": "^4.4.5",
@@ -28,6 +29,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.5",
     "fake-indexeddb": "^6.0.0",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.19.2",
     "typescript": "^5.9.0",
