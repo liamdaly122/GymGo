@@ -1,8 +1,9 @@
 import { chromium } from 'playwright';
+import { readFileSync } from 'node:fs';
 
 const BASE = 'http://127.0.0.1:5180/';
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
-const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, acceptDownloads: true });
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -266,6 +267,90 @@ await step('the finished workout is untouched by that rewrite', async () => {
     throw new Error('finished workout picked up an exercise added to the routine afterwards');
   }
   if (!/120kg/.test(body)) throw new Error('finished workout lost its logged weight');
+});
+
+// ---------------------------------------------------------------------------
+// Export and import: the only backup route until sync exists.
+// ---------------------------------------------------------------------------
+
+let backupPath = '';
+await step('export the whole database as JSON', async () => {
+  await page.goto(`${BASE}#/settings`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'Settings' }).waitFor();
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Export everything as JSON' }).click(),
+  ]);
+  if (!/^gymgo-backup-\d{4}-\d{2}-\d{2}\.json$/.test(download.suggestedFilename())) {
+    throw new Error(`unexpected filename: ${download.suggestedFilename()}`);
+  }
+  backupPath = await download.path();
+  const parsed = JSON.parse(readFileSync(backupPath, 'utf8'));
+  if (parsed.format !== 'gymgo-export') throw new Error('export is missing its format marker');
+  // Four rows, not three: the discarded scratch session is kept as a tombstone
+  // so a restore cannot resurrect something that was deleted before the backup.
+  if (parsed.tables.workouts.length !== 4) {
+    throw new Error(`expected 4 workout rows in the backup, got ${parsed.tables.workouts.length}`);
+  }
+  const live = parsed.tables.workouts.filter((w) => w.deleted_at === null);
+  if (live.length !== 3) throw new Error(`expected 3 live workouts, got ${live.length}`);
+  console.log(`       backup holds ${parsed.tables.exercises.length} exercises, ${parsed.tables.workouts.length} workouts`);
+});
+
+await step('export sets as CSV, one row per set', async () => {
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Export sets as CSV' }).click(),
+  ]);
+  const csv = readFileSync(await download.path(), 'utf8').trim().split('\r\n');
+  if (!csv[0].includes('exercise_name')) throw new Error('CSV header missing exercise_name');
+  // Three finished sessions, one logged set each.
+  if (csv.length !== 4) throw new Error(`expected 1 header + 3 set rows, got ${csv.length}`);
+});
+
+await step('wipe the local database', async () => {
+  await page.getByRole('button', { name: 'Wipe and reseed local database' }).click();
+  await page.getByRole('button', { name: 'Wipe and reseed' }).click();
+  await page.waitForTimeout(2500);
+  await page.goto(`${BASE}#/history`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  const rows = await page.locator('a[href*="#/history/"]').count();
+  if (rows !== 0) throw new Error(`expected an empty history after the wipe, got ${rows} rows`);
+});
+
+await step('restore everything from the backup', async () => {
+  await page.goto(`${BASE}#/settings`, { waitUntil: 'networkidle' });
+  await page.locator('input[type=file]').setInputFiles(backupPath);
+  await page.waitForTimeout(2500);
+  const body = await page.locator('body').innerText();
+  if (!/Restored 3 workouts/.test(body)) {
+    throw new Error(`expected a restore confirmation, saw: ${body.replace(/\n/g, ' | ').slice(0, 400)}`);
+  }
+});
+
+await step('the restored history is intact', async () => {
+  await page.goto(`${BASE}#/history`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(700);
+  const rows = await page.locator('a[href*="#/history/"]').count();
+  if (rows !== 3) throw new Error(`expected 3 restored sessions, got ${rows}`);
+});
+
+await step('a rejected import leaves the database alone', async () => {
+  await page.goto(`${BASE}#/settings`, { waitUntil: 'networkidle' });
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'not-a-backup.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{"hello":"world"}'),
+  });
+  await page.waitForTimeout(1200);
+  const body = await page.locator('body').innerText();
+  if (!/not exported by GymGo/i.test(body)) {
+    throw new Error(`expected a rejection message, saw: ${body.replace(/\n/g, ' | ').slice(0, 300)}`);
+  }
+  await page.goto(`${BASE}#/history`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(700);
+  const rows = await page.locator('a[href*="#/history/"]').count();
+  if (rows !== 3) throw new Error(`a rejected import damaged the database: ${rows} sessions left`);
 });
 
 console.log(errors.length ? `\nBrowser errors:\n${errors.join('\n')}` : '\nNo browser errors.');
