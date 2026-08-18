@@ -1,0 +1,66 @@
+/**
+ * Predicates that decide what a set counts for.
+ *
+ * The brief's counting rules live here and nowhere else. Every screen, chart and
+ * suggestion asks these questions rather than re-deriving the answers, because
+ * the failure mode of getting them wrong is silent: a drop set quietly
+ * overwriting a personal record looks like progress, not like a bug.
+ */
+import type { WorkoutSet } from '@/db/schema';
+
+/**
+ * A child set hangs off a parent: a drop-set continuation, a rest-pause
+ * cluster, a myo-rep cluster, a cluster-set piece.
+ *
+ * Child sets count toward volume, and never toward personal records.
+ */
+export function isChildSet(set: Pick<WorkoutSet, 'parent_set_id'>): boolean {
+  return set.parent_set_id !== null;
+}
+
+/** Live rows only — soft-deleted rows are still physically present. */
+export function isLive(set: Pick<WorkoutSet, 'deleted_at'>): boolean {
+  return set.deleted_at === null;
+}
+
+/**
+ * Does this set count toward training volume?
+ *
+ * Yes for completed working, back-off and child sets. No for warm-ups, which
+ * are not training, and no for anything not actually performed.
+ */
+export function countsTowardVolume(
+  set: Pick<WorkoutSet, 'type' | 'completed' | 'deleted_at'>,
+): boolean {
+  return isLive(set) && set.completed && set.type !== 'warmup';
+}
+
+/**
+ * Is this set eligible to set a personal record, or to be reported as previous
+ * performance?
+ *
+ * Only a completed, top-level working set. A 40kg drop set must never overwrite
+ * a 100kg PR, and must never appear as last session's number.
+ */
+export function isTopWorkingSet(
+  set: Pick<WorkoutSet, 'type' | 'completed' | 'deleted_at' | 'parent_set_id'>,
+): boolean {
+  return isLive(set) && set.completed && set.type === 'working' && !isChildSet(set);
+}
+
+/**
+ * Ranks two working sets to find the "top set" of a session.
+ *
+ * Heaviest wins; reps break a tie. This is what the previous-performance line
+ * reports, matching how a lifter actually thinks about last session — the
+ * heaviest thing they lifted, not an average.
+ */
+export function isHeavier(
+  candidate: Pick<WorkoutSet, 'weight_kg' | 'reps'>,
+  incumbent: Pick<WorkoutSet, 'weight_kg' | 'reps'>,
+): boolean {
+  if (candidate.weight_kg !== incumbent.weight_kg) {
+    return candidate.weight_kg > incumbent.weight_kg;
+  }
+  return candidate.reps > incumbent.reps;
+}
