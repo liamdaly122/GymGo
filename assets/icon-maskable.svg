@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="GymGo">
+  <!-- Maskable: artwork kept inside the 80% safe zone so Android's mask cannot crop it. -->
+  <rect width="512" height="512" fill="#0a0a0a"/>
+  <g fill="#4ade80" transform="translate(256 256) scale(0.72) translate(-256 -256)">
+    <rect x="146" y="238" width="220" height="36" rx="18"/>
+    <rect x="112" y="196" width="42" height="120" rx="16"/>
+    <rect x="358" y="196" width="42" height="120" rx="16"/>
+    <rect x="64" y="222" width="34" height="68" rx="14"/>
+    <rect x="414" y="222" width="34" height="68" rx="14"/>
+  </g>
+</svg>
