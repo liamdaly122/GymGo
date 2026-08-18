@@ -8,6 +8,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import { SETTINGS_ID, type Exercise, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
+import { personalRecords } from '@/domain/prs';
 
 const live = <T extends { deleted_at: string | null }>(rows: T[]) =>
   rows.filter((row) => row.deleted_at === null);
@@ -174,4 +175,14 @@ export function usePreviousPerformance(
     const sessions = await exerciseSessions(exerciseId);
     return previousPerformance(sessions, excludeWorkoutId ? { excludeWorkoutId } : {});
   }, [exerciseId, excludeWorkoutId]);
+}
+
+/** Personal records for one exercise, computed from finished sessions only. */
+export function useExerciseRecords(exerciseId: string | undefined) {
+  return useLiveQuery(async () => {
+    if (!exerciseId) return null;
+    const sessions = await exerciseSessions(exerciseId);
+    const sets = sessions.flatMap((session) => session.sets);
+    return { records: personalRecords(sets), sessionCount: sessions.length };
+  }, [exerciseId]);
 }
