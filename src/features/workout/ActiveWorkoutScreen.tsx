@@ -6,14 +6,13 @@ import {
   addSet,
   discardWorkout,
   finishWorkout,
-  removeExerciseFromWorkout,
 } from '@/db/mutations';
-import { Button, Card } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { formatDuration } from '@/lib/dates';
 import { useElapsed } from '@/hooks/useElapsed';
 import { totalTonnage, totalWorkingSets } from '@/domain/volume';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
-import SetRow from './SetRow';
+import WorkoutExerciseCard from './WorkoutExerciseCard';
 
 export default function ActiveWorkoutScreen() {
   const { workoutId } = useParams<{ workoutId: string }>();
@@ -49,16 +48,6 @@ export default function ActiveWorkoutScreen() {
     const workoutExerciseId = await addExerciseToWorkout(workoutId, exerciseId);
     // Open with one empty set ready, so the next tap is a number, not a button.
     await addSet(workoutExerciseId);
-  };
-
-  const handleAddSet = async (workoutExerciseId: string) => {
-    const entry = view.exercises.find((item) => item.workoutExercise.id === workoutExerciseId);
-    // Carry the last set's numbers forward — most sets repeat the one before.
-    const last = entry?.sets.filter((set) => set.parent_set_id === null).at(-1);
-    await addSet(workoutExerciseId, {
-      weight_kg: last?.weight_kg ?? 0,
-      reps: last?.reps ?? 0,
-    });
   };
 
   const handleFinish = async () => {
@@ -100,49 +89,9 @@ export default function ActiveWorkoutScreen() {
         </div>
       ) : (
         <ul className="space-y-3">
-          {view.exercises.map((entry, exerciseIndex) => (
+          {view.exercises.map((entry) => (
             <li key={entry.workoutExercise.id}>
-              <Card className="p-3">
-                <div className="mb-2 flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h2 className="truncate text-sm font-medium text-white">
-                      {entry.exercise?.name ?? 'Unknown exercise'}
-                    </h2>
-                    <p className="truncate text-xs text-muted">
-                      {entry.exercise?.primary_muscle}
-                      {entry.exercise?.setup_notes ? ` · ${entry.exercise.setup_notes}` : ''}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => void removeExerciseFromWorkout(entry.workoutExercise.id)}
-                    aria-label={`Remove ${entry.exercise?.name ?? 'exercise'} from this workout`}
-                    className="shrink-0 px-2 py-1 text-xs text-muted active:text-red-400"
-                  >
-                    Remove
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2 pb-1 text-[10px] uppercase tracking-wide text-muted">
-                  <span className="w-6 text-center">Set</span>
-                  <span className="flex-1 text-center">Weight</span>
-                  <span className="flex-1 text-center">Reps</span>
-                  <span className="w-11" />
-                  <span className="w-7" />
-                </div>
-
-                {entry.sets.map((set, setIndex) => (
-                  <SetRow key={set.id} set={set} index={setIndex} />
-                ))}
-
-                <Button
-                  className="mt-2 w-full"
-                  onClick={() => void handleAddSet(entry.workoutExercise.id)}
-                >
-                  Add set
-                </Button>
-              </Card>
-
-              {exerciseIndex === view.exercises.length - 1 ? null : null}
+              <WorkoutExerciseCard entry={entry} workoutId={workoutId} />
             </li>
           ))}
         </ul>

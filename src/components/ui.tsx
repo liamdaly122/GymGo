@@ -46,26 +46,34 @@ export function NumberField({
   value,
   onCommit,
   suffix,
+  blankWhenZero = false,
   className = '',
   ...props
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
   value: number | null;
   onCommit: (value: number) => void;
   suffix?: string;
+  /**
+   * Render 0 as an empty box so the field's placeholder can show, letting an
+   * unlogged set display last session's number as a hint rather than a
+   * misleading zero.
+   */
+  blankWhenZero?: boolean;
 }) {
+  const initial = value === null || (blankWhenZero && value === 0) ? '' : String(value);
   return (
     // flex-1 so a row of fields shares width evenly and lines up under its headings.
     <div className="relative flex-1">
       <input
         {...props}
         inputMode="decimal"
-        defaultValue={value ?? ''}
+        defaultValue={initial}
         onFocus={(event) => event.currentTarget.select()}
         onBlur={(event) => {
           const parsed = Number.parseFloat(event.currentTarget.value.replace(',', '.'));
           onCommit(Number.isFinite(parsed) && parsed >= 0 ? parsed : 0);
         }}
-        className={`h-11 w-full rounded-lg border border-line bg-raised text-center text-base tabular-nums text-white focus:border-accent focus:outline-none ${className}`}
+        className={`h-11 w-full rounded-lg border border-line bg-raised text-center text-base tabular-nums text-white placeholder:text-muted/50 focus:border-accent focus:outline-none ${className}`}
       />
       {suffix ? (
         <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted">

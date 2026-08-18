@@ -143,6 +143,43 @@ await step('history lists both sessions', async () => {
 await page.screenshot({ path: 'e2e/shot-history.png' });
 
 // ---------------------------------------------------------------------------
+// Previous performance inline: the number you are trying to beat.
+// ---------------------------------------------------------------------------
+
+await step('a new session shows last time\'s top set inline', async () => {
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Start empty workout' }).click();
+  await page.getByRole('button', { name: 'Add exercise' }).click();
+  await page.getByPlaceholder('Add exercise').fill('barbell squat');
+  await page.getByRole('button', { name: /^Barbell Squat/ }).first().click();
+  await page.waitForTimeout(700);
+  const body = await page.locator('body').innerText();
+  if (!/last time/i.test(body)) throw new Error('expected a "Last time" line');
+  // The previous session was 110kg x 5, not the 100kg one before it.
+  if (!/110kg × 5/.test(body)) throw new Error(`expected 110kg × 5 inline, saw: ${body.replace(/\n/g, ' | ')}`);
+});
+
+await step('the empty set row offers last time as a placeholder', async () => {
+  const placeholder = await page.getByLabel('Set 1 weight in kilograms').getAttribute('placeholder');
+  if (placeholder !== '110') throw new Error(`expected placeholder 110, got ${placeholder}`);
+});
+
+await step('"Use" fills the row without logging it', async () => {
+  await page.getByRole('button', { name: 'Use' }).click();
+  await page.waitForTimeout(500);
+  const value = await page.getByLabel('Set 1 weight in kilograms').inputValue();
+  if (value !== '110') throw new Error(`expected the row filled with 110, got "${value}"`);
+});
+
+await page.screenshot({ path: 'e2e/shot-previous.png' });
+
+await step('discard that scratch session', async () => {
+  await page.getByRole('button', { name: 'Finish', exact: true }).click();
+  await page.getByRole('button', { name: 'Discard workout' }).click();
+  await page.waitForTimeout(600);
+});
+
+// ---------------------------------------------------------------------------
 // The brief's central rule: editing a routine must never change a workout
 // already performed. Verified through the real UI, not just the unit tests.
 // ---------------------------------------------------------------------------

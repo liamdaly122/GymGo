@@ -23,10 +23,15 @@ export default function SetRow({
   set,
   index,
   onCompleted,
+  weightHint,
+  repsHint,
 }: {
   set: WorkoutSet;
   index: number;
   onCompleted?: (set: WorkoutSet) => void;
+  /** Last session's numbers for this set, shown as a placeholder until logged. */
+  weightHint?: number;
+  repsHint?: number;
 }) {
   const child = isChildSet(set);
   const label = TYPE_LABELS[set.type] ?? '';
@@ -49,15 +54,19 @@ export default function SetRow({
       </span>
 
       <NumberField
-        key={`${set.id}-weight`}
+        key={`${set.id}-weight-${set.weight_kg}`}
         value={set.weight_kg}
+        blankWhenZero
+        placeholder={weightHint !== undefined ? String(weightHint) : undefined}
         onCommit={(value) => void updateSet(set.id, { weight_kg: value })}
         suffix="kg"
         aria-label={`Set ${index + 1} weight in kilograms`}
       />
       <NumberField
-        key={`${set.id}-reps`}
+        key={`${set.id}-reps-${set.reps}`}
         value={set.reps}
+        blankWhenZero
+        placeholder={repsHint !== undefined ? String(repsHint) : undefined}
         onCommit={(value) => void updateSet(set.id, { reps: Math.round(value) })}
         suffix={set.is_amrap ? 'AMRAP' : 'reps'}
         aria-label={`Set ${index + 1} repetitions`}
