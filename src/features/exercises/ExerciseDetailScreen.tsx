@@ -50,9 +50,9 @@ export default function ExerciseDetailScreen() {
 
       <Card className="mb-4 p-4">
         <h2 className="mb-2 text-xs uppercase tracking-wide text-muted">Muscles</h2>
-        <p className="text-sm text-white capitalize">{exercise.primary_muscle}</p>
+        <p className="text-sm text-white first-letter:uppercase">{exercise.primary_muscle}</p>
         {exercise.secondary_muscles.length > 0 ? (
-          <p className="mt-1 text-xs text-muted capitalize">
+          <p className="mt-1 text-xs text-muted first-letter:uppercase">
             Also: {exercise.secondary_muscles.join(', ')}
           </p>
         ) : null}

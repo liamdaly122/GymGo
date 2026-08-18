@@ -9,6 +9,7 @@ import { db } from './db';
 import { SETTINGS_ID, type Exercise, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
 import { personalRecords } from '@/domain/prs';
+import { summariseSession } from '@/domain/sessionSummary';
 
 const live = <T extends { deleted_at: string | null }>(rows: T[]) =>
   rows.filter((row) => row.deleted_at === null);
@@ -185,4 +186,58 @@ export function useExerciseRecords(exerciseId: string | undefined) {
     const sets = sessions.flatMap((session) => session.sets);
     return { records: personalRecords(sets), sessionCount: sessions.length };
   }, [exerciseId]);
+}
+
+/**
+ * Everything the finish screen needs.
+ *
+ * "Prior" sets are those from sessions finished strictly before this one, so a
+ * session cannot beat its own record, and reopening an old workout still shows
+ * the PRs as they stood on the day.
+ */
+export function useSessionSummary(workoutId: string | undefined) {
+  return useLiveQuery(async () => {
+    if (!workoutId) return null;
+    const view = await composeWorkout(workoutId);
+    if (!view) return null;
+
+    const performedAt = Date.parse(view.workout.finished_at ?? view.workout.started_at);
+
+    const exercises = await Promise.all(
+      view.exercises.map(async (entry) => {
+        const sessions = entry.exercise ? await exerciseSessions(entry.exercise.id) : [];
+        const priorSets = sessions
+          .filter(
+            (session) =>
+              session.workout_id !== workoutId && Date.parse(session.performed_at) < performedAt,
+          )
+          .flatMap((session) => session.sets);
+        return { exercise: entry.exercise, sets: entry.sets, priorSets };
+      }),
+    );
+
+    let previousSameRoutine: { workout: Workout; sets: WorkoutSet[] } | null = null;
+    if (view.workout.routine_id) {
+      const candidates = live(await db.workouts.where({ routine_id: view.workout.routine_id }).toArray())
+        .filter((w) => w.finished_at !== null && w.id !== workoutId)
+        .filter((w) => Date.parse(w.finished_at!) < performedAt)
+        .sort((a, b) => Date.parse(b.finished_at!) - Date.parse(a.finished_at!));
+
+      const previous = candidates[0];
+      if (previous) {
+        const previousExercises = live(
+          await db.workout_exercises.where({ workout_id: previous.id }).toArray(),
+        );
+        const previousSets = live(
+          await db.sets.where('workout_exercise_id').anyOf(previousExercises.map((we) => we.id)).toArray(),
+        );
+        previousSameRoutine = { workout: previous, sets: previousSets };
+      }
+    }
+
+    return {
+      view,
+      summary: summariseSession({ workout: view.workout, exercises, previousSameRoutine }),
+    };
+  }, [workoutId]);
 }

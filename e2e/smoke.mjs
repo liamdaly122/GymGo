@@ -95,6 +95,53 @@ await step('workout persisted to IndexedDB', async () => {
   if (counts.deletedSets !== 1) throw new Error(`the untouched 2nd set should have been discarded on finish, got ${counts.deletedSets}`);
 });
 
+await step('session summary shows duration, volume and sets', async () => {
+  const text = await page.locator('main, body').first().innerText();
+  if (!/500 kg/.test(text)) throw new Error(`expected 500 kg volume, saw: ${text.replace(/\n/g, ' | ')}`);
+  if (!/sets/i.test(text)) throw new Error('expected a Sets stat');
+});
+
+await step('first ever session is reported as a PR', async () => {
+  const text = await page.locator('body').innerText();
+  if (!/Personal record/i.test(text)) throw new Error('expected a personal record callout');
+  if (!/first time/i.test(text)) throw new Error('expected the PR to be marked as a first');
+});
+
+await page.screenshot({ path: 'e2e/shot-summary.png', fullPage: true });
+
+// A second, heavier session must beat the first and must not be beaten by a drop set.
+await step('second workout logs a heavier top set', async () => {
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'Start empty workout' }).click();
+  await page.getByRole('button', { name: 'Add exercise' }).click();
+  await page.getByPlaceholder('Add exercise').fill('barbell squat');
+  await page.getByRole('button', { name: /^Barbell Squat/ }).first().click();
+  await page.getByLabel('Set 1 weight in kilograms').fill('110');
+  await page.getByLabel('Set 1 repetitions').fill('5');
+  await page.getByLabel(/Mark set 1 done/).click();
+  await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Finish', exact: true }).click();
+  await page.getByRole('button', { name: 'Finish and save' }).click();
+  await page.waitForTimeout(800);
+});
+
+await step('reports the weight PR against the previous session', async () => {
+  const text = await page.locator('body').innerText();
+  if (!/Personal record/i.test(text)) throw new Error('expected a PR callout');
+  if (!/was 100kg/.test(text)) throw new Error(`expected "was 100kg", saw: ${text.replace(/\n/g, ' | ')}`);
+});
+
+await step('history lists both sessions', async () => {
+  await page.goto(`${BASE}#/history`, { waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: 'History' }).waitFor();
+  await page.waitForTimeout(500);
+  // Scoped to history links: a bare `ul li` also matches the four nav tabs.
+  const rows = await page.locator('a[href*="#/history/"]').count();
+  if (rows !== 2) throw new Error(`expected 2 history rows, got ${rows}`);
+});
+
+await page.screenshot({ path: 'e2e/shot-history.png' });
+
 console.log(errors.length ? `\nBrowser errors:\n${errors.join('\n')}` : '\nNo browser errors.');
 await browser.close();
 process.exit(errors.length ? 1 : 0);
