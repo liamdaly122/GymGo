@@ -266,9 +266,14 @@ function Toggle({
           checked ? 'bg-accent' : 'bg-line'
         }`}
       >
+        {/*
+          left is pinned rather than left to the static position: an absolutely
+          positioned child with `left: auto` resolved to 24px here, which threw
+          the knob clean outside the track.
+        */}
         <span
-          className={`absolute top-0.5 h-6 w-6 rounded-full bg-white transition-transform ${
-            checked ? 'translate-x-[1.375rem]' : 'translate-x-0.5'
+          className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-white transition-transform ${
+            checked ? 'translate-x-5' : 'translate-x-0'
           }`}
         />
       </button>
