@@ -11,6 +11,7 @@ import RoutinesScreen from './features/routines/RoutinesScreen';
 import RoutineEditorScreen from './features/routines/RoutineEditorScreen';
 import SettingsScreen from './features/settings/SettingsScreen';
 import PlansScreen from './features/plans/PlansScreen';
+import ProgressScreen from './features/progress/ProgressScreen';
 import SplitPickerScreen from './features/plans/SplitPickerScreen';
 import PlanPreviewScreen from './features/plans/PlanPreviewScreen';
 
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/routines/:routineId" element={<RoutineEditorScreen />} />
           <Route path="/history" element={<HistoryScreen />} />
           <Route path="/history/:workoutId" element={<WorkoutDetailScreen />} />
+          <Route path="/progress" element={<ProgressScreen />} />
           <Route path="/plans" element={<PlansScreen />} />
           <Route path="/plans/:goalId" element={<SplitPickerScreen />} />
           <Route path="/plans/:goalId/:splitId" element={<PlanPreviewScreen />} />

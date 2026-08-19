@@ -5,6 +5,7 @@ import { filterExercises } from '@/domain/search';
 import { EQUIPMENT, MOVEMENT_PATTERNS, MUSCLES, type Equipment, type MovementPattern, type Muscle } from '@/domain/types';
 import { Screen, ScreenTitle } from '@/components/ui';
 import { EQUIPMENT_LABELS, PATTERN_LABELS_SHORT } from './labels';
+import ExerciseImage from '@/components/ExerciseImage';
 
 type FilterKind = 'pattern' | 'muscle' | 'equipment';
 
@@ -113,9 +114,15 @@ export default function ExerciseLibraryScreen() {
             <li key={exercise.id}>
               <Link
                 to={`/exercises/${exercise.id}`}
-                className="flex items-center justify-between gap-3 py-3 active:opacity-60"
+                className="flex items-center gap-3 py-2.5 active:opacity-60"
               >
-                <span className="min-w-0">
+                <ExerciseImage
+                  sourceId={exercise.source_id}
+                  muscle={exercise.primary_muscle}
+                  name={exercise.name}
+                  className="h-11 w-11 shrink-0"
+                />
+                <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-white">{exercise.name}</span>
                   <span className="block truncate text-xs text-muted">
                     {exercise.primary_muscle} · {EQUIPMENT_LABELS[exercise.equipment]}

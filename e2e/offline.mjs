@@ -59,7 +59,7 @@ await step('logs a full workout offline', async () => {
   await page.getByLabel('Set 1 repetitions').fill('8');
   await page.getByLabel(/Mark set 1 done/).click();
   await page.waitForTimeout(400);
-  await page.getByRole('button', { name: 'Skip' }).click();
+  await page.getByRole('button', { name: 'Skip', exact: true }).click();
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
   await page.getByRole('button', { name: 'Finish and save' }).click();
   await page.waitForTimeout(900);
@@ -73,6 +73,22 @@ await step('the offline workout is in history after another offline reload', asy
   if (rows !== 1) throw new Error(`expected 1 history row offline, got ${rows}`);
   const body = await page.locator('body').innerText();
   if (!/640 kg/.test(body)) throw new Error(`expected 640 kg volume, saw: ${body.replace(/\n/g, ' | ')}`);
+});
+
+await step('exercise photos load with the network cut', async () => {
+  // The whole reason webp is in the service worker glob. Without it the cards
+  // would fall back to grey placeholders the moment there is no signal.
+  const result = await page.evaluate(async () => {
+    const manifestResponse = await fetch('/exercise-images/Barbell_Squat.webp');
+    if (!manifestResponse.ok) return { ok: false, status: manifestResponse.status };
+    const blob = await manifestResponse.blob();
+    return { ok: true, type: blob.type, size: blob.size };
+  });
+  if (!result.ok) throw new Error(`a bundled photo was not served offline (status ${result.status})`);
+  if (!/image/.test(result.type) || result.size < 1000) {
+    throw new Error(`offline photo looks wrong: ${JSON.stringify(result)}`);
+  }
+  console.log(`       served ${(result.size / 1024).toFixed(1)}KB photo from cache`);
 });
 
 await step('no requests reached the network while logging', async () => {

@@ -16,7 +16,8 @@
     "test:e2e": "node e2e/smoke.mjs",
     "test:offline": "node e2e/offline.mjs",
     "templates:check": "tsx scripts/check-templates.ts",
-    "test:plans": "node e2e/plans.mjs"
+    "test:plans": "node e2e/plans.mjs",
+    "images:build": "tsx scripts/build-images.ts"
   },
   "dependencies": {
     "dexie": "^4.4.5",

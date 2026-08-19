@@ -15,7 +15,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/apple-touch-icon.png'],
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // webp matters: the exercise photos live in public/exercise-images and
+        // would otherwise be fetched from the network on first view, which is
+        // exactly what this app is not allowed to need.
+        globPatterns: ['**/*.{js,css,html,svg,png,webp,woff2}'],
         // The seed chunk is ~360KB; the default 2MB cap would silently skip
         // anything larger and leave first-run seeding broken offline.
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,

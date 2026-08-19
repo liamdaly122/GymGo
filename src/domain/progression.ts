@@ -39,7 +39,12 @@ export interface WeekAdjustment {
 
 export interface ProgressionInput {
   exercise: Exercise;
-  repRange: RepRange;
+  /**
+   * The range the session prescribes. Null for a freestyle workout, where
+   * nothing was prescribed — and where the deload rule therefore cannot apply,
+   * since there is no target to have fallen short of.
+   */
+  repRange: RepRange | null;
   /** Finished sessions containing this exercise. Order does not matter. */
   history: ExerciseSession[];
   loading: LoadingProfile;
@@ -107,20 +112,27 @@ function formatWeight(kg: number): string {
  * never done is worse than saying nothing, because it looks authoritative.
  */
 export function suggestNextSet(input: ProgressionInput): Suggestion | null {
-  const { exercise, repRange, loading } = input;
+  const { exercise, loading } = input;
+  const prescribed = input.repRange;
   const sessions = judgeableSessions(input.history);
   const last = sessions[0];
   const lastTop = last ? heaviestSet(last) : null;
   if (!last || !lastTop) return null;
 
   const lastWorking = workingSets(last);
+
+  // With no prescribed range, judge against what was actually done last time:
+  // matching every set at that weight is the thing to beat.
+  const repRange: RepRange = prescribed ?? { low: lastTop.reps, high: lastTop.reps };
+
   const atSameWeight = lastWorking.filter((set) => set.weight_kg === lastTop.weight_kg);
   const everySetHitTop =
     atSameWeight.length === lastWorking.length &&
     lastWorking.length > 0 &&
     lastWorking.every((set) => set.reps >= repRange.high);
 
-  const failures = consecutiveFailures(sessions, repRange);
+  // No prescription, no failure: you cannot fall short of a target nobody set.
+  const failures = prescribed ? consecutiveFailures(sessions, prescribed) : 0;
   const increment = incrementFor(exercise);
 
   const previousWeight = lastTop.weight_kg;

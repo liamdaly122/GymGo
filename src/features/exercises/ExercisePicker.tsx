@@ -3,6 +3,7 @@ import { useExercises, useSettings } from '@/db/queries';
 import { filterExercises } from '@/domain/search';
 import { MOVEMENT_PATTERNS, type MovementPattern } from '@/domain/types';
 import { Button } from '@/components/ui';
+import ExerciseImage from '@/components/ExerciseImage';
 
 const PATTERN_LABELS: Record<MovementPattern, string> = {
   squat: 'Squat',
@@ -84,11 +85,17 @@ export default function ExercisePicker({
             <li key={exercise.id}>
               <button
                 onClick={() => onPick(exercise.id)}
-                className="flex w-full items-center justify-between gap-3 py-3 text-left active:opacity-60"
+                className="flex w-full items-center gap-3 py-2.5 text-left active:opacity-60"
               >
-                <span className="min-w-0">
+                <ExerciseImage
+                  sourceId={exercise.source_id}
+                  muscle={exercise.primary_muscle}
+                  name={exercise.name}
+                  className="h-11 w-11 shrink-0"
+                />
+                <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-white">{exercise.name}</span>
-                  <span className="block truncate text-xs text-muted">
+                  <span className="block truncate text-xs text-muted first-letter:uppercase">
                     {exercise.primary_muscle} · {exercise.equipment.replace('_', ' ')}
                   </span>
                 </span>

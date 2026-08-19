@@ -63,7 +63,7 @@ await step('+30s extends the rest', async () => {
 });
 
 await step('skip dismisses the rest timer', async () => {
-  await page.getByRole('button', { name: 'Skip' }).click();
+  await page.getByRole('button', { name: 'Skip', exact: true }).click();
   await page.waitForTimeout(300);
   if (await page.getByRole('timer').count() !== 0) throw new Error('rest timer still showing after skip');
 });
@@ -71,7 +71,9 @@ await step('skip dismisses the rest timer', async () => {
 await step('header shows the volume', async () => {
   const text = await page.locator('header').innerText();
   if (!text.includes('500')) throw new Error(`expected 500 kg tonnage, header said: ${text.replace(/\n/g,' | ')}`);
-  if (!/1 set/.test(text)) throw new Error(`expected "1 set", header said: ${text.replace(/\n/g,' | ')}`);
+  // The header is a Time / Volume / Sets grid.
+  if (!/sets/i.test(text)) throw new Error(`expected a Sets stat, header said: ${text.replace(/\n/g,' | ')}`);
+  if (!/exercise 1\/1/i.test(text)) throw new Error(`expected an exercise counter, header said: ${text.replace(/\n/g,' | ')}`);
 });
 
 await step('add a second set carries the weight forward', async () => {
@@ -181,16 +183,24 @@ await step('a new session shows last time\'s top set inline', async () => {
   if (!/110kg × 5/.test(body)) throw new Error(`expected 110kg × 5 inline, saw: ${body.replace(/\n/g, ' | ')}`);
 });
 
-await step('the empty set row offers last time as a placeholder', async () => {
+await step('the empty set row is pre-filled from the suggestion', async () => {
   const placeholder = await page.getByLabel('Set 1 weight in kilograms').getAttribute('placeholder');
-  if (placeholder !== '110') throw new Error(`expected placeholder 110, got ${placeholder}`);
+  // Freestyle work has no prescribed range, so the engine should progress from
+  // the 110kg logged last time rather than deload against a range nobody set.
+  if (!placeholder || Number(placeholder) < 110) {
+    throw new Error(`expected a placeholder at or above 110, got ${placeholder}`);
+  }
 });
 
 await step('"Use" fills the row without logging it', async () => {
-  await page.getByRole('button', { name: 'Use' }).click();
+  const placeholder = await page.getByLabel('Set 1 weight in kilograms').getAttribute('placeholder');
+  await page.getByRole('button', { name: 'Use', exact: true }).first().click();
   await page.waitForTimeout(500);
   const value = await page.getByLabel('Set 1 weight in kilograms').inputValue();
-  if (value !== '110') throw new Error(`expected the row filled with 110, got "${value}"`);
+  if (value !== placeholder) throw new Error(`expected the row filled with ${placeholder}, got "${value}"`);
+  // Filling is not logging: the set must still be unticked.
+  const pressed = await page.getByLabel(/Mark set 1 done/).getAttribute('aria-pressed');
+  if (pressed !== 'false') throw new Error('filling the row should not tick it off');
 });
 
 await page.screenshot({ path: 'e2e/shot-previous.png' });

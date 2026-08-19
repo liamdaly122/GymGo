@@ -30,9 +30,13 @@ export function RestTimerProvider({ children }: { children: ReactNode }) {
     setEndsAt(Date.now() + ms);
   }, []);
 
+  /** Negative shortens. Never drops below five seconds left, or below the ring. */
   const extend = useCallback((seconds: number) => {
-    setEndsAt((current) => (current === null ? null : current + seconds * 1000));
-    setTotalMs((current) => current + seconds * 1000);
+    setEndsAt((current) => {
+      if (current === null) return null;
+      return Math.max(Date.now() + 5_000, current + seconds * 1000);
+    });
+    setTotalMs((current) => Math.max(5_000, current + seconds * 1000));
   }, []);
 
   const stop = useCallback(() => {
@@ -70,6 +74,7 @@ export function RestTimerBar() {
 
     const tick = () => setRemaining(Math.max(0, endsAt - Date.now()));
     tick();
+    // Quarter-second ticks so the ring moves smoothly without burning battery.
     const id = window.setInterval(tick, 250);
     const onVisible = () => {
       if (document.visibilityState === 'visible') tick();
@@ -93,7 +98,12 @@ export function RestTimerBar() {
   if (endsAt === null) return null;
 
   const done = remaining <= 0;
-  const progress = totalMs > 0 ? Math.min(1, 1 - remaining / totalMs) : 1;
+  const fraction = totalMs > 0 ? Math.min(1, Math.max(0, remaining / totalMs)) : 0;
+
+  // A ring drawn with stroke-dashoffset: no library, no layout thrash, and it
+  // reads at a glance from arm's length on a bench.
+  const RADIUS = 46;
+  const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
   return (
     <div
@@ -102,34 +112,72 @@ export function RestTimerBar() {
       role="timer"
       aria-live="off"
     >
-      <div
-        className={`h-0.5 origin-left transition-transform duration-200 ${done ? 'bg-accent' : 'bg-accent/60'}`}
-        style={{ transform: `scaleX(${progress})` }}
-      />
-      <div className="mx-auto flex max-w-lg items-center gap-3 px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] uppercase tracking-wide text-muted">
-            {done ? 'Rest over' : 'Resting'}
-          </p>
-          <p
-            className={`text-2xl font-semibold tabular-nums ${done ? 'text-accent' : 'text-white'}`}
-            aria-label={done ? 'Rest finished' : `${Math.ceil(remaining / 1000)} seconds remaining`}
-          >
-            {formatClock(remaining)}
-          </p>
-        </div>
-        <button
-          onClick={() => extend(30)}
-          className="h-11 rounded-xl border border-line bg-raised px-3 text-sm text-white active:bg-line"
-        >
-          +30s
-        </button>
+      <div className="mx-auto flex max-w-lg items-center gap-4 px-4 py-3">
         <button
           onClick={stop}
-          className="h-11 rounded-xl bg-accent px-4 text-sm font-semibold text-ink active:bg-accent/80"
+          aria-label={done ? 'Dismiss the rest timer' : 'Skip the rest'}
+          className="relative grid h-24 w-24 shrink-0 place-items-center"
         >
-          {done ? 'Done' : 'Skip'}
+          <svg viewBox="0 0 108 108" className="h-24 w-24 -rotate-90">
+            <circle
+              cx="54"
+              cy="54"
+              r={RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="7"
+              className="text-line"
+            />
+            <circle
+              cx="54"
+              cy="54"
+              r={RADIUS}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="7"
+              strokeLinecap="round"
+              strokeDasharray={CIRCUMFERENCE}
+              strokeDashoffset={CIRCUMFERENCE * (1 - fraction)}
+              className={done ? 'text-accent' : 'text-accent/80'}
+              style={{ transition: 'stroke-dashoffset 250ms linear' }}
+            />
+          </svg>
+          <span className="absolute inset-0 grid place-items-center">
+            <span
+              className={`text-xl font-semibold tabular-nums ${done ? 'text-accent' : 'text-white'}`}
+            >
+              {formatClock(remaining)}
+            </span>
+          </span>
         </button>
+
+        <div className="min-w-0 flex-1">
+          <p className="eyebrow">{done ? 'Rest over' : 'Resting'}</p>
+          <p className="mt-0.5 text-sm text-white">
+            {done ? 'Back to it.' : 'Tap the dial to skip.'}
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={() => extend(-30)}
+              disabled={remaining <= 30_000}
+              className="h-9 flex-1 rounded-lg border border-line bg-raised text-xs text-white disabled:opacity-30 active:bg-line"
+            >
+              −30s
+            </button>
+            <button
+              onClick={() => extend(30)}
+              className="h-9 flex-1 rounded-lg border border-line bg-raised text-xs text-white active:bg-line"
+            >
+              +30s
+            </button>
+            <button
+              onClick={stop}
+              className="h-9 flex-1 rounded-lg bg-accent text-xs font-semibold text-ink active:bg-accent/80"
+            >
+              {done ? 'Done' : 'Skip'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

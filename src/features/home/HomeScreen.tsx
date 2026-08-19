@@ -12,6 +12,7 @@ import {
 import { startFreestyleWorkout, startWorkoutFromRoutine } from '@/db/mutations';
 import { Button, Card, Pill, Screen, ScreenTitle } from '@/components/ui';
 import WeekStrip from '@/components/WeekStrip';
+import ExerciseImage from '@/components/ExerciseImage';
 import { formatDayLabel, formatDuration } from '@/lib/dates';
 import { useElapsed } from '@/hooks/useElapsed';
 import { formatWeekLabel } from '@/domain/programmes/block';
@@ -37,6 +38,7 @@ export default function HomeScreen() {
       .filter((row) => row.deleted_at === null)
       .sort((a, b) => a.position - b.position);
     const exercises = await db.exercises.bulkGet(rows.map((row) => row.exercise_id));
+    const present = exercises.filter(Boolean).map((exercise) => exercise!);
     return {
       count: rows.length,
       minutes: estimateDurationMinutes(
@@ -45,7 +47,8 @@ export default function HomeScreen() {
           restSeconds: row.rest_seconds ?? 120,
         })),
       ),
-      first: exercises.filter(Boolean).slice(0, 3).map((exercise) => exercise!.name),
+      first: present.slice(0, 3).map((exercise) => exercise.name),
+      hero: present[0] ?? null,
     };
   }, [next?.routineId, planned?.week.week]);
 
@@ -117,6 +120,18 @@ export default function HomeScreen() {
                   <Pill>{preview.count} exercises</Pill>
                   <Pill>~{preview.minutes} min</Pill>
                   {planned.week.isDeload ? <Pill tone="accent">Deload</Pill> : null}
+                </div>
+              ) : null}
+
+              {preview?.hero ? (
+                <div className="mt-3 overflow-hidden rounded-xl">
+                  <ExerciseImage
+                    sourceId={preview.hero.source_id}
+                    muscle={preview.hero.primary_muscle}
+                    name={preview.hero.name}
+                    rounded="rounded-xl"
+                    className="h-36 w-full"
+                  />
                 </div>
               ) : null}
 

@@ -9,7 +9,7 @@
  * constrained ones are allowed gaps — a dumbbell-only garage genuinely has no
  * hamstring isolation — but must still yield a usable session.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -119,6 +119,39 @@ for (const profile of PROFILES) {
       `ruled out: ${String(notViable).padStart(3)}   ` +
       `workable day counts: ${[...viableDays].sort((a, b) => a - b).join(', ') || 'none'}`,
   );
+}
+
+/*
+ * The bundled photos are precached by the service worker, so their size is paid
+ * on every install. Left unchecked this creeps: a template change pulls in more
+ * exercises, the bundle grows, and the gym-basement install gets slower without
+ * anyone noticing.
+ */
+const IMAGE_BUDGET_MB = 4;
+const imageDir = resolve(root, 'public/exercise-images');
+if (existsSync(imageDir)) {
+  const files = readdirSync(imageDir).filter((name) => name.endsWith('.webp'));
+  const bytes = files.reduce((total, name) => total + statSync(resolve(imageDir, name)).size, 0);
+  const megabytes = bytes / 1024 / 1024;
+  console.log(`\n  exercise photos: ${files.length} files, ${megabytes.toFixed(2)} MB`);
+  if (megabytes > IMAGE_BUDGET_MB) {
+    problems.push(
+      `exercise photos are ${megabytes.toFixed(2)} MB, over the ${IMAGE_BUDGET_MB} MB budget`,
+    );
+  }
+
+  // A plan that shows a grey box where a photo should be is the thing this
+  // pipeline exists to prevent.
+  const manifestPath = resolve(root, 'src/db/image-manifest.json');
+  if (existsSync(manifestPath)) {
+    const manifest = new Set(JSON.parse(readFileSync(manifestPath, 'utf8')) as string[]);
+    const missing = files.length === 0 ? [] : [...manifest].filter(
+      (id) => !existsSync(resolve(imageDir, `${id}.webp`)),
+    );
+    if (missing.length > 0) {
+      problems.push(`image manifest lists ${missing.length} file(s) that are not on disk`);
+    }
+  }
 }
 
 // A staple that no longer resolves is a silent downgrade in plan quality.

@@ -13,7 +13,7 @@ import { useElapsed } from '@/hooks/useElapsed';
 import { totalTonnage, totalWorkingSets } from '@/domain/volume';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
 import WorkoutExerciseCard from './WorkoutExerciseCard';
-import { RestTimerBar, RestTimerProvider } from './RestTimer';
+import { RestTimerBar, RestTimerProvider, useRestTimer } from './RestTimer';
 import { useWakeLock } from '@/hooks/useWakeLock';
 
 export default function ActiveWorkoutScreen() {
@@ -28,6 +28,7 @@ function ActiveWorkout() {
   const { workoutId } = useParams<{ workoutId: string }>();
   const navigate = useNavigate();
   const view = useWorkout(workoutId);
+  const rest = useRestTimer();
   const [picking, setPicking] = useState(false);
   const [confirmingFinish, setConfirmingFinish] = useState(false);
 
@@ -57,6 +58,12 @@ function ActiveWorkout() {
   const completedSets = totalWorkingSets(allSets);
   const tonnage = totalTonnage(allSets);
 
+  // Which exercise you are on: the first with anything still unticked.
+  const firstUnfinished = view.exercises.findIndex((entry) =>
+    entry.sets.some((set) => !set.completed),
+  );
+  const currentExercise = firstUnfinished === -1 ? view.exercises.length - 1 : firstUnfinished;
+
   const handleAddExercise = async (exerciseId: string) => {
     setPicking(false);
     const workoutExerciseId = await addExerciseToWorkout(workoutId, exerciseId);
@@ -75,25 +82,51 @@ function ActiveWorkout() {
   };
 
   return (
-    <div className="mx-auto min-h-dvh max-w-lg px-4 pb-32">
+    // Extra clearance while the rest dial is up, so it never sits on top of the
+    // set you are trying to type into.
+    <div className={`mx-auto min-h-dvh max-w-lg px-4 ${rest.endsAt === null ? 'pb-28' : 'pb-52'}`}>
       <header
         className="sticky top-0 z-10 -mx-4 mb-4 border-b border-line bg-ink/95 px-4 pb-3 backdrop-blur"
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' }}
       >
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-2xl font-semibold tabular-nums tracking-tight">
-              {formatDuration(elapsed)}
-            </p>
-            <p className="text-xs text-muted">
-              {completedSets} {completedSets === 1 ? 'set' : 'sets'} ·{' '}
-              {Math.round(tonnage).toLocaleString('en-GB')} kg
-            </p>
-          </div>
-          <Button variant="primary" onClick={() => setConfirmingFinish(true)}>
+          <button
+            onClick={() => void navigate('/')}
+            className="text-xs text-muted active:text-white"
+          >
+            Back
+          </button>
+          <p className="eyebrow">
+            {view.exercises.length > 0
+              ? `Exercise ${Math.min(currentExercise + 1, view.exercises.length)}/${view.exercises.length}`
+              : 'No exercises yet'}
+          </p>
+          <Button variant="primary" className="h-9 px-4" onClick={() => setConfirmingFinish(true)}>
             Finish
           </Button>
         </div>
+
+        {/* The three numbers worth watching mid-session. */}
+        <dl className="mt-3 grid grid-cols-3 divide-x divide-line rounded-xl bg-surface py-2">
+          <div className="px-2 text-center">
+            <dt className="eyebrow">Time</dt>
+            <dd className="mt-0.5 text-base font-semibold tabular-nums text-white">
+              {formatDuration(elapsed)}
+            </dd>
+          </div>
+          <div className="px-2 text-center">
+            <dt className="eyebrow">Volume</dt>
+            <dd className="mt-0.5 text-base font-semibold tabular-nums text-white">
+              {Math.round(tonnage).toLocaleString('en-GB')} kg
+            </dd>
+          </div>
+          <div className="px-2 text-center">
+            <dt className="eyebrow">Sets</dt>
+            <dd className="mt-0.5 text-base font-semibold tabular-nums text-white">
+              {completedSets}
+            </dd>
+          </div>
+        </dl>
       </header>
 
       {view.exercises.length === 0 ? (

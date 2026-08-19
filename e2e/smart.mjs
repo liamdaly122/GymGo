@@ -69,7 +69,7 @@ await step('start the planned session and log it', async () => {
     await p.waitForTimeout(150);
   }
   await p.waitForTimeout(400);
-  const skip = p.getByRole('button', { name: 'Skip' });
+  const skip = p.getByRole('button', { name: 'Skip', exact: true });
   if (await skip.count()) await skip.click();
   plannedRoutineHref = await p.evaluate(async () => {
     const open = indexedDB.open('gymgo');

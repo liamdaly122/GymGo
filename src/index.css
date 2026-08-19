@@ -1,12 +1,23 @@
 @import 'tailwindcss';
 
+/*
+ * A deep navy-charcoal ground rather than pure black.
+ *
+ * Black with a single bright accent reads as a prototype: there is no depth, so
+ * every surface sits on the same plane and nothing looks deliberate. Navy gives
+ * three usable layers — ground, surface, raised — which is what lets cards feel
+ * like objects. The green stays, because it is GymGo's, and it holds up better
+ * on navy than it did on black.
+ */
 @theme {
-  --color-ink: #0a0a0a;
-  --color-surface: #141414;
-  --color-raised: #1f1f1f;
-  --color-line: #2e2e2e;
+  --color-ink: #0f1620;
+  --color-surface: #17202d;
+  --color-raised: #1f2a38;
+  --color-line: #2a3746;
   --color-accent: #4ade80;
-  --color-muted: #8a8a8a;
+  --color-info: #60a5fa;
+  --color-warn: #fbbf24;
+  --color-muted: #8b9aad;
 }
 
 html {
@@ -17,7 +28,7 @@ html {
 body {
   margin: 0;
   background: var(--color-ink);
-  color: #f5f5f5;
+  color: #f2f6fa;
   font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   /* Respect the notch and the home indicator on an installed iOS PWA. */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
@@ -30,4 +41,13 @@ input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button {
   appearance: none;
   margin: 0;
+}
+
+/* Section headings: small, spaced, quiet. Used throughout rather than per screen. */
+.eyebrow {
+  font-size: 0.625rem;
+  line-height: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
 }

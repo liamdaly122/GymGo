@@ -6,6 +6,7 @@ import { Button, Card } from '@/components/ui';
 import { formatDayLabel } from '@/lib/dates';
 import { formatSetSummary } from '@/domain/previousPerformance';
 import SetRow from './SetRow';
+import ExerciseImage from '@/components/ExerciseImage';
 
 /**
  * One exercise inside the active workout, with last session's numbers shown
@@ -57,8 +58,16 @@ export default function WorkoutExerciseCard({
 
   return (
     <Card className="p-3">
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div className="min-w-0">
+      <div className="mb-2 flex items-start gap-3">
+        {entry.exercise ? (
+          <ExerciseImage
+            sourceId={entry.exercise.source_id}
+            muscle={entry.exercise.primary_muscle}
+            name={entry.exercise.name}
+            className="h-14 w-14 shrink-0"
+          />
+        ) : null}
+        <div className="min-w-0 flex-1">
           {entry.exercise ? (
             <Link
               to={`/exercises/${entry.exercise.id}`}

@@ -218,3 +218,22 @@ describe('a block started mid-week', () => {
     expect(schedule.some((session) => session.status === 'done')).toBe(true);
   });
 });
+
+describe('progress vs adherence', () => {
+  /**
+   * A bar across the block and an adherence score answer different questions.
+   * Showing "1 of 14 · 7%" reads as terrible adherence when it is in fact a
+   * perfect first session of a fresh block.
+   */
+  it('separates being early in a block from missing sessions', () => {
+    const workouts = [makeWorkout({ plan_id: 'plan-1', plan_week: 1, plan_session_index: 0 })];
+    const schedule = build(makePlan(), workouts as never, new Date(2026, 7, 3));
+    const progress = blockProgress(schedule);
+
+    // One of ten done: early in the block.
+    expect(progress.done / progress.total).toBeLessThan(0.2);
+    // But nothing has been missed, so adherence is perfect.
+    expect(progress.adherence).toBe(1);
+    expect(progress.missed).toBe(0);
+  });
+});

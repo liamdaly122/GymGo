@@ -300,3 +300,43 @@ describe('coarse equipment', () => {
     expect(suggestion.weight_kg).toBe(102.5);
   });
 });
+
+/**
+ * Found by driving the app: a freestyle session has no prescribed rep range, so
+ * a default of 8-12 was assumed. Log heavy fives twice and the engine read it as
+ * two failures and suggested a deload off the back of a perfectly good session.
+ */
+describe('freestyle sessions', () => {
+  it('never deloads against a range nobody prescribed', () => {
+    const suggestion = suggestNextSet({
+      exercise: squat,
+      repRange: null,
+      loading: BAR,
+      history: [session([{ weight: 100, reps: 5 }]), session([{ weight: 110, reps: 5 }])],
+    })!;
+    expect(suggestion.kind).not.toBe('deload');
+    expect(suggestion.weight_kg).toBeGreaterThanOrEqual(110);
+  });
+
+  it('judges against what was actually done last time', () => {
+    const suggestion = suggestNextSet({
+      exercise: squat,
+      repRange: null,
+      loading: BAR,
+      history: [session([{ weight: 100, reps: 5 }, { weight: 100, reps: 5 }])],
+    })!;
+    // Every set matched last time's reps, so the weight goes up.
+    expect(suggestion.kind).toBe('add_weight');
+    expect(suggestion.weight_kg).toBe(102.5);
+  });
+
+  it('still deloads when a routine DID prescribe a range', () => {
+    const suggestion = suggestNextSet({
+      exercise: squat,
+      repRange: { low: 8, high: 12 },
+      loading: BAR,
+      history: [session([{ weight: 100, reps: 5 }]), session([{ weight: 110, reps: 5 }])],
+    })!;
+    expect(suggestion.kind).toBe('deload');
+  });
+});

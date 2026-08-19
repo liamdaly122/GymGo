@@ -14,6 +14,8 @@ import { blockProgress, buildSchedule, currentSession, type ScheduledSession } f
 import { weekModifier, type WeekModifier } from '@/domain/programmes/block';
 import { suggestNextSet, type Suggestion } from '@/domain/progression';
 import { loadingProfileFor } from '@/domain/plates';
+import { bestEstimated1RM, setsPerMuscle, totalTonnage, totalWorkingSets } from '@/domain/volume';
+import { isTopWorkingSet } from '@/domain/sets';
 
 const live = <T extends { deleted_at: string | null }>(rows: T[]) =>
   rows.filter((row) => row.deleted_at === null);
@@ -333,9 +335,10 @@ export function useSetSuggestion(
     );
     if (sessions.length === 0) return null;
 
-    // Rep range comes from the routine this session was started from; a
-    // freestyle session has none, so fall back to a general hypertrophy range.
-    let repRange = { low: 8, high: 12 };
+    // Rep range comes from the routine this session was started from. A
+    // freestyle session has none, and inventing one would make heavy low-rep
+    // work look like repeated failure and trigger a false deload.
+    let repRange: { low: number; high: number } | null = null;
     if (workout.routine_id) {
       const routineExercises = live(
         await db.routine_exercises.where({ routine_id: workout.routine_id }).toArray(),
@@ -363,4 +366,108 @@ export function useSetSuggestion(
       week: week ? { loadMultiplier: week.loadMultiplier, isDeload: week.isDeload } : null,
     });
   }, [workoutId, exerciseId]);
+}
+
+export interface MuscleVolume {
+  muscle: string;
+  sets: number;
+}
+
+export interface ProgressOverview {
+  workoutCount: number;
+  totalVolumeKg: number;
+  setsThisWeek: number;
+  /** Sets per muscle over the last seven days, biggest first. */
+  weeklyVolume: MuscleVolume[];
+  /** Exercises with at least one completed working set, for the trend picker. */
+  trackedExercises: Array<{ id: string; name: string; sessions: number }>;
+}
+
+/** Everything the Progress tab leads with. One pass over the database. */
+export function useProgressOverview(): ProgressOverview | undefined {
+  return useLiveQuery(async () => {
+    const workouts = live(await db.workouts.toArray()).filter((w) => w.finished_at !== null);
+    const workoutExercises = live(await db.workout_exercises.toArray());
+    const sets = live(await db.sets.toArray());
+    const exercises = await db.exercises.toArray();
+
+    const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise]));
+    const workoutById = new Map(workouts.map((workout) => [workout.id, workout]));
+    const weByid = new Map(workoutExercises.map((we) => [we.id, we]));
+
+    const exerciseBySetId = new Map<string, Exercise>();
+    const setsInFinishedWorkouts: WorkoutSet[] = [];
+
+    for (const set of sets) {
+      const we = weByid.get(set.workout_exercise_id);
+      if (!we || !workoutById.has(we.workout_id)) continue;
+      const exercise = exerciseById.get(we.exercise_id);
+      if (!exercise) continue;
+      exerciseBySetId.set(set.id, exercise);
+      setsInFinishedWorkouts.push(set);
+    }
+
+    const weekAgo = Date.now() - 7 * 86_400_000;
+    const recentSets = setsInFinishedWorkouts.filter((set) => {
+      const we = weByid.get(set.workout_exercise_id);
+      const workout = we ? workoutById.get(we.workout_id) : undefined;
+      return workout ? Date.parse(workout.finished_at ?? workout.started_at) >= weekAgo : false;
+    });
+
+    const perMuscle = setsPerMuscle(recentSets, exerciseBySetId);
+
+    const sessionsPerExercise = new Map<string, number>();
+    for (const we of workoutExercises) {
+      if (!workoutById.has(we.workout_id)) continue;
+      const hasWork = sets.some((set) => set.workout_exercise_id === we.id && set.completed);
+      if (!hasWork) continue;
+      sessionsPerExercise.set(we.exercise_id, (sessionsPerExercise.get(we.exercise_id) ?? 0) + 1);
+    }
+
+    return {
+      workoutCount: workouts.length,
+      totalVolumeKg: totalTonnage(setsInFinishedWorkouts),
+      setsThisWeek: totalWorkingSets(recentSets),
+      weeklyVolume: [...perMuscle.entries()]
+        .map(([muscle, setCount]) => ({ muscle, sets: setCount }))
+        .sort((a, b) => b.sets - a.sets)
+        .slice(0, 8),
+      trackedExercises: [...sessionsPerExercise.entries()]
+        .map(([id, sessions]) => ({ id, name: exerciseById.get(id)?.name ?? 'Unknown', sessions }))
+        .sort((a, b) => b.sessions - a.sessions || a.name.localeCompare(b.name, 'en')),
+    };
+  }, []);
+}
+
+export interface TrendPoint {
+  /** Full ISO instant. Sorting on the date alone puts two sessions logged on the
+   *  same day in arbitrary order, which flips the trend and its delta. */
+  performed_at: string;
+  date: string;
+  /** Best estimated 1RM of that session. */
+  e1rm: number;
+  /** Heaviest top working set of that session. */
+  topWeight: number;
+}
+
+/** One exercise's estimated 1RM over time, oldest first. */
+export function useExerciseTrend(exerciseId: string | undefined): TrendPoint[] | undefined {
+  return useLiveQuery(async () => {
+    if (!exerciseId) return [];
+    const sessions = await exerciseSessions(exerciseId);
+
+    return sessions
+      .map((session) => {
+        const working = session.sets.filter(isTopWorkingSet);
+        if (working.length === 0) return null;
+        return {
+          performed_at: session.performed_at,
+          date: session.performed_at.slice(0, 10),
+          e1rm: Math.round(bestEstimated1RM(session.sets) * 10) / 10,
+          topWeight: working.reduce((best, set) => Math.max(best, set.weight_kg), 0),
+        };
+      })
+      .filter((point): point is TrendPoint => point !== null)
+      .sort((a, b) => Date.parse(a.performed_at) - Date.parse(b.performed_at));
+  }, [exerciseId]);
 }
