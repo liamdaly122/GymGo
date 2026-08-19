@@ -81,9 +81,31 @@ describe('splits', () => {
     }
   });
 
-  it('gives every split an honest trade-off, including the bro split', () => {
-    for (const split of SPLITS) expect(split.tradeoff.length).toBeGreaterThan(20);
-    expect(SPLITS.find((s) => s.id === 'bro')!.tradeoff).toMatch(/6 to 8 hard/);
+  it('gives every split an honest trade-off at every day count it supports', () => {
+    for (const split of SPLITS) {
+      for (const days of split.daysSupported) {
+        expect(split.tradeoff(days).length, `${split.id} at ${days}`).toBeGreaterThan(20);
+      }
+    }
+    expect(SPLITS.find((s) => s.id === 'bro')!.tradeoff(5)).toMatch(/6 to 8 hard/);
+  });
+
+  /** The card used to tell someone on five days about the three-day problem. */
+  it('tailors the trade-off to the day count actually chosen', () => {
+    const ppl = SPLITS.find((s) => s.id === 'push_pull_legs')!;
+    expect(ppl.tradeoff(3)).toMatch(/light side for growth/);
+    expect(ppl.tradeoff(6)).not.toMatch(/three days/);
+    expect(ppl.tradeoff(5)).toMatch(/fifth day/);
+  });
+
+  it('does not repeat the frequency note inside the trade-off', () => {
+    for (const split of SPLITS) {
+      for (const days of split.daysSupported) {
+        expect(split.tradeoff(days), `${split.id} at ${days}`).not.toMatch(
+          /(trained|gets) once a week|session a week/i,
+        );
+      }
+    }
   });
 
   it('exposes only day counts some split supports', () => {

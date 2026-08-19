@@ -21,8 +21,12 @@ export interface Split {
   blurb: string;
   /** Day counts this split divides into sensibly. Nothing else is offered. */
   daysSupported: number[];
-  /** The honest catch, shown on the card. Every split has one. */
-  tradeoff: string;
+  /**
+   * The honest catch, shown on the card. Every split has one, and it depends on
+   * how many days you are running it — a push/pull/legs at three days has a
+   * different problem from one at six.
+   */
+  tradeoff: (days: number) => string;
   /** How often each muscle gets trained per week, at the given day count. */
   frequencyNote: (days: number) => string;
 }
@@ -57,9 +61,12 @@ export const SPLITS: Split[] = [
     label: 'Full body',
     blurb: 'Every session trains everything. Best use of two or three days.',
     daysSupported: [2, 3, 4],
-    tradeoff:
-      'Sessions are long and legs come round every time. If you can train four or more ' +
-      'days, upper/lower usually fits better.',
+    tradeoff: (days) =>
+      days <= 2
+        ? 'Two sessions a week holds ground rather than builds much, but it beats nothing and it is easy to keep up.'
+        : days >= 4
+          ? 'Sessions are long and legs come round every time. At four days, upper/lower usually fits better.'
+          : 'Sessions are long, and legs come round every time.',
     frequencyNote: (days) => `Each muscle trained ${Math.min(days, 4)}× a week.`,
   },
   {
@@ -67,8 +74,10 @@ export const SPLITS: Split[] = [
     label: 'Upper / Lower',
     blurb: 'Alternating upper and lower days. The sweet spot at four days.',
     daysSupported: [2, 4],
-    tradeoff:
-      'Upper days carry a lot of work — chest, back, shoulders and arms in one session.',
+    tradeoff: (days) =>
+      days <= 2
+        ? 'Two sessions holds ground rather than builds. Fine for a busy stretch, light for growth.'
+        : 'Upper days carry a lot — chest, back, shoulders and arms in one session.',
     frequencyNote: (days) => `Each muscle trained ${days === 2 ? 1 : 2}× a week.`,
   },
   {
@@ -76,9 +85,12 @@ export const SPLITS: Split[] = [
     label: 'Push / Pull / Legs',
     blurb: 'Pressing, pulling and legs on separate days. Scales to six.',
     daysSupported: [3, 5, 6],
-    tradeoff:
-      'At three days each muscle is only trained once a week, which is on the light side. ' +
-      'It comes into its own at six.',
+    tradeoff: (days) =>
+      days === 3
+        ? 'That is on the light side for growth. This split comes into its own at six days.'
+        : days === 5
+          ? 'The fifth day is an upper and a lower session bolted on, so the week is not a clean rotation.'
+          : 'Six sessions is a lot of gym time, and missing one leaves the week lopsided.',
     frequencyNote: (days) =>
       days === 3 ? 'Each muscle trained once a week.' : 'Each muscle trained 2× a week.',
   },
@@ -87,10 +99,10 @@ export const SPLITS: Split[] = [
     label: 'Bro split',
     blurb: 'One body part per day. Chest, back, shoulders, arms, legs.',
     daysSupported: [5],
-    tradeoff:
-      'Each muscle is trained once a week, and a session can only use about 6 to 8 hard ' +
-      'sets per muscle before the extra ones stop adding much — so some of a long body-part ' +
-      'day goes to waste. It still works, and a plan you enjoy beats one you skip.',
+    tradeoff: () =>
+      'A session can only use about 6 to 8 hard sets per muscle before the extra ones stop ' +
+      'adding much, so some of a long body-part day goes to waste. It still works, and a plan ' +
+      'you enjoy beats one you skip.',
     frequencyNote: () => 'Each muscle trained once a week.',
   },
 ];

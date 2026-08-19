@@ -97,7 +97,7 @@ export default function SplitPickerScreen() {
                 </div>
 
                 <p className="mt-2 text-[11px] text-muted">
-                  {split.frequencyNote(days)} {split.tradeoff}
+                  {split.frequencyNote(days)} {split.tradeoff(days)}
                 </p>
 
                 {!viability.viable && viability.reason ? (
