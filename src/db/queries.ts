@@ -152,6 +152,7 @@ export async function exerciseSessions(exerciseId: string): Promise<ExerciseSess
       workout_id: workout.id,
       performed_at: workout.finished_at ?? workout.started_at,
       sets: sets.filter((set) => set.workout_exercise_id === we.id),
+      readiness: workout.readiness,
     });
   }
   return sessions;

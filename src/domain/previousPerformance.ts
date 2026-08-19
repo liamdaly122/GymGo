@@ -7,6 +7,7 @@
  */
 import type { WorkoutSet } from '@/db/schema';
 import { isHeavier, isTopWorkingSet } from './sets';
+import type { Readiness } from './types';
 
 /** One past session's sets for a single exercise. Built by the query layer. */
 export interface ExerciseSession {
@@ -14,6 +15,11 @@ export interface ExerciseSession {
   /** ISO 8601 UTC. Sessions are ranked by this, most recent first. */
   performed_at: string;
   sets: WorkoutSet[];
+  /**
+   * How the lifter felt going in. A session trained on a bad day is excluded
+   * from the progression engine's failure counter, per the brief.
+   */
+  readiness?: Readiness | null;
 }
 
 export interface PreviousPerformance {
