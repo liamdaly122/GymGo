@@ -20,6 +20,7 @@
     "images:build": "tsx scripts/build-images.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
     "dexie": "^4.4.5",
     "dexie-react-hooks": "^4.4.0",
     "react": "^19.2.0",

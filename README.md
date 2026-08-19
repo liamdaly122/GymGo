@@ -32,6 +32,7 @@ for backup and sync, and is not required to log workouts.
 | `npm run seed:check` | Assert every seeded exercise has a valid movement pattern |
 | `npm run templates:check` | Assert every plan the selector can offer is actually buildable |
 | `npm run icons:build` | Regenerate PWA icons from `assets/*.svg` |
+| `npm run images:build` | Rebuild the bundled exercise photos |
 
 ## What is built
 
@@ -52,8 +53,17 @@ Plus, brought forward from step 13:
 - [x] Pre-built plan selector — goal, split and days, built from your gym's
       equipment and saved as ordinary editable routines
 
-Still to come: Supabase sync, Pro mode and advanced techniques, the progression
-engine, the smart generator, charts.
+Plus:
+
+- [x] Progression engine — double progression, per-exercise increments, deloads,
+      plate rounding, every suggestion explained
+- [x] Five-week training blocks with a deload, plotted onto a calendar
+- [x] Redesign: navy ground, exercise photography, Progress tab with charts
+- [x] Supabase backup and sync — schema, RLS, magic-link sign-in, outbox flush
+      and pull (needs your project; see `supabase/README.md`)
+
+Still to come: Pro mode and the advanced set techniques (drop sets,
+rest-pause, supersets), and accessory rotation between blocks.
 
 ## Exercise data
 

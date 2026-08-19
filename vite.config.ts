@@ -55,6 +55,8 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    // scripts/ holds the boundary tests, which read the source from disk and
+    // therefore need Node APIs the app project deliberately does not expose.
+    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
   },
 });

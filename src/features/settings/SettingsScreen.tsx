@@ -10,6 +10,7 @@ import { wipeAndReseed } from '@/db/seed';
 import { SCHEMA_VERSION } from '@/db/schema';
 import { Button, Card, NumberField, Screen, ScreenTitle } from '@/components/ui';
 import type { Mode } from '@/domain/types';
+import SyncSection from './SyncSection';
 
 type Status = { tone: 'ok' | 'error'; message: string } | null;
 
@@ -154,11 +155,13 @@ export default function SettingsScreen() {
         </div>
       </Card>
 
+      <SyncSection />
+
       <Card className="mb-4 p-4">
         <h2 className="mb-1 text-xs uppercase tracking-wide text-muted">Your data</h2>
         <p className="mb-3 text-[11px] text-muted">
-          Everything lives on this device. Export is your backup until sync exists — and your way
-          out, so this is never a one-way door.
+          Everything lives on this device first. Export is your way out, so this is never a
+          one-way door — and it stays useful even with sync switched on.
         </p>
 
         <div className="grid gap-2">
@@ -203,8 +206,7 @@ export default function SettingsScreen() {
           <Row label="Schema version" value={SCHEMA_VERSION} />
         </dl>
         <p className="mt-3 text-[11px] text-muted">
-          Sync is not built yet. Queued changes are held locally and will flush once Supabase is
-          connected.
+          Queued changes are held locally and flush whenever there is a connection.
         </p>
       </Card>
 

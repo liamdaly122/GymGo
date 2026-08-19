@@ -70,7 +70,7 @@ both directions. Do not re-derive them per screen.
   Use the helpers in `src/lib/dates.ts`; do not hand-roll date formatting.
 - Body metric `date` fields are ISO date-only strings (`YYYY-MM-DD`).
 
-### 5. Sync rules (for when sync is built — steps 9 and 10)
+### 5. Sync rules
 
 - Record IDs are UUIDs generated on the client with `crypto.randomUUID`, so a
   record is valid before the server has ever seen it. See `src/lib/ids.ts`.
@@ -78,11 +78,32 @@ both directions. Do not re-derive them per screen.
 - **Deletes are soft.** Set `deleted_at`; never remove the row, or the delete will
   not propagate. Every query must filter `deleted_at == null`.
 - Every mutation is also appended to a local `outbox` table with a sequence number.
+  The outbox records WHAT changed, not how: push reads the current row out of
+  Dexie and upserts the whole thing. Replaying the queued patch would blank every
+  column it did not mention, since patches are partial.
 - Conflict resolution is last-write-wins on `updated_at`. Because finished sets
   are immutable, genuine conflicts can only occur on routines and settings.
 - `last_synced_at` lives in settings and is the only cursor the pull needs.
 - `user_id` is null on local rows until magic-link sign-in exists; it is
   backfilled once at sign-in.
+
+## Sync lives behind a wall
+
+`src/sync/` is the only place that talks to Supabase, and `scripts/boundaries.test.ts`
+fails the build if that slips:
+
+- nothing under `src/features/` may construct a Supabase client
+- `src/features/workout/` may not import `@/sync` at all — the logging path must
+  never know the network exists
+- `src/db/` may not import `@/sync` either
+- only `SyncSection.tsx` reaches sync, for signing in and reading status
+
+Signing in is the one deliberate, user-initiated wait in the app. Everything else
+observes a status store and carries on.
+
+The Docker daemon is unavailable in the build environment, so push and pull are
+tested against a stand-in client and `fake-indexeddb`. The wipe-and-restore round
+trip against a live project has to be run by hand.
 
 ## Writes go through one place
 

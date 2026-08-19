@@ -1,0 +1,57 @@
+# Keeps the free-tier Supabase project awake.
+#
+# A free project pauses after seven days with no database activity and needs a
+# manual restore from the dashboard. Training three or four times a week keeps it
+# awake by itself; a fortnight away would not. GitHub Actions rather than a
+# Vercel cron, because the free Vercel plan is stingy with cron jobs and the repo
+# is already here.
+#
+# A paused project loses no data and the app keeps working offline regardless, so
+# this is an annoyance rather than a risk.
+name: Supabase keepalive
+
+on:
+  schedule:
+    # 06:14 UTC daily. Off the hour on purpose — scheduled jobs at :00 queue
+    # behind everyone else's and can be dropped entirely under load.
+    - cron: '14 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write one row and prune anything older than a week
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # Service role, because the keepalive table is deliberately not
+          # readable or writable by the anon key. This secret lives only in
+          # GitHub Actions — never in the repo, never in Vercel, never in the
+          # app bundle.
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "Supabase secrets are not set; nothing to ping yet."
+            exit 0
+          fi
+
+          echo "Writing keepalive row…"
+          curl --fail --silent --show-error \
+            -X POST "${SUPABASE_URL}/rest/v1/keepalive" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d '{}'
+
+          cutoff="$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
+          echo "Pruning rows older than ${cutoff}…"
+          curl --fail --silent --show-error \
+            -X DELETE "${SUPABASE_URL}/rest/v1/keepalive?pinged_at=lt.${cutoff}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Prefer: return=minimal"
+
+          echo "Done."
