@@ -89,6 +89,12 @@ function score(
   if (slot.role === 'primary') {
     total += exercise.is_compound ? 6 : 0;
     total += exercise.fatigue_cost;
+    // The lift a session is built around is usually a barbell one: it loads in
+    // the smallest increments, which is what the progression engine works in.
+    // Where there is no barbell this simply has no effect.
+    if (slot.compoundOnly && (exercise.equipment === 'barbell' || exercise.equipment === 'ez_bar')) {
+      total += 8;
+    }
   } else if (slot.role === 'accessory') {
     total += exercise.is_compound ? 0 : 4;
     total += 5 - exercise.fatigue_cost;

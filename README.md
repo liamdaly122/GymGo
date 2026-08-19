@@ -25,10 +25,12 @@ for backup and sync, and is not required to log workouts.
 | `npm run preview` | Serve the production build, service worker and all |
 | `npm run test` | Unit and integration tests over the domain rules and the database |
 | `npm run test:e2e` | Drives a real browser through the whole app against `npm run dev` |
+| `npm run test:plans` | Drives the plan selector end to end against `npm run dev` |
 | `npm run test:offline` | Installs the service worker, cuts the network, logs a workout — run against `npm run preview` |
 | `npm run typecheck` | Types only |
 | `npm run seed:build` | Rebuild the seeded exercise database from the vendored dataset |
 | `npm run seed:check` | Assert every seeded exercise has a valid movement pattern |
+| `npm run templates:check` | Assert every plan the selector can offer is actually buildable |
 | `npm run icons:build` | Regenerate PWA icons from `assets/*.svg` |
 
 ## What is built
@@ -44,6 +46,11 @@ Build-order steps 1 to 8 from the brief — the local-only app:
 - [x] Rest timer and screen wake lock
 - [x] PWA manifest, icons, offline service worker
 - [x] Export to JSON and CSV, import from JSON
+
+Plus, brought forward from step 13:
+
+- [x] Pre-built plan selector — goal, split and days, built from your gym's
+      equipment and saved as ordinary editable routines
 
 Still to come: Supabase sync, Pro mode and advanced techniques, the progression
 engine, the smart generator, charts.

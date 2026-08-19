@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import { useSettings } from '@/db/queries';
@@ -15,6 +15,7 @@ type Status = { tone: 'ok' | 'error'; message: string } | null;
 
 export default function SettingsScreen() {
   const settings = useSettings();
+  const navigate = useNavigate();
   const fileInput = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<Status>(null);
   const [busy, setBusy] = useState(false);
@@ -161,6 +162,9 @@ export default function SettingsScreen() {
         </p>
 
         <div className="grid gap-2">
+          <Button onClick={() => void navigate('/exercises')}>
+            Browse all exercises
+          </Button>
           <Button disabled={busy} onClick={() => void handleExportJson()}>
             Export everything as JSON
           </Button>

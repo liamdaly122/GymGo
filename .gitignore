@@ -16,3 +16,6 @@ coverage
 
 # Smoke test screenshots
 e2e/*.png
+
+# TypeScript incremental build state
+*.tsbuildinfo

@@ -14,6 +14,7 @@ import { db } from './db';
 import {
   SETTINGS_ID,
   type Exercise,
+  type Plan,
   type Routine,
   type RoutineExercise,
   type Settings,
@@ -25,6 +26,7 @@ import {
 import { newId } from '@/lib/ids';
 import { nowIso } from '@/lib/dates';
 import type { Readiness, SetType, Technique } from '@/domain/types';
+import type { GeneratedPlan } from '@/domain/programmes/plan';
 
 /** Thrown when something tries to edit a workout that has already been finished. */
 export class ImmutableWorkoutError extends Error {
@@ -516,4 +518,89 @@ export async function moveRoutineExercise(
   for (const [position, row] of reordered.entries()) {
     await enqueue('routine_exercises', row.id, 'put', { position, updated_at: now });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Plans
+// ---------------------------------------------------------------------------
+
+/**
+ * Writes a generated plan out as ordinary routines.
+ *
+ * "Ordinary" is the important word. A generated routine is the same kind of row
+ * as one built by hand, so it edits the same way, starts the same way, and
+ * copies into `workout_exercises` the same way. Nothing about this feature can
+ * reach a finished workout.
+ *
+ * Rows are built up front and written in one transaction rather than looping
+ * through `addExerciseToRoutine`, which would re-query siblings for every
+ * exercise — roughly forty round trips for a six-day plan.
+ */
+export async function createRoutinesFromPlan(
+  plan: GeneratedPlan,
+  options: { namePrefix?: string } = {},
+): Promise<{ planId: string; routineIds: string[] }> {
+  const prefix = options.namePrefix ?? `${plan.goal.label} · ${plan.split.label}`;
+
+  const routines: Routine[] = [];
+  const routineExercises: RoutineExercise[] = [];
+
+  for (const session of plan.sessions) {
+    const routine: Routine = {
+      id: newId(),
+      name: `${prefix} — ${session.name}`,
+      notes: null,
+      archived: false,
+      generated_from_plan_id: null,
+      ...freshSyncFields(),
+    };
+    routines.push(routine);
+
+    for (const [position, entry] of session.exercises.entries()) {
+      routineExercises.push({
+        id: newId(),
+        routine_id: routine.id,
+        exercise_id: entry.exercise.id,
+        position,
+        superset_group: null,
+        technique: 'straight',
+        target_sets: entry.prescription.sets,
+        rep_range_low: entry.prescription.repLow,
+        rep_range_high: entry.prescription.repHigh,
+        target_rir: entry.prescription.targetRir,
+        tempo: null,
+        rest_seconds: entry.prescription.restSeconds,
+        ...freshSyncFields(),
+      });
+    }
+  }
+
+  const planRow: Plan = {
+    id: newId(),
+    name: prefix,
+    goal: plan.goal.profile,
+    days_per_week: plan.days,
+    // Blocks are not tracked yet. The fields exist so step 13 can pick this up
+    // without a migration; week 1 of 1 is an honest placeholder meanwhile.
+    block_weeks: 1,
+    current_week: 1,
+    started_at: nowIso(),
+    routine_ids: routines.map((routine) => routine.id),
+    ...freshSyncFields(),
+  };
+
+  // Link each routine back, so a routine can say where it came from.
+  for (const routine of routines) routine.generated_from_plan_id = planRow.id;
+
+  await db.transaction('rw', db.plans, db.routines, db.routine_exercises, db.outbox, async () => {
+    await db.plans.add(planRow);
+    await db.routines.bulkAdd(routines);
+    if (routineExercises.length > 0) await db.routine_exercises.bulkAdd(routineExercises);
+  });
+
+  await enqueue('plans', planRow.id, 'put', planRow);
+  for (const routine of routines) await enqueue('routines', routine.id, 'put', routine);
+  for (const row of routineExercises) await enqueue('routine_exercises', row.id, 'put', row);
+
+  return { planId: planRow.id, routineIds: routines.map((routine) => routine.id) };
 }

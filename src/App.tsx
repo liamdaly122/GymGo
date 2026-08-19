@@ -10,6 +10,9 @@ import WorkoutDetailScreen from './features/history/WorkoutDetailScreen';
 import RoutinesScreen from './features/routines/RoutinesScreen';
 import RoutineEditorScreen from './features/routines/RoutineEditorScreen';
 import SettingsScreen from './features/settings/SettingsScreen';
+import PlansScreen from './features/plans/PlansScreen';
+import SplitPickerScreen from './features/plans/SplitPickerScreen';
+import PlanPreviewScreen from './features/plans/PlanPreviewScreen';
 
 export default function App() {
   const { state, error } = useAppInit();
@@ -47,6 +50,10 @@ export default function App() {
           <Route path="/routines/:routineId" element={<RoutineEditorScreen />} />
           <Route path="/history" element={<HistoryScreen />} />
           <Route path="/history/:workoutId" element={<WorkoutDetailScreen />} />
+          <Route path="/plans" element={<PlansScreen />} />
+          <Route path="/plans/:goalId" element={<SplitPickerScreen />} />
+          <Route path="/plans/:goalId/:splitId" element={<PlanPreviewScreen />} />
+          {/* The A-Z browse still exists, just not as a tab of its own. */}
           <Route path="/exercises" element={<ExerciseLibraryScreen />} />
           <Route path="/exercises/:exerciseId" element={<ExerciseDetailScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />

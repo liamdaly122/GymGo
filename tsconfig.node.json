@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2023"],
+    "lib": [
+      "ES2023"
+    ],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -11,7 +13,19 @@
     "moduleDetection": "force",
     "noEmit": true,
     "strict": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    },
+    "noUncheckedIndexedAccess": true
   },
-  "include": ["vite.config.ts", "scripts/**/*.ts"]
+  "include": [
+    "vite.config.ts",
+    "scripts/**/*.ts"
+  ]
 }

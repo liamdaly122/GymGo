@@ -102,6 +102,33 @@ plus a hand-written override table, and it **must be populated for every
 exercise** — it is what makes both the generator and swap suggestions work.
 `npm run seed:check` fails the build if any seeded exercise lacks a valid pattern.
 
+## Pre-built plans
+
+`src/domain/programmes/` turns a goal, a split and a number of days into a week
+of sessions. All pure — the database layer writes the result out as ordinary
+routines, which is what keeps this feature clear of the immutability rule.
+
+- **Six goals, three engines.** Build muscle, Get lean and Lose weight run the
+  same programme. Training in a deficit uses the same lifting; the diet does the
+  fat loss. The app says so on screen rather than inventing a different split.
+  Fat-loss goals shorten rest, which is a real difference.
+- **Splits are gated by days per week.** There is no such thing as a two-day bro
+  split. `daysSupported` decides what the selector may offer.
+- **Templates are movement-pattern slots, never named exercises.** One template
+  serves a commercial gym and a garage with dumbbells. Hard-coding exercise ids
+  would break on a reseed and hand a home lifter a plan they cannot perform.
+- **Filling is deterministic and degrades.** Same seed, same plan. A slot the
+  gym cannot fill is reported, never fabricated and never thrown — a
+  dumbbell-only gym genuinely has no hamstring isolation.
+- **`staples.ts` is what stops plans looking mad.** Without it every variant
+  ranks the same and the tiebreak picks at random, so plans open with a Barbell
+  Guillotine Bench Press. Curated list, keyed by the dataset's stable slug, same
+  override pattern as movement patterns.
+
+`npm run templates:check` walks all 216 goal/split/day combinations across four
+gym profiles. A commercial gym must fill everything; a constrained gym may rule
+combinations out but must still leave one workable option at every day count.
+
 ## Security
 
 - No secret ever enters the repo. Keys live in `.env.local` (gitignored) and in

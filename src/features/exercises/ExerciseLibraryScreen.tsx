@@ -31,6 +31,9 @@ export default function ExerciseLibraryScreen() {
 
   return (
     <Screen>
+      <Link to="/plans" className="mb-3 inline-block text-xs text-muted">
+        ← Plans
+      </Link>
       <ScreenTitle
         action={
           <span className="text-xs text-muted">
