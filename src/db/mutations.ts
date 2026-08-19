@@ -27,6 +27,8 @@ import { newId } from '@/lib/ids';
 import { nowIso } from '@/lib/dates';
 import type { Readiness, SetType, Technique } from '@/domain/types';
 import type { GeneratedPlan } from '@/domain/programmes/plan';
+import { DEFAULT_BLOCK_WEEKS, setsForWeek, weekModifier } from '@/domain/programmes/block';
+import { buildSchedule, currentWeek } from '@/domain/schedule';
 
 /** Thrown when something tries to edit a workout that has already been finished. */
 export class ImmutableWorkoutError extends Error {
@@ -112,6 +114,36 @@ export async function startFreestyleWorkout(options: {
  * reference, which is what makes editing a routine afterwards unable to change
  * a session already performed. Do not "optimise" this into a join.
  */
+/**
+ * Which week of the block the plan is actually in.
+ *
+ * Derived from the calendar rather than read from `current_week`, so a counter
+ * that was never bumped — a crash, a skipped week, an import — cannot silently
+ * hold the whole block at week 1. `current_week` is kept as a cache for display
+ * and refreshed here.
+ */
+async function resolvePlanWeek(plan: Plan): Promise<number> {
+  const routines = await db.routines.bulkGet(plan.routine_ids);
+  const routineNames = new Map(
+    routines.filter(Boolean).map((routine) => [routine!.id, routine!.name]),
+  );
+  const workouts = (await db.workouts.where({ plan_id: plan.id }).toArray()).filter(
+    (workout) => workout.deleted_at === null,
+  );
+
+  const schedule = buildSchedule({ plan, routineNames, workouts });
+  const week = schedule.length > 0 ? currentWeek(schedule) : plan.current_week;
+
+  if (week !== plan.current_week) {
+    await db.plans.update(plan.id, {
+      current_week: week,
+      phase_name: weekModifier(week, plan.block_weeks).label,
+      updated_at: nowIso(),
+    });
+  }
+  return week;
+}
+
 export async function startWorkoutFromRoutine(
   routineId: string,
   options: { gymId?: string | null; readiness?: Readiness | null } = {},
@@ -130,12 +162,13 @@ export async function startWorkoutFromRoutine(
     ? await db.plans.get(routine.generated_from_plan_id)
     : undefined;
   const sessionIndex = plan ? plan.routine_ids.indexOf(routineId) : -1;
+  const week = plan ? await resolvePlanWeek(plan) : null;
 
   const workout: Workout = {
     id: newId(),
     routine_id: routineId,
     plan_id: plan?.id ?? null,
-    plan_week: plan?.current_week ?? null,
+    plan_week: week,
     plan_session_index: sessionIndex >= 0 ? sessionIndex : null,
     gym_id: options.gymId ?? null,
     started_at: nowIso(),
@@ -165,9 +198,14 @@ export async function startWorkoutFromRoutine(
    * count for nothing until ticked, and finishWorkout discards any left
    * untouched, so an abandoned plan never becomes fake history.
    */
+  // A block week reshapes the session: week 3 adds two sets to every exercise,
+  // the deload halves them. Without this the block would be five identical weeks.
+  const modifier = plan && week ? weekModifier(week, plan.block_weeks) : null;
+
   const plannedSets: WorkoutSet[] = copied.flatMap((we, index) => {
     const source = routineExercises[index];
-    const targetSets = Math.max(1, source?.target_sets ?? 1);
+    const base = Math.max(1, source?.target_sets ?? 1);
+    const targetSets = modifier ? setsForWeek(base, modifier) : base;
     return Array.from({ length: targetSets }, (_unused, setIndex) => ({
       id: newId(),
       workout_exercise_id: we.id,
@@ -176,7 +214,7 @@ export async function startWorkoutFromRoutine(
       type: 'working' as const,
       weight_kg: 0,
       reps: 0,
-      rir: source?.target_rir ?? null,
+      rir: modifier?.targetRir ?? source?.target_rir ?? null,
       is_amrap: false,
       completed: false,
       completed_at: null,
@@ -611,15 +649,13 @@ export async function createRoutinesFromPlan(
     name: prefix,
     goal: plan.goal.profile,
     days_per_week: plan.days,
-    // Blocks are not tracked yet. The fields exist so step 13 can pick this up
-    // without a migration; week 1 of 1 is an honest placeholder meanwhile.
-    block_weeks: 1,
+    block_weeks: DEFAULT_BLOCK_WEEKS,
     current_week: 1,
     started_at: nowIso(),
     routine_ids: routines.map((routine) => routine.id),
     training_days: options.trainingDays ?? defaultTrainingDays(plan.days),
-    phase_name: null,
-    deload_week: null,
+    phase_name: weekModifier(1, DEFAULT_BLOCK_WEEKS).label,
+    deload_week: DEFAULT_BLOCK_WEEKS,
     completed_at: null,
     ...freshSyncFields(),
   };

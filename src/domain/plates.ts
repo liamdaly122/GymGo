@@ -193,3 +193,56 @@ export function formatPlateLoad(load: PlateLoad): string {
   if (load.perSide.length === 0) return `${load.barWeight}kg bar, empty`;
   return `${load.barWeight}kg bar + ${load.perSide.join(' + ')} per side`;
 }
+
+/**
+ * The next weight up that this equipment can actually make.
+ *
+ * Needed because an increment can be smaller than the equipment's own step: a
+ * 1.25kg bump on a cable stack that moves in 5kg plates rounds straight back to
+ * where you started, and progression stalls for ever without ever saying so.
+ */
+export function nextLoadableAbove(weight: number, profile: LoadingProfile): number {
+  if (profile.mode === 'free') return weight + 1.25;
+
+  if (profile.mode === 'fixed_step') {
+    const step = profile.step ?? DEFAULT_STACK_STEP_KG;
+    return Math.floor(weight / step + 1e-9) * step + step;
+  }
+
+  const bar = profile.barWeight ?? 20;
+  const plates = profile.plates ?? [];
+  if (plates.length === 0) return bar;
+
+  const smallest = Math.min(...plates.filter((plate) => plate > 0));
+  const perSideNow = Math.max(0, (weight - bar) / 2);
+  const reachable = reachablePerSide(plates, perSideNow + smallest * 2);
+
+  const current = toGrid(perSideNow);
+  let best = Infinity;
+  for (const value of reachable) {
+    if (value > current && value < best) best = value;
+  }
+  return Number.isFinite(best) ? bar + fromGrid(best) * 2 : weight;
+}
+
+/** The next weight down this equipment can make. Used to guarantee a deload lands. */
+export function nextLoadableBelow(weight: number, profile: LoadingProfile): number {
+  if (profile.mode === 'free') return Math.max(0, weight - 1.25);
+
+  if (profile.mode === 'fixed_step') {
+    const step = profile.step ?? DEFAULT_STACK_STEP_KG;
+    return Math.max(step, Math.ceil(weight / step - 1e-9) * step - step);
+  }
+
+  const bar = profile.barWeight ?? 20;
+  const plates = profile.plates ?? [];
+  const perSideNow = Math.max(0, (weight - bar) / 2);
+  const reachable = reachablePerSide(plates, perSideNow);
+
+  const current = toGrid(perSideNow);
+  let best = -1;
+  for (const value of reachable) {
+    if (value < current && value > best) best = value;
+  }
+  return best >= 0 ? bar + fromGrid(best) * 2 : bar;
+}

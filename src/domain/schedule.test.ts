@@ -189,3 +189,32 @@ describe('the week strip', () => {
     expect(weekStrip(new Date(2026, 7, 6), 0)[0]!.getDay()).toBe(0);
   });
 });
+
+describe('a block started mid-week', () => {
+  /**
+   * Found on screen: creating a plan on a Wednesday immediately showed a missed
+   * Monday, because week 1 was anchored to the start of the calendar week.
+   */
+  it('has no sessions before the day it was created', () => {
+    // Started Wednesday 5 August, trains Monday and Thursday.
+    const plan = makePlan({ started_at: '2026-08-05T09:00:00.000Z' });
+    const schedule = build(plan, [], new Date(2026, 7, 5));
+    expect(schedule.every((session) => session.date >= '2026-08-05')).toBe(true);
+    expect(schedule.some((session) => session.status === 'missed')).toBe(false);
+  });
+
+  it('still runs the full number of weeks', () => {
+    const plan = makePlan({ started_at: '2026-08-05T09:00:00.000Z' });
+    const schedule = build(plan, [], new Date(2026, 7, 5));
+    expect(new Set(schedule.map((session) => session.week)).size).toBe(5);
+  });
+
+  it('keeps a session that was actually trained before the start date', () => {
+    const plan = makePlan({ started_at: '2026-08-05T09:00:00.000Z' });
+    const workouts = [
+      makeWorkout({ plan_id: 'plan-1', plan_week: 1, plan_session_index: 0 }),
+    ];
+    const schedule = build(plan, workouts as never, new Date(2026, 7, 6));
+    expect(schedule.some((session) => session.status === 'done')).toBe(true);
+  });
+});

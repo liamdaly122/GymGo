@@ -92,7 +92,8 @@ describe('the deload rule', () => {
     // 120 x 0.9 = 108, rounded down to something the bar can make.
     expect(suggestion.weight_kg).toBeLessThanOrEqual(108);
     expect(suggestion.weight_kg).toBeGreaterThan(100);
-    expect(suggestion.reason).toMatch(/10% off/);
+    expect(suggestion.reason).toMatch(/short of 5 reps twice/i);
+    expect(suggestion.reason).toMatch(/build back up/i);
   });
 
   it('does not deload after a single bad session', () => {
@@ -241,5 +242,61 @@ describe('every suggestion explains itself', () => {
       expect(suggestion.reason.length).toBeGreaterThan(15);
       expect(suggestion.reason).toMatch(/[.!]$/);
     }
+  });
+});
+
+/**
+ * Found by driving the real app: on a cable stack that moves in 5kg plates, a
+ * 1.25kg increment rounded straight back to the weight you already lifted. The
+ * suggestion read "Add 1.25kg" next to an unchanged number, and progression
+ * would have stalled for ever on every machine and cable lift without once
+ * saying so.
+ */
+describe('coarse equipment', () => {
+  const cable = { mode: 'fixed_step' as const, step: 5 };
+
+  it('raises the increment to the equipment\'s own step rather than stalling', () => {
+    const suggestion = suggestNextSet({
+      exercise: curl,
+      repRange: RANGE,
+      loading: cable,
+      history: [session([{ weight: 100, reps: 8 }, { weight: 100, reps: 8 }])],
+    })!;
+    expect(suggestion.kind).toBe('add_weight');
+    expect(suggestion.weight_kg).toBeGreaterThan(100);
+    expect(suggestion.weight_kg).toBe(105);
+  });
+
+  it('never claims a jump it did not make', () => {
+    const suggestion = suggestNextSet({
+      exercise: curl,
+      repRange: RANGE,
+      loading: cable,
+      history: [session([{ weight: 100, reps: 8 }, { weight: 100, reps: 8 }])],
+    })!;
+    const claimed = /Add ([\d.]+)kg/.exec(suggestion.reason);
+    expect(claimed, 'the reason should state the increment').not.toBeNull();
+    expect(Number(claimed![1])).toBe(suggestion.weight_kg - 100);
+  });
+
+  it('makes a deload actually land lighter on a coarse stack', () => {
+    const suggestion = suggestNextSet({
+      exercise: curl,
+      repRange: RANGE,
+      loading: cable,
+      history: [session([{ weight: 50, reps: 3 }]), session([{ weight: 50, reps: 2 }])],
+    })!;
+    expect(suggestion.kind).toBe('deload');
+    expect(suggestion.weight_kg).toBeLessThan(50);
+  });
+
+  it('still adds the full increment when the bar is finer than it', () => {
+    const suggestion = suggestNextSet({
+      exercise: squat,
+      repRange: RANGE,
+      loading: BAR,
+      history: [session([{ weight: 100, reps: 8 }, { weight: 100, reps: 8 }])],
+    })!;
+    expect(suggestion.weight_kg).toBe(102.5);
   });
 });

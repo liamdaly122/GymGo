@@ -38,14 +38,24 @@ export function formatClock(ms: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
-/** "Today" / "Yesterday" / "Tue 12 Aug" — history lists, in local time. */
+/**
+ * "Today" / "Tomorrow" / "3 days ago" / "Tue 12 Aug", in local time.
+ *
+ * Handles the future as well as the past. It originally assumed the past,
+ * because history is the only thing that had dates — once the calendar started
+ * passing it upcoming sessions it rendered them as "-2 days ago".
+ */
 export function formatDayLabel(iso: string, now: Date = new Date()): string {
   const then = new Date(iso);
   if (Number.isNaN(then.getTime())) return '—';
   const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((startOfDay(now) - startOfDay(then)) / 86_400_000);
+
   if (days === 0) return 'Today';
   if (days === 1) return 'Yesterday';
-  if (days < 7) return `${days} days ago`;
+  if (days === -1) return 'Tomorrow';
+  if (days > 1 && days < 7) return `${days} days ago`;
+  // Within the coming week, the weekday name beats counting days forward.
+  if (days < -1 && days > -7) return then.toLocaleDateString('en-GB', { weekday: 'long' });
   return then.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }

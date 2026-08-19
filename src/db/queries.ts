@@ -6,10 +6,14 @@
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
-import { SETTINGS_ID, type Exercise, type Gym, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
+import { SETTINGS_ID, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
 import { personalRecords } from '@/domain/prs';
 import { summariseSession } from '@/domain/sessionSummary';
+import { blockProgress, buildSchedule, currentSession, type ScheduledSession } from '@/domain/schedule';
+import { weekModifier, type WeekModifier } from '@/domain/programmes/block';
+import { suggestNextSet, type Suggestion } from '@/domain/progression';
+import { loadingProfileFor } from '@/domain/plates';
 
 const live = <T extends { deleted_at: string | null }>(rows: T[]) =>
   rows.filter((row) => row.deleted_at === null);
@@ -253,4 +257,110 @@ export function useDefaultGym(): Gym | undefined | null {
       : undefined;
     return preferred ?? gyms.find((gym) => gym.is_default) ?? gyms[0] ?? null;
   }, []);
+}
+
+/**
+ * The plan currently being trained, if there is one.
+ *
+ * Most recent block that has not been marked finished. Only one runs at a time.
+ */
+export function useActivePlan(): Plan | undefined | null {
+  return useLiveQuery(async () => {
+    const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at === null);
+    plans.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
+    return plans[0] ?? null;
+  }, []);
+}
+
+export interface PlanScheduleView {
+  plan: Plan;
+  schedule: ScheduledSession[];
+  current: ScheduledSession | null;
+  week: WeekModifier;
+  progress: ReturnType<typeof blockProgress>;
+}
+
+/** The active block laid onto the calendar, with today's session picked out. */
+export function usePlanSchedule(): PlanScheduleView | undefined | null {
+  return useLiveQuery(async () => {
+    const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at === null);
+    plans.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
+    const plan = plans[0];
+    if (!plan) return null;
+
+    const routines = await db.routines.bulkGet(plan.routine_ids);
+    // Generated routines are named "<plan> — <session>". The calendar only needs
+    // the session part; the full name would swamp the card.
+    const routineNames = new Map(
+      routines
+        .filter(Boolean)
+        .map((routine) => [routine!.id, routine!.name.split(' — ').at(-1) ?? routine!.name]),
+    );
+    const workouts = live(await db.workouts.where({ plan_id: plan.id }).toArray());
+
+    const schedule = buildSchedule({ plan, routineNames, workouts });
+    const current = currentSession(schedule);
+
+    return {
+      plan,
+      schedule,
+      current,
+      week: weekModifier(current?.week ?? plan.current_week, plan.block_weeks),
+      progress: blockProgress(schedule),
+    };
+  }, []);
+}
+
+/**
+ * What to lift next for one exercise in the session in progress.
+ *
+ * Assembles everything the progression engine needs — history, the gym's plates,
+ * today's readiness, the block week — so no screen has to know those rules.
+ */
+export function useSetSuggestion(
+  workoutId: string | undefined,
+  exerciseId: string | undefined,
+): Suggestion | null | undefined {
+  return useLiveQuery(async () => {
+    if (!workoutId || !exerciseId) return null;
+
+    const exercise = await db.exercises.get(exerciseId);
+    const workout = await db.workouts.get(workoutId);
+    if (!exercise || !workout) return null;
+
+    const sessions = (await exerciseSessions(exerciseId)).filter(
+      (session) => session.workout_id !== workoutId,
+    );
+    if (sessions.length === 0) return null;
+
+    // Rep range comes from the routine this session was started from; a
+    // freestyle session has none, so fall back to a general hypertrophy range.
+    let repRange = { low: 8, high: 12 };
+    if (workout.routine_id) {
+      const routineExercises = live(
+        await db.routine_exercises.where({ routine_id: workout.routine_id }).toArray(),
+      );
+      const match = routineExercises.find((row) => row.exercise_id === exerciseId);
+      if (match) repRange = { low: match.rep_range_low, high: match.rep_range_high };
+    }
+
+    const gym = workout.gym_id
+      ? await db.gyms.get(workout.gym_id)
+      : (await db.gyms.toArray()).find((candidate) => candidate.is_default);
+
+    const plan = workout.plan_id ? await db.plans.get(workout.plan_id) : undefined;
+    const week =
+      plan && workout.plan_week
+        ? weekModifier(workout.plan_week, plan.block_weeks)
+        : null;
+
+    return suggestNextSet({
+      exercise,
+      repRange,
+      history: sessions,
+      loading: loadingProfileFor(exercise.equipment, gym ?? {}),
+      readiness: workout.readiness,
+      week: week ? { loadMultiplier: week.loadMultiplier, isDeload: week.isDeload } : null,
+    });
+  }, [workoutId, exerciseId]);
 }

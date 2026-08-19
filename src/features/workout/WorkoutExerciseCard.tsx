@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { WorkoutExerciseView } from '@/db/queries';
-import { usePreviousPerformance, useSettings } from '@/db/queries';
+import { usePreviousPerformance, useSetSuggestion, useSettings } from '@/db/queries';
 import { addSet, removeExerciseFromWorkout, updateSet } from '@/db/mutations';
 import { Button, Card } from '@/components/ui';
 import { formatDayLabel } from '@/lib/dates';
@@ -23,6 +23,7 @@ export default function WorkoutExerciseCard({
   workoutId: string;
 }) {
   const previous = usePreviousPerformance(entry.exercise?.id, workoutId);
+  const suggestion = useSetSuggestion(workoutId, entry.exercise?.id);
   const settings = useSettings();
   const workingSets = previous?.working_sets ?? [];
 
@@ -37,6 +38,20 @@ export default function WorkoutExerciseCard({
       const source = workingSets[index] ?? workingSets.at(-1);
       if (!source) continue;
       await updateSet(set.id, { weight_kg: source.weight_kg, reps: source.reps });
+    }
+  };
+
+  /**
+   * Accepts the suggestion into every set not yet logged.
+   *
+   * Suggestions are never applied on their own — they sit as placeholder text
+   * until you tap, so nothing you did not do can end up in your history.
+   */
+  const applySuggestion = async () => {
+    if (!suggestion) return;
+    const targets = entry.sets.filter((set) => !set.completed && set.parent_set_id === null);
+    for (const set of targets) {
+      await updateSet(set.id, { weight_kg: suggestion.weight_kg, reps: suggestion.reps });
     }
   };
 
@@ -74,6 +89,33 @@ export default function WorkoutExerciseCard({
         </p>
       ) : null}
 
+      {suggestion ? (
+        <div className="mb-2 rounded-lg border border-accent/25 bg-accent/5 px-3 py-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-wide text-accent">
+                {suggestion.kind === 'deload'
+                  ? 'Suggested — back off'
+                  : suggestion.kind === 'add_weight'
+                    ? 'Suggested — go up'
+                    : 'Suggested'}
+              </p>
+              <p className="mt-0.5 text-sm tabular-nums text-white">
+                {suggestion.weight_kg}kg × {suggestion.reps}
+              </p>
+            </div>
+            <button
+              onClick={() => void applySuggestion()}
+              className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-semibold text-ink active:bg-accent/80"
+            >
+              Use
+            </button>
+          </div>
+          {/* The brief requires every suggestion to be explainable. */}
+          <p className="mt-1.5 text-[11px] leading-snug text-muted">{suggestion.reason}</p>
+        </div>
+      ) : null}
+
       {previous ? (
         <div className="mb-2 flex items-start justify-between gap-2 rounded-lg bg-raised px-3 py-2">
           <div className="min-w-0">
@@ -84,12 +126,14 @@ export default function WorkoutExerciseCard({
               {workingSets.map((set) => formatSetSummary(set)).join(', ')}
             </p>
           </div>
-          <button
-            onClick={() => void applyLastTime()}
-            className="shrink-0 text-[11px] text-accent active:opacity-60"
-          >
-            Use
-          </button>
+          {suggestion ? null : (
+            <button
+              onClick={() => void applyLastTime()}
+              className="shrink-0 text-[11px] text-accent active:opacity-60"
+            >
+              Use
+            </button>
+          )}
         </div>
       ) : previous === null ? (
         <p className="mb-2 text-xs text-muted">First time logging this one.</p>
@@ -104,14 +148,18 @@ export default function WorkoutExerciseCard({
       </div>
 
       {entry.sets.map((set, setIndex) => {
-        const hint = set.parent_set_id === null ? workingSets[setIndex] : undefined;
+        const lastTime = set.parent_set_id === null ? workingSets[setIndex] : undefined;
+        // The suggestion is the better hint where there is one; last time's
+        // numbers fill in otherwise.
+        const weightHint = suggestion?.weight_kg ?? lastTime?.weight_kg;
+        const repsHint = suggestion?.reps ?? lastTime?.reps;
         return (
           <SetRow
             key={set.id}
             set={set}
             index={setIndex}
-            weightHint={hint?.weight_kg}
-            repsHint={hint?.reps}
+            {...(set.parent_set_id === null && weightHint !== undefined ? { weightHint } : {})}
+            {...(set.parent_set_id === null && repsHint !== undefined ? { repsHint } : {})}
             restSeconds={restSeconds}
           />
         );

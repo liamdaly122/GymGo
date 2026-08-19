@@ -88,3 +88,24 @@ export function summariseSession(input: SessionSummaryInput): SessionSummary {
     comparison,
   };
 }
+
+/**
+ * Roughly how long a session will take, in minutes.
+ *
+ * Sets times the work plus the rest that follows each one. Deliberately an
+ * estimate and labelled as such — the alternative shown in commercial apps is a
+ * calorie figure, which needs bodyweight and a MET table and is still a guess
+ * dressed up with two significant figures.
+ */
+const SECONDS_PER_WORKING_SET = 40;
+
+export function estimateDurationMinutes(
+  exercises: Array<{ sets: number; restSeconds: number }>,
+): number {
+  const seconds = exercises.reduce(
+    (total, entry) => total + entry.sets * (SECONDS_PER_WORKING_SET + entry.restSeconds),
+    0,
+  );
+  // Round to the nearest five: false precision on an estimate reads as a lie.
+  return Math.max(5, Math.round(seconds / 60 / 5) * 5);
+}

@@ -13,7 +13,7 @@ import type { Exercise } from '@/db/schema';
 import type { Readiness } from './types';
 import type { ExerciseSession } from './previousPerformance';
 import { isHeavier, isTopWorkingSet } from './sets';
-import { loadableWeight, type LoadingProfile } from './plates';
+import { loadableWeight, nextLoadableAbove, nextLoadableBelow, type LoadingProfile } from './plates';
 
 export type SuggestionKind = 'add_weight' | 'add_reps' | 'repeat' | 'deload';
 
@@ -123,30 +123,32 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
   const failures = consecutiveFailures(sessions, repRange);
   const increment = incrementFor(exercise);
 
-  let weight = lastTop.weight_kg;
+  const previousWeight = lastTop.weight_kg;
+  let weight = previousWeight;
   let reps = repRange.low;
   let kind: SuggestionKind;
-  let reason: string;
+  let goingLighter = false;
 
   if (failures >= 2) {
     // Brief rule 3: two sessions short of the bottom of the range, back off 10%.
-    weight = lastTop.weight_kg * 0.9;
+    // Floored to the next weight down so a 10% cut on a coarse machine cannot
+    // round back to the weight that was already too heavy.
+    weight = Math.min(previousWeight * 0.9, nextLoadableBelow(previousWeight, loading));
     kind = 'deload';
-    reason = `Short of ${repRange.low} reps twice running. Take 10% off and build back up.`;
+    goingLighter = true;
   } else if (everySetHitTop) {
-    // Brief rule 1: top of the range on every set, so add one increment and
-    // drop back to the bottom.
-    weight = lastTop.weight_kg + increment;
+    // Brief rule 1: top of the range on every set, so add one increment. The
+    // increment is raised to the equipment's own step where that is coarser —
+    // 1.25kg on a 5kg cable stack would otherwise round back to no change and
+    // stall progression silently.
+    weight = Math.max(previousWeight + increment, nextLoadableAbove(previousWeight, loading));
     kind = 'add_weight';
-    reason = `You hit ${repRange.high} on every set at ${formatWeight(lastTop.weight_kg)}. Add ${formatWeight(increment)}.`;
   } else if (lastTop.reps >= repRange.high) {
     kind = 'add_reps';
     reps = lastTop.reps;
-    reason = `Match ${formatWeight(lastTop.weight_kg)} on every set to earn the next jump.`;
   } else {
     kind = 'add_reps';
     reps = Math.min(repRange.high, lastTop.reps + 1);
-    reason = `Last time ${formatWeight(lastTop.weight_kg)} × ${lastTop.reps}. Go for ${reps}.`;
   }
 
   // Brief rule 5: a bad day scales the load, and only for this session.
@@ -154,22 +156,41 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
   if (input.readiness === 'low') {
     weight *= 0.9;
     scaledDown = true;
-    reason += ' Scaled down 10% because you logged low readiness.';
+    goingLighter = true;
   }
 
-  // A deload week in a block pulls the load down too.
   if (input.week?.isDeload) {
     weight *= input.week.loadMultiplier;
     scaledDown = true;
-    reason += ' Deload week — lighter on purpose.';
+    goingLighter = true;
   } else if (input.week && input.week.loadMultiplier !== 1) {
     weight *= input.week.loadMultiplier;
   }
 
   // Brief rule 2: never suggest a weight this gym cannot make. A deload errs
   // light; everything else snaps to whichever loadable weight is closest.
-  const goingLighter = kind === 'deload' || scaledDown;
   weight = loadableWeight(weight, loading, goingLighter ? { direction: 'down' } : {});
+
+  // The reason is written from the weight that actually came out, never from
+  // what was asked for, so it can never claim a jump the suggestion did not make.
+  const delta = Math.round((weight - previousWeight) * 100) / 100;
+  let reason: string;
+
+  if (kind === 'deload') {
+    reason = `Short of ${repRange.low} reps twice running. Down to ${formatWeight(weight)} and build back up.`;
+  } else if (kind === 'add_weight') {
+    reason =
+      delta > 0
+        ? `You hit ${repRange.high} on every set at ${formatWeight(previousWeight)}. Add ${formatWeight(delta)}.`
+        : `You hit ${repRange.high} on every set at ${formatWeight(previousWeight)}. Hold here and add reps.`;
+  } else if (reps === lastTop.reps) {
+    reason = `Match ${formatWeight(previousWeight)} × ${reps} on every set to earn the next jump.`;
+  } else {
+    reason = `Last time ${formatWeight(previousWeight)} × ${lastTop.reps}. Go for ${reps}.`;
+  }
+
+  if (input.readiness === 'low') reason += ' Scaled down 10% because you logged low readiness.';
+  if (input.week?.isDeload) reason += ' Deload week — lighter on purpose.';
 
   return {
     weight_kg: weight,

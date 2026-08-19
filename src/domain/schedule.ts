@@ -87,7 +87,9 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledSession[] {
     done.set(`${workout.plan_week}:${workout.plan_session_index}`, workout);
   }
 
-  const start = firstTrainingDate(new Date(plan.started_at), weekdays);
+  const startDate = new Date(plan.started_at);
+  const startIso = localIsoDate(startDate);
+  const start = firstTrainingDate(startDate, weekdays);
   // Anchor to the start of that week so week 1 covers the whole calendar week.
   const weekOneAnchor = addDays(start, -((start.getDay() - weekdays[0]! + 7) % 7));
 
@@ -100,6 +102,10 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledSession[] {
       const offsetFromAnchor = (weekday - weekOneAnchor.getDay() + 7) % 7;
       const date = addDays(weekOneAnchor, (week - 1) * 7 + offsetFromAnchor);
       const iso = localIsoDate(date);
+
+      // A block started on Wednesday has no Monday session. Without this, the
+      // day you create a plan it already shows a missed workout.
+      if (iso < startIso && !done.has(`${week}:${sessionIndex}`)) return;
 
       const workout = done.get(`${week}:${sessionIndex}`);
       const routineId = plan.routine_ids[sessionIndex];
