@@ -1,23 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { summariseSession } from './sessionSummary';
-import { makeDropSet, makeExercise, makeSet } from './testFactories';
-import type { Workout } from '@/db/schema';
+import { makeDropSet, makeExercise, makeSet, makeWorkout } from './testFactories';
 
-const workout = (overrides: Partial<Workout> = {}): Workout => ({
-  id: 'w1',
-  routine_id: null,
-  gym_id: null,
-  started_at: '2026-08-01T10:00:00.000Z',
-  finished_at: '2026-08-01T11:00:00.000Z',
-  bodyweight_kg: null,
-  readiness: null,
-  notes: null,
-  user_id: null,
-  created_at: '2026-08-01T10:00:00.000Z',
-  updated_at: '2026-08-01T11:00:00.000Z',
-  deleted_at: null,
-  ...overrides,
-});
+const workout = makeWorkout;
 
 describe('session summary', () => {
   it('reports duration, volume and set count', () => {

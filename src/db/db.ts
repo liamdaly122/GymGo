@@ -56,6 +56,32 @@ export class GymGoDB extends Dexie {
       outbox: '++seq, table_name, row_id',
       keepalive: 'id',
     });
+
+    // Version 2 adds training blocks and the calendar: a plan knows which
+    // weekdays it runs on, and a workout records which block week it belonged
+    // to. Only the two changed tables are restated; Dexie carries the rest over.
+    this.version(2)
+      .stores({
+        workouts: 'id, started_at, finished_at, routine_id, gym_id, plan_id',
+        plans: 'id, name',
+      })
+      .upgrade(async (tx) => {
+        // Existing rows predate blocks entirely, so they belong to no plan.
+        await tx.table('workouts').toCollection().modify((workout) => {
+          workout.plan_id ??= null;
+          workout.plan_week ??= null;
+          workout.plan_session_index ??= null;
+        });
+        await tx.table('plans').toCollection().modify((plan) => {
+          plan.training_days ??= [];
+          plan.phase_name ??= null;
+          plan.deload_week ??= null;
+          plan.completed_at ??= null;
+        });
+        await tx.table('settings').toCollection().modify((settings) => {
+          settings.week_starts_on ??= 1; // Monday
+        });
+      });
   }
 }
 

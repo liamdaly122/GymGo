@@ -88,6 +88,9 @@ export async function startFreestyleWorkout(options: {
   const workout: Workout = {
     id: newId(),
     routine_id: null,
+    plan_id: null,
+    plan_week: null,
+    plan_session_index: null,
     gym_id: options.gymId ?? null,
     started_at: nowIso(),
     finished_at: null,
@@ -120,9 +123,20 @@ export async function startWorkoutFromRoutine(
     .filter((re) => re.deleted_at === null)
     .sort((a, b) => a.position - b.position);
 
+  // If this routine came from a training block, record which week and which day
+  // of the rotation, so the calendar can mark it done and the progression engine
+  // knows which week's targets applied.
+  const plan = routine.generated_from_plan_id
+    ? await db.plans.get(routine.generated_from_plan_id)
+    : undefined;
+  const sessionIndex = plan ? plan.routine_ids.indexOf(routineId) : -1;
+
   const workout: Workout = {
     id: newId(),
     routine_id: routineId,
+    plan_id: plan?.id ?? null,
+    plan_week: plan?.current_week ?? null,
+    plan_session_index: sessionIndex >= 0 ? sessionIndex : null,
     gym_id: options.gymId ?? null,
     started_at: nowIso(),
     finished_at: null,
@@ -536,9 +550,26 @@ export async function moveRoutineExercise(
  * through `addExerciseToRoutine`, which would re-query siblings for every
  * exercise — roughly forty round trips for a six-day plan.
  */
+/**
+ * Spreads training days across the week rather than bunching them, so a
+ * four-day block lands Mon/Tue/Thu/Fri rather than Mon-Thu with three days off.
+ */
+export function defaultTrainingDays(daysPerWeek: number): number[] {
+  const patterns: Record<number, number[]> = {
+    1: [1],
+    2: [1, 4],
+    3: [1, 3, 5],
+    4: [1, 2, 4, 5],
+    5: [1, 2, 3, 5, 6],
+    6: [1, 2, 3, 4, 5, 6],
+    7: [0, 1, 2, 3, 4, 5, 6],
+  };
+  return patterns[Math.min(7, Math.max(1, daysPerWeek))] ?? [1, 3, 5];
+}
+
 export async function createRoutinesFromPlan(
   plan: GeneratedPlan,
-  options: { namePrefix?: string } = {},
+  options: { namePrefix?: string; trainingDays?: number[] } = {},
 ): Promise<{ planId: string; routineIds: string[] }> {
   const prefix = options.namePrefix ?? `${plan.goal.label} · ${plan.split.label}`;
 
@@ -586,6 +617,10 @@ export async function createRoutinesFromPlan(
     current_week: 1,
     started_at: nowIso(),
     routine_ids: routines.map((routine) => routine.id),
+    training_days: options.trainingDays ?? defaultTrainingDays(plan.days),
+    phase_name: null,
+    deload_week: null,
+    completed_at: null,
     ...freshSyncFields(),
   };
 

@@ -2,7 +2,7 @@
  * Builders for domain tests. Kept out of the test file so several suites can
  * share one definition of "a set" without drifting apart.
  */
-import type { Exercise, WorkoutSet } from '@/db/schema';
+import type { Exercise, Workout, WorkoutSet } from '@/db/schema';
 import type { Muscle, SetType } from './types';
 
 let counter = 0;
@@ -70,6 +70,28 @@ export function makeExercise(overrides: Partial<Exercise> = {}): Exercise {
     user_id: null,
     created_at: '2026-08-01T10:00:00.000Z',
     updated_at: '2026-08-01T10:00:00.000Z',
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
+export function makeWorkout(overrides: Partial<Workout> = {}): Workout {
+  counter += 1;
+  return {
+    id: `workout-${counter}`,
+    routine_id: null,
+    plan_id: null,
+    plan_week: null,
+    plan_session_index: null,
+    gym_id: null,
+    started_at: '2026-08-01T10:00:00.000Z',
+    finished_at: '2026-08-01T11:00:00.000Z',
+    bodyweight_kg: null,
+    readiness: null,
+    notes: null,
+    user_id: null,
+    created_at: '2026-08-01T10:00:00.000Z',
+    updated_at: '2026-08-01T11:00:00.000Z',
     deleted_at: null,
     ...overrides,
   };

@@ -54,6 +54,7 @@ function defaultSettings(gymId: string): Settings {
     default_rest_seconds: 120,
     sound_on: true,
     vibrate_on: true,
+    week_starts_on: 1,
     last_synced_at: null,
     ...syncFields(),
   };

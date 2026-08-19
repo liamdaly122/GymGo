@@ -18,7 +18,7 @@ import type {
 } from '@/domain/types';
 
 /** Bump when the shape changes in a way an exported file would not survive. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * Carried by every table so the sync layer can treat them all alike.
@@ -102,6 +102,16 @@ export interface Workout extends SyncFields {
   id: string;
   /** Null for freestyle sessions. */
   routine_id: string | null;
+  /** Set when this session came from a training block. */
+  plan_id: string | null;
+  /**
+   * Which week of the block this session belongs to, stored rather than derived
+   * from the date: train week 3's session late and a date-derived version files
+   * it under week 4.
+   */
+  plan_week: number | null;
+  /** Which day of the block's weekly rotation this was. */
+  plan_session_index: number | null;
   gym_id: string | null;
   started_at: string;
   /** Null while in progress. Non-null means finished, and therefore immutable. */
@@ -154,6 +164,17 @@ export interface Plan extends SyncFields {
   current_week: number;
   started_at: string;
   routine_ids: string[];
+  /**
+   * Weekday indices the block is trained on, 0 = Sunday. This is what turns a
+   * plan from "a week you repeat" into something that can be plotted onto dates.
+   */
+  training_days: number[];
+  /** Shown as "Week 2/5 — Build". Null before a block is under way. */
+  phase_name: string | null;
+  /** Which week of the block is the deload. Null for a block without one. */
+  deload_week: number | null;
+  /** Set when the block is finished, so a new one can start cleanly. */
+  completed_at: string | null;
 }
 
 export interface BodyMetric extends SyncFields {
@@ -174,6 +195,8 @@ export interface Settings extends SyncFields {
   default_rest_seconds: number;
   sound_on: boolean;
   vibrate_on: boolean;
+  /** 1 = Monday, 0 = Sunday. Drives where the week strip starts. */
+  week_starts_on: number;
   /** The only cursor the sync pull needs. */
   last_synced_at: string | null;
 }

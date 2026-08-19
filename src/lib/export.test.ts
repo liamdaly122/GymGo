@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EXPORT_FORMAT, ImportError, buildExport, exportFilename, parseImport, toCsv, type ExportTables } from './export';
 import { SCHEMA_VERSION } from '@/db/schema';
-import { makeDropSet, makeExercise, makeSet } from '@/domain/testFactories';
+import { makeDropSet, makeExercise, makeSet, makeWorkout } from '@/domain/testFactories';
 import type { Workout, WorkoutExercise } from '@/db/schema';
 
 const sync = {
@@ -11,17 +11,13 @@ const sync = {
   deleted_at: null,
 };
 
-const workout: Workout = {
+const workout: Workout = makeWorkout({
+  // Pinned: workoutExercise below joins to this id.
   id: 'w1',
-  routine_id: null,
-  gym_id: null,
-  started_at: '2026-08-01T10:00:00.000Z',
-  finished_at: '2026-08-01T11:00:00.000Z',
   bodyweight_kg: 82.5,
   readiness: 'normal',
   notes: 'Felt strong, back a bit tight',
-  ...sync,
-};
+});
 
 const exercise = makeExercise({ name: 'Barbell Squat', secondary_muscles: [] });
 
