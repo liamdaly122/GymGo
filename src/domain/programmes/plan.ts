@@ -9,7 +9,7 @@
 import type { Exercise } from '@/db/schema';
 import type { Equipment, ExperienceLevel } from '../types';
 import { findGoal, type TrainingGoal, type TrainingGoalId } from './goals';
-import { findSplit, sessionsFor, type Split, type SplitId } from './splits';
+import { findSplit, sessionsFor, splitsForDays, type Split, type SplitId } from './splits';
 import { template, type SessionSlot, type SessionTemplateId } from './templates';
 import { prescribe, type Prescription } from './prescribe';
 import { fillWeek } from './fill';
@@ -170,4 +170,72 @@ export function weeklySetsPerMuscle(
     }
   }
   return totals;
+}
+
+export interface PlanViability {
+  viable: boolean;
+  unfilledCount: number;
+  /** Fewest exercises any one session came out with. */
+  thinnestSession: number;
+  /** Plain-English reason when a plan is not workable at this gym. */
+  reason: string | null;
+}
+
+/** A session with fewer than this is not a session, it is a warm-up. */
+const MIN_EXERCISES_PER_SESSION = 4;
+
+/**
+ * Whether a plan is actually workable at the gym it was built for.
+ *
+ * This exists because some combinations are genuinely impossible rather than
+ * merely thin: a five-day body-part split needs isolation work for every muscle
+ * on its own day, and a garage with a barbell cannot supply chest isolation at
+ * all. Telling someone that up front beats handing them a Chest day with three
+ * exercises on it.
+ */
+export function assessPlan(plan: GeneratedPlan): PlanViability {
+  const thinnest = plan.sessions.reduce(
+    (fewest, session) => Math.min(fewest, session.exercises.length),
+    Number.POSITIVE_INFINITY,
+  );
+
+  const starved = plan.sessions.filter(
+    (session) => session.exercises.length < MIN_EXERCISES_PER_SESSION,
+  );
+
+  if (starved.length > 0) {
+    const names = starved.map((session) => session.name).join(', ');
+    return {
+      viable: false,
+      unfilledCount: plan.unfilledCount,
+      thinnestSession: thinnest,
+      reason:
+        `Your gym cannot fill ${starved.length === 1 ? 'this session' : 'these sessions'}: ` +
+        `${names}. ${plan.split.label} needs more variety of equipment than you have — ` +
+        `full body or upper/lower will work better.`,
+    };
+  }
+
+  return {
+    viable: true,
+    unfilledCount: plan.unfilledCount,
+    thinnestSession: thinnest,
+    reason: null,
+  };
+}
+
+/** Splits that are actually workable at this gym, for the day count given. */
+export function workableSplits(
+  days: number,
+  exercises: Exercise[],
+  options: BuildPlanOptions = {},
+): Array<{ splitId: SplitId; viability: PlanViability }> {
+  return splitsForDays(days).map((split) => {
+    const plan = buildPlan(
+      { goalId: 'build_muscle', splitId: split.id, days },
+      exercises,
+      options,
+    );
+    return { splitId: split.id, viability: assessPlan(plan) };
+  });
 }

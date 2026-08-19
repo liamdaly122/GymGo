@@ -14,7 +14,8 @@
     "seed:check": "tsx scripts/check-seed.ts",
     "icons:build": "tsx scripts/build-icons.ts",
     "test:e2e": "node e2e/smoke.mjs",
-    "test:offline": "node e2e/offline.mjs"
+    "test:offline": "node e2e/offline.mjs",
+    "templates:check": "tsx scripts/check-templates.ts"
   },
   "dependencies": {
     "dexie": "^4.4.5",

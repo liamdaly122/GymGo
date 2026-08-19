@@ -7,7 +7,7 @@ import { SPLITS, SUPPORTED_DAYS, sessionsFor, splitsForDays } from './splits';
 import { SESSION_TEMPLATES } from './templates';
 import { prescribe } from './prescribe';
 import { fillSession } from './fill';
-import { InvalidPlanSelectionError, buildPlan, weeklySetsPerMuscle } from './plan';
+import { InvalidPlanSelectionError, assessPlan, buildPlan, weeklySetsPerMuscle, workableSplits } from './plan';
 
 /** The real seeded library, with the sync fields the app stamps on insert. */
 const EXERCISES: Exercise[] = (seedData as unknown as Array<Record<string, unknown>>).map(
@@ -324,5 +324,45 @@ describe('building a plan', () => {
         }
       }
     }
+  });
+});
+
+describe('viability at a real gym', () => {
+  it('accepts every split at a commercial gym', () => {
+    for (const days of [2, 3, 4, 5, 6]) {
+      for (const entry of workableSplits(days, EXERCISES, { equipment: COMMERCIAL })) {
+        expect(entry.viability.viable, `${entry.splitId} at ${days} days`).toBe(true);
+      }
+    }
+  });
+
+  /**
+   * A five-day body-part split needs isolation work for every muscle on its own
+   * day, and a garage with a barbell has no chest isolation at all. Saying so up
+   * front beats handing someone a Chest day with three exercises on it.
+   */
+  it('rules out a bro split in a barbell-only garage, with a reason', () => {
+    const plan = buildPlan({ goalId: 'build_muscle', splitId: 'bro', days: 5 }, EXERCISES, {
+      equipment: ['barbell', 'bodyweight'],
+    });
+    const viability = assessPlan(plan);
+    expect(viability.viable).toBe(false);
+    expect(viability.reason).toMatch(/cannot fill/i);
+    expect(viability.reason).toMatch(/full body or upper\/lower/i);
+  });
+
+  it('still leaves a workable option at every day count in that same garage', () => {
+    for (const days of [2, 3, 4, 5, 6]) {
+      const workable = workableSplits(days, EXERCISES, { equipment: ['barbell', 'bodyweight'] })
+        .filter((entry) => entry.viability.viable);
+      expect(workable.length, `nothing workable at ${days} days`).toBeGreaterThan(0);
+    }
+  });
+
+  it('does not rule out a plan just because one accessory is missing', () => {
+    const plan = buildPlan({ goalId: 'build_muscle', splitId: 'push_pull_legs', days: 6 }, EXERCISES, {
+      equipment: DUMBBELL_HOME,
+    });
+    expect(assessPlan(plan).viable).toBe(true);
   });
 });
