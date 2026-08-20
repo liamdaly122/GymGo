@@ -26,6 +26,7 @@ export default function WorkoutExerciseCard({
   const previous = usePreviousPerformance(entry.exercise?.id, workoutId);
   const suggestion = useSetSuggestion(workoutId, entry.exercise?.id);
   const settings = useSettings();
+  const pro = settings?.mode === 'pro';
   const workingSets = previous?.working_sets ?? [];
 
   // Per-exercise rest wins over the global default: the brief's defaults are
@@ -179,6 +180,7 @@ export default function WorkoutExerciseCard({
             {...(set.parent_set_id === null && weightHint !== undefined ? { weightHint } : {})}
             {...(set.parent_set_id === null && repsHint !== undefined ? { repsHint } : {})}
             restSeconds={restSeconds}
+            pro={pro}
           />
         );
       })}

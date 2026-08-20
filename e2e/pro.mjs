@@ -1,0 +1,125 @@
+/**
+ * Pro mode: RIR on every set, and the advanced techniques the counting rules
+ * were written for. The point of the last step is that logging a drop set
+ * cannot damage the record it hangs off.
+ */
+import { chromium } from 'playwright';
+
+const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:5185/';
+const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const c = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+const p = await c.newPage();
+const errs = [];
+p.on('pageerror', e => errs.push('pageerror: ' + e.message));
+p.on('console', m => { if (m.type()==='error' && !/Failed to load resource/i.test(m.text())) errs.push('console: '+m.text()); });
+const step = async (l, fn) => { try { await fn(); console.log('  ok   '+l); } catch(e) { console.log('  FAIL '+l+': '+e.message); throw e; } };
+
+await p.goto(BASE, { waitUntil: 'networkidle' });
+await step('app loads', async () => { await p.getByRole('heading', {name:'Train'}).waitFor({timeout:40000}); });
+
+await step('beginner mode shows no RIR', async () => {
+  await p.getByRole('button', { name: 'Start empty workout' }).click();
+  await p.getByRole('button', { name: 'Add exercise' }).click();
+  await p.getByPlaceholder('Add exercise').fill('barbell bench press');
+  await p.getByRole('button', { name: /^Barbell Bench Press - Medium Grip/ }).first().click();
+  await p.getByLabel('Set 1 weight in kilograms').first().waitFor({ timeout: 20000 });
+  const body = await p.locator('body').innerText();
+  if (/\bRIR\b/.test(body)) throw new Error('beginner mode should not show RIR');
+  if (/Drop/i.test(body)) throw new Error('beginner mode should not offer drop sets');
+});
+
+await step('switching to Pro reveals RIR', async () => {
+  await p.goto(BASE + '#/settings', { waitUntil: 'networkidle' });
+  await p.getByRole('button', { name: /^Pro$/i }).first().click();
+  await p.waitForTimeout(400);
+  await p.goBack();
+  await p.waitForTimeout(800);
+  const body = await p.locator('body').innerText();
+  if (!/\bRIR\b/.test(body)) throw new Error(`Pro mode should show RIR, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
+});
+
+await step('log a 100kg top set with RIR 2', async () => {
+  await p.getByLabel('Set 1 weight in kilograms').first().fill('100');
+  await p.getByLabel('Set 1 repetitions').first().fill('5');
+  await p.getByLabel('Set 1 reps in reserve 2').first().click();
+  await p.waitForTimeout(300);
+  await p.getByLabel(/Mark set 1 done/).first().click();
+  await p.waitForTimeout(500);
+  const skip = p.getByRole('button', { name: 'Skip', exact: true });
+  if (await skip.count()) await skip.click();
+});
+
+await step('a completed working set offers the techniques', async () => {
+  const body = await p.locator('body').innerText();
+  for (const label of ['+ Drop', '+ Rest-pause', '+ Myo']) {
+    if (!body.includes(label.toUpperCase()) && !body.includes(label)) {
+      throw new Error(`expected ${label}, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
+    }
+  }
+});
+await p.screenshot({ path: 'e2e/shot-pro.png', fullPage: true });
+
+await step('adding a drop set loads it 20% lighter, on real plates', async () => {
+  await p.getByRole('button', { name: '+ Drop' }).first().click();
+  await p.waitForTimeout(700);
+  const sets = await p.evaluate(async () => {
+    const open = indexedDB.open('gymgo');
+    const db = await new Promise((res, rej) => { open.onsuccess = () => res(open.result); open.onerror = () => rej(open.error); });
+    const r = db.transaction('sets').objectStore('sets').getAll();
+    const all = await new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    return all.filter(s => s.deleted_at === null).sort((a,b) => a.set_index - b.set_index)
+      .map(s => ({ type: s.type, weight: s.weight_kg, rir: s.rir, child: s.parent_set_id !== null }));
+  });
+  console.log('       sets:', JSON.stringify(sets));
+  if (sets.length !== 2) throw new Error(`expected two sets, got ${sets.length}`);
+  if (sets[0].rir !== 2) throw new Error(`RIR did not persist, got ${sets[0].rir}`);
+  if (sets[1].type !== 'drop' || !sets[1].child) throw new Error('the second set should be a drop child');
+  if (sets[1].weight !== 80) throw new Error(`expected an 80kg drop, got ${sets[1].weight}`);
+});
+
+await step('the drop is indented and labelled, not shown as set 2', async () => {
+  const body = await p.locator('body').innerText();
+  if (!/\bD\b/.test(body)) throw new Error('the drop set should carry its D label');
+});
+
+await step('finishing leaves the 100kg record intact', async () => {
+  await p.getByLabel('Set 2 repetitions').first().fill('8');
+  await p.getByLabel(/Mark set 2 done/).first().click();
+  await p.waitForTimeout(600);
+  const skip = p.getByRole('button', { name: 'Skip', exact: true });
+  if (await skip.count()) await skip.click();
+  await p.getByRole('button', { name: 'Finish', exact: true }).click();
+  await p.getByRole('button', { name: 'Finish and save' }).click();
+  // The summary is the history detail for this session.
+  await p.waitForURL(/#\/history\//, { timeout: 15000 });
+  await p.waitForTimeout(900);
+
+  const body = await p.locator('body').innerText();
+  console.log('       summary:', body.replace(/\n/g, ' | ').slice(0, 340));
+
+  // Both sets are real work, so both are in the record of the session.
+  if (!/100/.test(body)) throw new Error('the 100kg top set is missing from the summary');
+  if (!/80/.test(body)) throw new Error('the 80kg drop is missing from the summary');
+
+  // But only one of them is a bench press personal record.
+  const records = await p.evaluate(async () => {
+    const open = indexedDB.open('gymgo');
+    const db = await new Promise((res, rej) => { open.onsuccess = () => res(open.result); open.onerror = () => rej(open.error); });
+    const get = (s) => new Promise((res, rej) => { const r = db.transaction(s).objectStore(s).getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    const sets = (await get('sets')).filter(s => s.deleted_at === null && s.completed);
+    const eligible = sets.filter(s => s.parent_set_id === null && s.type === 'working');
+    return {
+      heaviestOverall: Math.max(...sets.map(s => s.weight_kg)),
+      heaviestEligible: Math.max(...eligible.map(s => s.weight_kg)),
+      eligibleCount: eligible.length,
+    };
+  });
+  console.log('       records:', JSON.stringify(records));
+  if (records.eligibleCount !== 1) throw new Error(`only the top set is record-eligible, got ${records.eligibleCount}`);
+  if (records.heaviestEligible !== 100) throw new Error('the record should be the 100kg top set');
+});
+await p.screenshot({ path: 'e2e/shot-pro-summary.png', fullPage: true });
+
+console.log(errs.length ? '\nBrowser errors:\n' + errs.join('\n') : '\nNo browser errors.');
+await b.close();
+process.exit(errs.length ? 1 : 0);

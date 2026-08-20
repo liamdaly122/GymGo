@@ -30,6 +30,7 @@ import type { Readiness, SetType, Technique } from '@/domain/types';
 import type { GeneratedPlan } from '@/domain/programmes/plan';
 import { DEFAULT_BLOCK_WEEKS, setsForWeek, weekModifier } from '@/domain/programmes/block';
 import { buildSchedule, currentWeek } from '@/domain/schedule';
+import { loadableWeight, loadingProfileFor, nextLoadableBelow } from '@/domain/plates';
 
 /** Thrown when something tries to edit a workout that has already been finished. */
 export class ImmutableWorkoutError extends Error {
@@ -386,6 +387,140 @@ export async function addSet(
   await db.sets.add(row);
   await enqueue('sets', row.id, 'put', row);
   return row.id;
+}
+
+// ---------------------------------------------------------------------------
+// Advanced set techniques
+//
+// The counting rules for child sets are already written and tested — a 40kg
+// drop can never touch a 100kg PR. What was missing was any way to create one.
+// This is the single place child sets come from, which is what makes those
+// rules apply rather than merely exist.
+// ---------------------------------------------------------------------------
+
+/** A drop is conventionally 20% off the working weight. */
+const DROP_FRACTION = 0.8;
+
+/** The techniques that hang a continuation off a set you just finished. */
+export type ChildSetKind = 'drop' | 'rest_pause' | 'myo' | 'cluster';
+
+export class ChildOfChildError extends Error {
+  constructor() {
+    super('A drop set cannot itself carry a drop set — attach it to the working set.');
+    this.name = 'ChildOfChildError';
+  }
+}
+
+/**
+ * What a drop set should be loaded to.
+ *
+ * Rounded DOWN through the gym's actual plates: you cannot load 80.4kg, and a
+ * "drop" that rounded upward would not be one.
+ */
+async function dropWeightFor(
+  parent: WorkoutSet,
+  workoutExercise: WorkoutExercise,
+): Promise<number> {
+  // Bodyweight work carries no load, so the drop lives in the reps instead.
+  if (parent.weight_kg <= 0) return 0;
+
+  const exercise = await db.exercises.get(workoutExercise.exercise_id);
+  const workout = await db.workouts.get(workoutExercise.workout_id);
+  const gym = workout?.gym_id ? await db.gyms.get(workout.gym_id) : undefined;
+  const profile = loadingProfileFor(exercise?.equipment ?? 'other', gym ?? {});
+
+  const rounded = loadableWeight(parent.weight_kg * DROP_FRACTION, profile, { direction: 'down' });
+  if (rounded > 0 && rounded < parent.weight_kg) return rounded;
+
+  // A coarse stack or a light dumbbell can round the drop straight back onto
+  // the parent. Step down one real increment rather than log a drop that isn't.
+  const stepped = nextLoadableBelow(parent.weight_kg, profile);
+  return stepped > 0 && stepped < parent.weight_kg ? stepped : parent.weight_kg;
+}
+
+/**
+ * Hangs a continuation off a completed set.
+ *
+ * The new row sits directly beneath its parent, after any continuations the
+ * parent already has, so the card reads in the order the work was done.
+ */
+export async function addChildSet(parentSetId: string, kind: ChildSetKind): Promise<string> {
+  const parent = await db.sets.get(parentSetId);
+  if (!parent) throw new Error(`Set ${parentSetId} not found`);
+  // Nesting deeper would make "which set is the top set" ambiguous, and the
+  // counting rules depend on that question having one answer.
+  if (parent.parent_set_id !== null) throw new ChildOfChildError();
+
+  const workoutExercise = await db.workout_exercises.get(parent.workout_exercise_id);
+  if (!workoutExercise) throw new Error(`Workout exercise ${parent.workout_exercise_id} not found`);
+  await assertWorkoutEditable(workoutExercise.workout_id);
+
+  const siblings = (await db.sets.where({ workout_exercise_id: parent.workout_exercise_id }).toArray())
+    .filter((set) => set.deleted_at === null)
+    .sort((a, b) => a.set_index - b.set_index);
+
+  let position = siblings.findIndex((set) => set.id === parentSetId) + 1;
+  while (position < siblings.length && siblings[position]!.parent_set_id === parentSetId) position++;
+  const newIndex = (siblings[position - 1] ?? parent).set_index + 1;
+
+  const now = nowIso();
+  // Indices can carry gaps once sets have been deleted, so shift by value
+  // rather than by position.
+  for (const sibling of siblings.filter((set) => set.set_index >= newIndex)) {
+    const patch = { set_index: sibling.set_index + 1, updated_at: now };
+    await db.sets.update(sibling.id, patch);
+    await enqueue('sets', sibling.id, 'put', patch);
+  }
+
+  const row: WorkoutSet = {
+    id: newId(),
+    workout_exercise_id: parent.workout_exercise_id,
+    parent_set_id: parentSetId,
+    set_index: newIndex,
+    type: kind,
+    // Rest-pause, myo-reps and clusters all continue at the working weight —
+    // the technique is the short rest, not a lighter load.
+    weight_kg: kind === 'drop' ? await dropWeightFor(parent, workoutExercise) : parent.weight_kg,
+    // Reps are left blank: you log what you actually got.
+    reps: 0,
+    rir: null,
+    is_amrap: false,
+    completed: false,
+    completed_at: null,
+    ...freshSyncFields(),
+  };
+  await db.sets.add(row);
+  await enqueue('sets', row.id, 'put', row);
+  return row.id;
+}
+
+/**
+ * A back-off set: lighter volume after the top set.
+ *
+ * Top level rather than a child, because it is a set in its own right — but
+ * typed `back_off`, so it counts toward volume and never toward a record.
+ */
+export async function addBackOffSet(topSetId: string, fraction = 0.85): Promise<string> {
+  const top = await db.sets.get(topSetId);
+  if (!top) throw new Error(`Set ${topSetId} not found`);
+
+  const workoutExercise = await db.workout_exercises.get(top.workout_exercise_id);
+  if (!workoutExercise) throw new Error(`Workout exercise ${top.workout_exercise_id} not found`);
+
+  const exercise = await db.exercises.get(workoutExercise.exercise_id);
+  const workout = await db.workouts.get(workoutExercise.workout_id);
+  const gym = workout?.gym_id ? await db.gyms.get(workout.gym_id) : undefined;
+  const profile = loadingProfileFor(exercise?.equipment ?? 'other', gym ?? {});
+  const weight =
+    top.weight_kg > 0
+      ? loadableWeight(top.weight_kg * fraction, profile, { direction: 'down' })
+      : 0;
+
+  return addSet(top.workout_exercise_id, {
+    weight_kg: weight,
+    reps: top.reps,
+    type: 'back_off',
+  });
 }
 
 export async function updateSet(

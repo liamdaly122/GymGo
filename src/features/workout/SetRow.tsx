@@ -1,6 +1,6 @@
 import type { WorkoutSet } from '@/db/schema';
 import { NumberField } from '@/components/ui';
-import { completeSet, removeSet, updateSet } from '@/db/mutations';
+import { addChildSet, completeSet, removeSet, updateSet } from '@/db/mutations';
 import { isChildSet } from '@/domain/sets';
 import { useRestTimer } from './RestTimer';
 
@@ -12,6 +12,19 @@ const TYPE_LABELS: Record<string, string> = {
   myo: 'M',
   cluster: 'C',
   back_off: 'B',
+};
+
+/**
+ * How long a continuation actually rests for.
+ *
+ * A rest-pause is 15-20 seconds, not a full inter-set rest — running the normal
+ * timer would turn it into an ordinary set and lose the whole point of the
+ * technique.
+ */
+const CONTINUATION_REST_SECONDS: Record<string, number> = {
+  rest_pause: 20,
+  myo: 15,
+  cluster: 20,
 };
 
 /**
@@ -27,6 +40,7 @@ export default function SetRow({
   weightHint,
   repsHint,
   restSeconds,
+  pro = false,
 }: {
   set: WorkoutSet;
   index: number;
@@ -36,6 +50,8 @@ export default function SetRow({
   repsHint?: number;
   /** How long to rest after this set. Omitted for child sets, which run straight on. */
   restSeconds?: number;
+  /** Pro mode adds RIR and the drop / rest-pause attachments. */
+  pro?: boolean;
 }) {
   const child = isChildSet(set);
   const label = TYPE_LABELS[set.type] ?? '';
@@ -46,11 +62,17 @@ export default function SetRow({
     await completeSet(set.id, next);
     if (!next) return;
     onCompleted?.(set);
-    // Drop sets and rest-pause clusters run straight on; only a top set rests.
-    if (!child && set.type !== 'warmup' && restSeconds) rest.start(restSeconds);
+    if (child) {
+      // A continuation rests briefly rather than not at all — 20 seconds is the
+      // technique, a full three minutes would just be another set.
+      const brief = CONTINUATION_REST_SECONDS[set.type];
+      if (brief) rest.start(brief);
+      return;
+    }
+    if (set.type !== 'warmup' && restSeconds) rest.start(restSeconds);
   };
 
-  return (
+  const row = (
     <div className={`flex items-center gap-2 py-1.5 ${child ? 'pl-6' : ''}`}>
       <span
         className={`w-6 shrink-0 text-center text-xs tabular-nums ${
@@ -105,5 +127,66 @@ export default function SetRow({
         </svg>
       </button>
     </div>
+  );
+
+  if (!pro) return row;
+
+  const attachable = set.completed && !child && set.type === 'working';
+  const indent = child ? 'pl-14' : 'pl-8';
+
+  return (
+    <div>
+      {row}
+      {/* RIR and the attachments live on a second line rather than in the row
+          itself: a third input would squeeze weight and reps below a usable tap
+          target on a phone, and both are things you decide after the set. */}
+      {set.type !== 'warmup' ? (
+        <div className={`flex items-center gap-1.5 pb-1.5 ${indent}`}>
+          <span className="w-7 text-[10px] uppercase tracking-wide text-muted">RIR</span>
+          {RIR_OPTIONS.map((value) => (
+            <button
+              key={value}
+              // Tapping the current value again clears it: RIR is optional, and
+              // a guess you no longer stand behind should be removable.
+              onClick={() => void updateSet(set.id, { rir: set.rir === value ? null : value })}
+              aria-label={`Set ${index + 1} reps in reserve ${value}`}
+              aria-pressed={set.rir === value}
+              className={`h-7 w-7 rounded-full text-[11px] tabular-nums transition-colors ${
+                set.rir === value
+                  ? 'bg-accent font-medium text-ink'
+                  : 'border border-line bg-raised text-muted'
+              }`}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Their own row rather than trailing the RIR chips: three labels plus
+          five chips wrap raggedly at 390px, which reads as broken rather than
+          dense. */}
+      {attachable ? (
+        <div className={`flex flex-wrap gap-1.5 pb-2 ${indent}`}>
+          <AttachButton label="Drop" onClick={() => void addChildSet(set.id, 'drop')} />
+          <AttachButton label="Rest-pause" onClick={() => void addChildSet(set.id, 'rest_pause')} />
+          <AttachButton label="Myo" onClick={() => void addChildSet(set.id, 'myo')} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** 0 means failure, 4 means four left in the tank. Past that nobody estimates. */
+const RIR_OPTIONS = [0, 1, 2, 3, 4];
+
+function AttachButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-full border border-line bg-raised px-2.5 py-1 text-[11px] text-muted active:bg-line"
+    >
+      + {label}
+    </button>
   );
 }
