@@ -70,6 +70,23 @@ These rules live in exactly one place each — `src/domain/volume.ts`,
 `src/domain/prs.ts`, `src/domain/previousPerformance.ts` — and are unit tested in
 both directions. Do not re-derive them per screen.
 
+Child sets are created in exactly one place too: `addChildSet` in
+`src/db/mutations.ts`. That is what makes the rules apply rather than merely
+exist — for two years of this file's history they governed nothing, because
+nothing could create a child set. Nesting a child under a child is refused: the
+rules depend on "which set is the top set" having one answer.
+
+Drop weights round **down** through the gym's actual plates. You cannot load
+80.4kg, and a drop that rounded upward would not be one. Two edge cases are
+deliberate: a coarse cable stack or a light dumbbell steps down one real
+increment when 80% rounds back onto the parent, and a bare bar is left alone
+because nothing lighter can be loaded.
+
+Rest after a superset is `src/domain/supersets.ts`, and it is the same shape of
+rule: rest runs after an exercise unless a **later** exercise shares its group.
+Grouping is stored on the rows, not derived from adjacency, so removing
+something from between a pair does not silently dissolve it.
+
 ### 4. Units and dates
 
 - Weights are stored in **kg as numbers**. Never strings, never lbs in the store.
@@ -131,6 +148,23 @@ plus a hand-written override table, and it **must be populated for every
 exercise** — it is what makes both the generator and swap suggestions work.
 `npm run seed:check` fails the build if any seeded exercise lacks a valid pattern.
 
+## Gyms
+
+`gyms.equipment_available` is what plan filling, plan viability warnings, swap
+suggestions and plate rounding all read. Until there was an editor, every gym
+claimed to own everything and all four were inert for anyone not in a fully
+equipped commercial gym.
+
+A new gym starts at bodyweight only: ticking what you own is quicker and more
+honest than un-ticking what you do not. Deleting is soft and refuses the last
+gym, because plans and plate rounding would have nothing left to work from; the
+tombstone also gives up `is_default`, or it would win the fallback in
+`defaultGymId` the moment a pull brought it back.
+
+`startFreestyleWorkout` and `startWorkoutFromRoutine` stamp `gym_id`, so the
+progression engine rounds to the plates the session was actually performed with
+rather than a fallback.
+
 ## Pre-built plans
 
 `src/domain/programmes/` turns a goal, a split and a number of days into a week
@@ -181,6 +215,16 @@ Three layers, each earning its place:
 - `npm run test:offline` — installs the service worker against a production
   build, cuts the network, then logs a workout. This is the gym-basement case
   the whole architecture exists for, so it is not optional before a release.
+
+The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
+`test:plans`, `test:swap`, `test:gyms` and `test:pro`. They expect a preview
+server on `127.0.0.1:5185` — `test:offline` runs its own on 5190. Each takes a
+`BASE_URL` override.
+
+**`innerText` respects CSS `text-transform`.** The `.eyebrow` class uppercases,
+so a check for `/Resting/` can never match and passes whatever happened. Two
+assertions sat there doing nothing before this was noticed. Match
+case-insensitively against any eyebrow text.
 
 When a bug is found by driving the app, add the regression test at the lowest
 layer that can catch it.
