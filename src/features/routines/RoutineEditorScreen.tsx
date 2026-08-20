@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useRoutine } from '@/db/queries';
+import { useRoutine, useSettings } from '@/db/queries';
 import {
   addExerciseToRoutine,
   deleteRoutine,
@@ -17,6 +17,7 @@ export default function RoutineEditorScreen() {
   const { routineId } = useParams<{ routineId: string }>();
   const navigate = useNavigate();
   const view = useRoutine(routineId);
+  const pro = useSettings()?.mode === 'pro';
   const [picking, setPicking] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -151,6 +152,34 @@ export default function RoutineEditorScreen() {
                     />
                   </Field>
                 </div>
+
+                {/* Pro prescriptions. target_rir already exists in the schema
+                    and is stored null in Beginner, so switching modes never
+                    migrates anything or loses what you set — it is copied onto
+                    every planned set by startWorkoutFromRoutine.
+
+                    Tempo and per-exercise rest are deliberately absent: both
+                    are stored on the routine but there is nowhere on
+                    workout_exercises to copy them to, so an input for either
+                    would edit a value nothing reads. See the note in
+                    startWorkoutFromRoutine. */}
+                {pro ? (
+                  <div className="mt-2 grid grid-cols-3 gap-2 border-t border-line pt-2">
+                    <Field label="Target RIR">
+                      <NumberField
+                        value={entry.routineExercise.target_rir ?? 0}
+                        blankWhenZero
+                        placeholder="—"
+                        onCommit={(value) =>
+                          void updateRoutineExercise(entry.routineExercise.id, {
+                            target_rir: value <= 0 ? null : Math.min(5, Math.round(value)),
+                          })
+                        }
+                        aria-label={`${entry.exercise?.name ?? 'Exercise'} target reps in reserve`}
+                      />
+                    </Field>
+                  </div>
+                ) : null}
               </Card>
             </li>
           ))}
