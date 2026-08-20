@@ -220,6 +220,26 @@ describe('building a plan', () => {
     expect(plan.sessions).toHaveLength(6);
   });
 
+  it('disambiguates a template that runs twice', () => {
+    // Six-day push/pull/legs runs Push twice, holding different exercises.
+    const plan = buildPlan(selection, EXERCISES, { equipment: COMMERCIAL });
+    const names = plan.sessions.map((session) => session.name);
+    expect(names.filter((name) => name.startsWith('Push'))).toEqual(['Push A', 'Push B']);
+  });
+
+  it('does not letter a name that already ends in a letter', () => {
+    // The full-body templates are Full body A/B/C. A four-day rotation runs one
+    // of them twice, and appending a letter produced "Full body A A".
+    const plan = buildPlan(
+      { goalId: 'build_muscle', splitId: 'full_body', days: 4 },
+      EXERCISES,
+      { equipment: COMMERCIAL },
+    );
+    const names = plan.sessions.map((session) => session.name);
+    expect(names.some((name) => /\s[A-Z]\s[A-Z]$/.test(name))).toBe(false);
+    expect(names).toEqual(['Full body A', 'Full body B', 'Full body C', 'Full body A (2)']);
+  });
+
   /** The brief requires this: regenerate with the same seed and compare. */
   it('is deterministic for a given seed', () => {
     const a = buildPlan(selection, EXERCISES, { equipment: COMMERCIAL, seed: 42 });

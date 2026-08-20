@@ -11,8 +11,16 @@ import { previousPerformance, type ExerciseSession, type PreviousPerformance } f
 import { swapSuggestions, type SwapSuggestions } from '@/domain/search';
 import { personalRecords } from '@/domain/prs';
 import { summariseSession } from '@/domain/sessionSummary';
-import { blockProgress, buildSchedule, currentSession, type ScheduledSession } from '@/domain/schedule';
-import { weekModifier, type WeekModifier } from '@/domain/programmes/block';
+import {
+  blockProgress,
+  buildSchedule,
+  currentSession,
+  currentWeek,
+  groupByWeek,
+  type ScheduledSession,
+  type WeekSummary,
+} from '@/domain/schedule';
+import { setsForWeek, weekModifier, type WeekModifier } from '@/domain/programmes/block';
 import { suggestNextSet, type Suggestion } from '@/domain/progression';
 import { loadingProfileFor } from '@/domain/plates';
 import { bestEstimated1RM, setsPerMuscle, totalTonnage, totalWorkingSets } from '@/domain/volume';
@@ -311,6 +319,55 @@ export function usePlanSchedule(): PlanScheduleView | undefined | null {
       week: weekModifier(current?.week ?? plan.current_week, plan.block_weeks),
       progress: blockProgress(schedule),
     };
+  }, []);
+}
+
+export interface BlockWeekView extends WeekSummary {
+  /** Working sets prescribed across the whole week, after the week's shaping. */
+  sets: number;
+}
+
+/**
+ * The whole block for the expanded plan view: every week, its sessions, and how
+ * much work each one asks for.
+ *
+ * The set counts are what make the block's shape legible — weeks 1-4 climb and
+ * week 5 halves. Reading "Deload" without a number next to it does not tell you
+ * how much easier the week actually is.
+ */
+export function useBlockOverview(): BlockWeekView[] | undefined | null {
+  return useLiveQuery(async () => {
+    const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at === null);
+    plans.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
+    const plan = plans[0];
+    if (!plan) return null;
+
+    const routines = await db.routines.bulkGet(plan.routine_ids);
+    const routineNames = new Map(
+      routines
+        .filter(Boolean)
+        .map((routine) => [routine!.id, routine!.name.split(' — ').at(-1) ?? routine!.name]),
+    );
+    const workouts = live(await db.workouts.where({ plan_id: plan.id }).toArray());
+    const schedule = buildSchedule({ plan, routineNames, workouts });
+
+    // Base set counts per routine, read once rather than per week.
+    const baseSets = new Map<string, number[]>();
+    for (const routineId of plan.routine_ids) {
+      const rows = live(await db.routine_exercises.where({ routine_id: routineId }).toArray());
+      baseSets.set(routineId, rows.map((row) => row.target_sets));
+    }
+
+    return groupByWeek(schedule, plan.block_weeks, currentWeek(schedule)).map((week) => ({
+      ...week,
+      sets: week.sessions.reduce((total, session) => {
+        const counts = session.routineId ? (baseSets.get(session.routineId) ?? []) : [];
+        return (
+          total +
+          counts.reduce((sum, target) => sum + setsForWeek(target, week.modifier), 0)
+        );
+      }, 0),
+    }));
   }, []);
 }
 

@@ -167,6 +167,47 @@ export function blockProgress(schedule: ScheduledSession[]): BlockProgress {
   };
 }
 
+/** One week of a block, with its sessions, for the expanded plan view. */
+export interface WeekSummary {
+  week: number;
+  modifier: WeekModifier;
+  sessions: ScheduledSession[];
+  done: number;
+  /** True for the week the next unfinished session falls in. */
+  isCurrent: boolean;
+}
+
+/**
+ * The whole block, week by week.
+ *
+ * Every week is present even when it holds no sessions — a block started
+ * mid-week drops the days before the start date, and a reader counting
+ * "week 3 of 5" needs the gap to still be week 3 rather than silently
+ * renumbering the weeks after it.
+ */
+export function groupByWeek(
+  schedule: ScheduledSession[],
+  totalWeeks: number,
+  currentWeek?: number,
+): WeekSummary[] {
+  const total = Math.max(1, Math.round(totalWeeks));
+
+  return Array.from({ length: total }, (_unused, index) => {
+    const week = index + 1;
+    const sessions = schedule
+      .filter((session) => session.week === week)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      week,
+      modifier: weekModifier(week, total),
+      sessions,
+      done: sessions.filter((session) => session.status === 'done').length,
+      isCurrent: week === currentWeek,
+    };
+  });
+}
+
 /** The seven dates of the week containing `date`, for the week strip. */
 export function weekStrip(date: Date, weekStartsOn = 1): Date[] {
   const offset = (date.getDay() - weekStartsOn + 7) % 7;

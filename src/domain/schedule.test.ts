@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { blockProgress, buildSchedule, currentSession, currentWeek, weekStrip } from './schedule';
+import {
+  blockProgress,
+  buildSchedule,
+  currentSession,
+  currentWeek,
+  groupByWeek,
+  weekStrip,
+} from './schedule';
 import { blockWeeks, formatWeekLabel, setsForWeek, weekModifier } from './programmes/block';
 import { makeWorkout } from './testFactories';
 import type { Plan } from '@/db/schema';
@@ -235,5 +242,71 @@ describe('progress vs adherence', () => {
     // But nothing has been missed, so adherence is perfect.
     expect(progress.adherence).toBe(1);
     expect(progress.missed).toBe(0);
+  });
+});
+
+describe('grouping a block into weeks', () => {
+  const plan = (weeks: number) =>
+    makePlan({ block_weeks: weeks, training_days: [1, 3, 5], started_at: '2026-08-03T09:00:00.000Z' });
+
+  it('returns one entry per week of the block', () => {
+    const schedule = buildSchedule({
+      plan: plan(5),
+      routineNames: new Map(),
+      workouts: [],
+      today: new Date('2026-08-05T09:00:00.000Z'),
+    });
+
+    const weeks = groupByWeek(schedule, 5);
+    expect(weeks.map((entry) => entry.week)).toEqual([1, 2, 3, 4, 5]);
+    expect(weeks.at(-1)!.modifier.isDeload).toBe(true);
+  });
+
+  it('keeps a week that holds no sessions rather than renumbering the rest', () => {
+    // Fed directly: a schedule missing week 2 entirely. Whatever produced the
+    // gap, "week 3 of 5" has to stay week 3 for the label to mean anything.
+    const schedule = buildSchedule({
+      plan: plan(5),
+      routineNames: new Map(),
+      workouts: [],
+      today: new Date('2026-08-05T09:00:00.000Z'),
+    }).filter((session) => session.week !== 2);
+
+    const weeks = groupByWeek(schedule, 5);
+    expect(weeks.map((entry) => entry.week)).toEqual([1, 2, 3, 4, 5]);
+    expect(weeks[1]!.sessions).toHaveLength(0);
+    expect(weeks[2]!.sessions.length).toBeGreaterThan(0);
+    // Week 5 is still the deload even though week 2 came up empty.
+    expect(weeks[4]!.modifier.isDeload).toBe(true);
+  });
+
+  it('counts what has been done in each week', () => {
+    const schedule = buildSchedule({
+      plan: plan(5),
+      routineNames: new Map(),
+      workouts: [
+        makeWorkout({ plan_id: 'plan-1', plan_week: 1, plan_session_index: 0 }),
+        makeWorkout({ plan_id: 'plan-1', plan_week: 1, plan_session_index: 1 }),
+      ],
+      today: new Date('2026-08-07T09:00:00.000Z'),
+    });
+
+    const weeks = groupByWeek(schedule, 5, 1);
+    expect(weeks[0]!.done).toBe(2);
+    expect(weeks[0]!.isCurrent).toBe(true);
+    expect(weeks[1]!.done).toBe(0);
+    expect(weeks[1]!.isCurrent).toBe(false);
+  });
+
+  it('orders each week by date', () => {
+    const schedule = buildSchedule({
+      plan: plan(5),
+      routineNames: new Map(),
+      workouts: [],
+      today: new Date('2026-08-05T09:00:00.000Z'),
+    });
+
+    const dates = groupByWeek(schedule, 5)[2]!.sessions.map((session) => session.date);
+    expect([...dates].sort()).toEqual(dates);
   });
 });

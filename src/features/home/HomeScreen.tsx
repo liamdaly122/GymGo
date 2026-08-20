@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import {
   useActivePlan,
   useActiveWorkout,
+  useBlockOverview,
   useFinishedWorkouts,
   usePlanSchedule,
   useRoutines,
@@ -12,6 +14,7 @@ import {
 import { startFreestyleWorkout, startWorkoutFromRoutine } from '@/db/mutations';
 import { Button, Card, Pill, Screen, ScreenTitle } from '@/components/ui';
 import WeekStrip from '@/components/WeekStrip';
+import BlockOverview from './BlockOverview';
 import ExerciseImage from '@/components/ExerciseImage';
 import { formatDayLabel, formatDuration } from '@/lib/dates';
 import { useElapsed } from '@/hooks/useElapsed';
@@ -28,6 +31,10 @@ export default function HomeScreen() {
   const settings = useSettings();
   const recent = useFinishedWorkouts(3);
   const elapsed = useElapsed(active?.started_at);
+  const block = useBlockOverview();
+  // Collapsed by default: the screen's job is "what am I doing today", and the
+  // rest of the block is a question you ask occasionally.
+  const [showBlock, setShowBlock] = useState(false);
 
   const next = planned?.current ?? null;
 
@@ -91,10 +98,27 @@ export default function HomeScreen() {
 
       {planned && plan ? (
         <Card className="mb-4 p-4">
-          <div className="mb-3 flex items-baseline justify-between gap-2">
+          <button
+            onClick={() => setShowBlock((open) => !open)}
+            aria-expanded={showBlock}
+            aria-controls="block-overview"
+            className="mb-3 flex w-full items-baseline justify-between gap-2 text-left"
+          >
             <p className="min-w-0 truncate text-xs text-muted">{plan.name}</p>
-            <p className="shrink-0 text-xs text-blue-400">{formatWeekLabel(planned.week)}</p>
-          </div>
+            <span className="flex shrink-0 items-center gap-1 text-xs text-blue-400">
+              {formatWeekLabel(planned.week)}
+              <svg
+                viewBox="0 0 20 20"
+                aria-hidden="true"
+                className={`h-3.5 w-3.5 transition-transform ${showBlock ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+          </button>
 
           <WeekStrip
             schedule={planned.schedule}
@@ -103,6 +127,19 @@ export default function HomeScreen() {
           />
 
           <p className="mt-3 text-[11px] leading-snug text-muted">{planned.week.intent}</p>
+
+          <div id="block-overview">
+            {showBlock && block ? <BlockOverview weeks={block} /> : null}
+          </div>
+
+          {!showBlock ? (
+            <button
+              onClick={() => setShowBlock(true)}
+              className="mt-3 w-full rounded-lg border border-line bg-raised py-2 text-[11px] text-muted active:bg-line"
+            >
+              See the whole {planned.week.totalWeeks}-week block
+            </button>
+          ) : null}
 
           {next ? (
             <div className="mt-4 border-t border-line pt-4">

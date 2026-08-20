@@ -71,6 +71,12 @@ function labelSessions(ids: SessionTemplateId[]): string[] {
     if ((totals.get(id) ?? 0) < 2) return name;
     const index = (seen.get(id) ?? 0) + 1;
     seen.set(id, index);
+
+    // A letter suffix only works on a name that does not already end in one.
+    // The full-body templates are called "Full body A/B/C", so the letter
+    // scheme turned a four-day rotation into "Full body A A" and
+    // "Full body A B", which reads as a typo rather than a second pass.
+    if (/\s[A-Z]$/.test(name)) return index === 1 ? name : `${name} (${index})`;
     return `${name} ${String.fromCharCode(64 + index)}`;
   });
 }

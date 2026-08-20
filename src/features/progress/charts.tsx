@@ -14,6 +14,13 @@ import type { ReactNode } from 'react';
 /** One hue for magnitude. Nominal bars all take it — colouring them by value
  *  would spend the identity channel re-encoding what bar length already shows. */
 export const CHART_ACCENT = '#4ade80';
+/**
+ * Context marks in an emphasis chart, where one series is the point and the
+ * rest are background. Chosen for 3.16:1 against the card surface — the line
+ * token is only 1.35:1, well under the 3:1 floor a mark needs, and bars drawn
+ * in it are guesswork rather than data.
+ */
+export const CHART_DIM = '#5a6f86';
 export const CHART_SURFACE = '#17202d';
 export const CHART_GRID = '#2a3746';
 export const CHART_INK_MUTED = '#8b9aad';
