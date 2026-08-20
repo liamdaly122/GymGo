@@ -47,25 +47,79 @@ describe('exercise search', () => {
 });
 
 describe('swap suggestions', () => {
-  it('only offers the same movement pattern', () => {
-    const suggestions = swapSuggestions(squat, all);
-    expect(suggestions).not.toContain(romanianDeadlift);
-    expect(suggestions.every((ex) => ex.movement_pattern === 'squat')).toBe(true);
+  const benchPress = lift({ name: 'Barbell Bench Press', primary_muscle: 'chest', movement_pattern: 'horizontal_push', equipment: 'barbell', is_compound: true });
+  const dumbbellPress = lift({ name: 'Dumbbell Bench Press', primary_muscle: 'chest', movement_pattern: 'horizontal_push', equipment: 'dumbbell', is_compound: true });
+  const machinePress = lift({ name: 'Leverage Chest Press', primary_muscle: 'chest', movement_pattern: 'horizontal_push', equipment: 'machine', is_compound: true });
+  const dips = lift({ name: 'Dips - Triceps Version', primary_muscle: 'triceps', movement_pattern: 'horizontal_push', equipment: 'bodyweight', is_compound: true });
+  const flyes = lift({ name: 'Cable Crossover', primary_muscle: 'chest', movement_pattern: 'isolation', equipment: 'cable', is_compound: false });
+  const chestPool = [benchPress, dumbbellPress, machinePress, dips, flyes, romanianDeadlift, squat];
+
+  it('puts same movement, same muscle in the direct tier', () => {
+    const { direct } = swapSuggestions(benchPress, chestPool);
+    expect(direct).toContain(dumbbellPress);
+    expect(direct).toContain(machinePress);
+    for (const candidate of direct) {
+      expect(candidate.movement_pattern).toBe('horizontal_push');
+      expect(candidate.primary_muscle).toBe('chest');
+    }
   });
 
-  it('never suggests the exercise itself', () => {
-    expect(swapSuggestions(squat, all)).not.toContain(squat);
+  /** Same press, different muscle; and same muscle, different movement. */
+  it('puts a looser match in the alternative tier', () => {
+    const { alternative } = swapSuggestions(benchPress, chestPool);
+    expect(alternative).toContain(dips);
+    expect(alternative).toContain(flyes);
   });
 
-  it('respects the equipment available at the current gym', () => {
-    // The rack is taken and this gym has no machines.
-    const suggestions = swapSuggestions(squat, all, { availableEquipment: ['dumbbell', 'barbell'] });
-    expect(suggestions).toEqual([gobletSquat]);
+  it('never puts the same exercise in both tiers', () => {
+    const { direct, alternative } = swapSuggestions(benchPress, chestPool);
+    const overlap = direct.filter((candidate) => alternative.includes(candidate));
+    expect(overlap).toEqual([]);
   });
 
-  it('ranks a shared primary muscle above a shared implement', () => {
-    const otherBarbellSquat = lift({ name: 'Front Squat', primary_muscle: 'glutes', movement_pattern: 'squat', equipment: 'barbell' });
-    const suggestions = swapSuggestions(squat, [legPress, otherBarbellSquat]);
-    expect(suggestions[0]).toBe(legPress);
+  it('offers nothing that shares neither the movement nor the muscle', () => {
+    const { direct, alternative } = swapSuggestions(benchPress, chestPool);
+    const all = [...direct, ...alternative];
+    expect(all).not.toContain(romanianDeadlift);
+    expect(all).not.toContain(squat);
+  });
+
+  it('never suggests the exercise you are already doing', () => {
+    const { direct, alternative } = swapSuggestions(benchPress, chestPool);
+    expect([...direct, ...alternative]).not.toContain(benchPress);
+  });
+
+  it('respects the equipment at the current gym', () => {
+    // A garage with dumbbells and a bar: no machine, no cable.
+    const { direct, alternative } = swapSuggestions(benchPress, chestPool, {
+      availableEquipment: ['dumbbell', 'barbell', 'bodyweight'],
+    });
+    const all = [...direct, ...alternative];
+    expect(all).not.toContain(machinePress);
+    expect(all).not.toContain(flyes);
+    expect(direct).toContain(dumbbellPress);
+  });
+
+  /**
+   * The swap list has the same failure mode generated plans had: without a sense
+   * of what a normal lift is, every variant ranks the same and the tiebreak picks
+   * one at random.
+   */
+  it('opens with the recognisable lift rather than an obscure variant', () => {
+    const guillotine = lift({ name: 'Barbell Guillotine Bench Press', primary_muscle: 'chest', movement_pattern: 'horizontal_push', equipment: 'barbell', is_compound: true, source_id: 'Barbell_Guillotine_Bench_Press' });
+    const proper = lift({ name: 'Dumbbell Bench Press', primary_muscle: 'chest', movement_pattern: 'horizontal_push', equipment: 'dumbbell', is_compound: true, source_id: 'Dumbbell_Bench_Press' });
+    const { direct } = swapSuggestions(benchPress, [guillotine, proper]);
+    expect(direct[0]).toBe(proper);
+  });
+
+  it('returns empty tiers rather than throwing when nothing matches', () => {
+    expect(swapSuggestions(benchPress, [])).toEqual({ direct: [], alternative: [] });
+  });
+
+  it('caps each tier so the screen stays scannable', () => {
+    const many = Array.from({ length: 30 }, (_unused, index) =>
+      lift({ name: `Press ${index}`, primary_muscle: 'chest', movement_pattern: 'horizontal_push' }),
+    );
+    expect(swapSuggestions(benchPress, many, { limit: 6 }).direct).toHaveLength(6);
   });
 });

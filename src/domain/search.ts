@@ -4,6 +4,7 @@
  */
 import type { Exercise } from '@/db/schema';
 import type { Equipment, MovementPattern, Muscle } from './types';
+import { STAPLE_SCORE, stapleTier } from './programmes/staples';
 
 export interface ExerciseFilters {
   query?: string;
@@ -54,37 +55,72 @@ export function filterExercises(exercises: Exercise[], filters: ExerciseFilters)
   });
 }
 
+export interface SwapSuggestions {
+  /** Same movement, same muscle. The closest thing to what you were going to do. */
+  direct: Exercise[];
+  /** Same movement OR same muscle, not both. Looser, still worth doing. */
+  alternative: Exercise[];
+}
+
+/** Everything a candidate is scored on, beyond which tier it lands in. */
+function swapScore(candidate: Exercise, original: Exercise): number {
+  // Reach for lifts a coach would name. Without this the list opens with a
+  // Barbell Guillotine Bench Press, for the same reason generated plans used to.
+  let score = STAPLE_SCORE[stapleTier(candidate.source_id, candidate.name)];
+
+  if (candidate.is_compound === original.is_compound) score += 6;
+  if (candidate.equipment === original.equipment) score += 3;
+  if (candidate.is_unilateral === original.is_unilateral) score += 2;
+  if (candidate.experience_level === original.experience_level) score += 1;
+
+  // Secondary muscles overlapping is a real signal that it trains the same thing.
+  const shared = candidate.secondary_muscles.filter((muscle) =>
+    original.secondary_muscles.includes(muscle),
+  ).length;
+  score += Math.min(shared, 3);
+
+  return score;
+}
+
 /**
  * Alternatives for an exercise, for when a rack is taken.
  *
- * Same movement pattern is the requirement — that is what makes the swap
- * train the same thing. Sharing the primary muscle and being available at the
- * current gym rank a candidate higher.
+ * Two tiers, because "give me something else" has two different answers. The
+ * direct tier trains the same muscle through the same movement — the swap you
+ * would make without thinking. The alternative tier matches on one or the other:
+ * the same press pattern led by a different muscle, or the same muscle worked a
+ * different way. Both are useful; conflating them buries the obvious choice.
  */
 export function swapSuggestions(
   exercise: Exercise,
   candidates: Exercise[],
   options: { availableEquipment?: Equipment[] | null; limit?: number } = {},
-): Exercise[] {
+): SwapSuggestions {
   const available = options.availableEquipment ?? null;
+  const limit = options.limit ?? 8;
+  const restrict = Array.isArray(available) && available.length > 0;
 
-  return candidates
-    .filter(
-      (candidate) =>
-        candidate.id !== exercise.id &&
-        candidate.deleted_at === null &&
-        candidate.movement_pattern === exercise.movement_pattern &&
-        (!available || available.length === 0 || available.includes(candidate.equipment)),
-    )
-    .map((candidate) => {
-      let score = 0;
-      if (candidate.primary_muscle === exercise.primary_muscle) score += 4;
-      if (candidate.is_compound === exercise.is_compound) score += 2;
-      if (candidate.equipment === exercise.equipment) score += 1;
-      if (candidate.is_unilateral === exercise.is_unilateral) score += 1;
-      return { candidate, score };
-    })
-    .sort((a, b) => b.score - a.score || a.candidate.name.localeCompare(b.candidate.name, 'en'))
-    .slice(0, options.limit ?? 8)
-    .map((entry) => entry.candidate);
+  const direct: Exercise[] = [];
+  const alternative: Exercise[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.id === exercise.id) continue;
+    if (candidate.deleted_at !== null) continue;
+    if (restrict && !available.includes(candidate.equipment)) continue;
+
+    const samePattern = candidate.movement_pattern === exercise.movement_pattern;
+    const sameMuscle = candidate.primary_muscle === exercise.primary_muscle;
+
+    if (samePattern && sameMuscle) direct.push(candidate);
+    else if (samePattern || sameMuscle) alternative.push(candidate);
+  }
+
+  const rank = (list: Exercise[]) =>
+    list
+      .map((candidate) => ({ candidate, score: swapScore(candidate, exercise) }))
+      .sort((a, b) => b.score - a.score || a.candidate.name.localeCompare(b.candidate.name, 'en'))
+      .slice(0, limit)
+      .map((entry) => entry.candidate);
+
+  return { direct: rank(direct), alternative: rank(alternative) };
 }
