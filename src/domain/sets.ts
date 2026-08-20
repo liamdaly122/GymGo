@@ -64,3 +64,41 @@ export function isHeavier(
   }
   return candidate.reps > incumbent.reps;
 }
+
+/**
+ * What number each set wears on the card.
+ *
+ * Not the array index. A warm-up ramp sits in front of the working sets, and
+ * numbering by position would turn the first working set into "Set 4" — which
+ * is not what a lifter counts, and not what the rep range refers to.
+ *
+ * A child set inherits its parent's number, so a drop hanging off set 3 still
+ * reads as set 3. Warm-ups are counted on their own sequence — they are not
+ * working sets and must not push the first one to "set 4", but they still need
+ * a number of their own so four rungs do not all announce themselves the same.
+ * The caller knows which sequence a number belongs to from the set's type.
+ */
+export function setOrdinals(
+  sets: Pick<WorkoutSet, 'id' | 'type' | 'parent_set_id'>[],
+): Map<string, number> {
+  const ordinals = new Map<string, number>();
+  let next = 0;
+  let nextWarmup = 0;
+
+  for (const set of sets) {
+    if (isChildSet(set)) {
+      const parent = set.parent_set_id === null ? undefined : ordinals.get(set.parent_set_id);
+      if (parent !== undefined) ordinals.set(set.id, parent);
+      continue;
+    }
+    if (set.type === 'warmup') {
+      ordinals.set(set.id, nextWarmup);
+      nextWarmup += 1;
+      continue;
+    }
+    ordinals.set(set.id, next);
+    next += 1;
+  }
+
+  return ordinals;
+}

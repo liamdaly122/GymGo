@@ -8,10 +8,11 @@ import {
   useBlockOverview,
   useFinishedWorkouts,
   usePlanSchedule,
+  useRepeatCandidate,
   useRoutines,
   useSettings,
 } from '@/db/queries';
-import { startFreestyleWorkout, startWorkoutFromRoutine } from '@/db/mutations';
+import { repeatWorkout, startFreestyleWorkout, startWorkoutFromRoutine } from '@/db/mutations';
 import { Button, Card, Pill, Screen, ScreenTitle } from '@/components/ui';
 import WeekStrip from '@/components/WeekStrip';
 import BlockOverview from './BlockOverview';
@@ -32,6 +33,7 @@ export default function HomeScreen() {
   const recent = useFinishedWorkouts(3);
   const elapsed = useElapsed(active?.started_at);
   const block = useBlockOverview();
+  const repeatable = useRepeatCandidate();
   // Collapsed by default: the screen's job is "what am I doing today", and the
   // rest of the block is a question you ask occasionally.
   const [showBlock, setShowBlock] = useState(false);
@@ -61,6 +63,12 @@ export default function HomeScreen() {
 
   const handleStartFreestyle = async () => {
     const workoutId = await startFreestyleWorkout();
+    void navigate(`/workout/${workoutId}`);
+  };
+
+  const handleRepeat = async () => {
+    if (!repeatable) return;
+    const workoutId = await repeatWorkout(repeatable.workout.id);
     void navigate(`/workout/${workoutId}`);
   };
 
@@ -205,6 +213,22 @@ export default function HomeScreen() {
           onClick={() => void handleStartFreestyle()}
         >
           Start empty workout
+        </Button>
+      ) : null}
+
+      {/* Skips a session with nothing logged: finishWorkout soft-deletes
+          exercises that were never used, so there would be nothing to repeat. */}
+      {!active && repeatable ? (
+        <Button
+          className="mb-4 w-full"
+          onClick={() => void handleRepeat()}
+        >
+          <span className="block">Repeat {formatDayLabel(repeatable.workout.started_at)}</span>
+          <span className="mt-0.5 block text-[11px] font-normal text-muted">
+            {repeatable.names.slice(0, 2).join(', ')}
+            {repeatable.exerciseCount > 2 ? ` +${repeatable.exerciseCount - 2}` : ''} ·{' '}
+            {repeatable.setCount} sets
+          </span>
         </Button>
       ) : null}
 

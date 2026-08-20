@@ -4,7 +4,8 @@ import { personalRecords, prsHitInSession, recordEligibleSets } from './prs';
 import { bestEstimated1RM, setsPerMuscle, totalTonnage, totalWorkingSets } from './volume';
 import { previousPerformance } from './previousPerformance';
 import { estimate1RM } from './epley';
-import { countsTowardVolume, isChildSet, isTopWorkingSet } from './sets';
+import { countsTowardVolume, isChildSet, isTopWorkingSet, setOrdinals } from './sets';
+import type { WorkoutSet } from '@/db/schema';
 
 /**
  * These are the brief's counting rules. They are stated as hard invariants
@@ -222,5 +223,61 @@ describe('Epley estimate', () => {
   it('returns zero for a set that was not performed', () => {
     expect(estimate1RM(100, 0)).toBe(0);
     expect(estimate1RM(0, 5)).toBe(0);
+  });
+});
+
+describe('numbering the sets on a card', () => {
+  const set = (
+    id: string,
+    type: WorkoutSet['type'],
+    parent_set_id: string | null = null,
+  ) => ({ id, type, parent_set_id });
+
+  it('numbers plain working sets from one', () => {
+    const ordinals = setOrdinals([
+      set('a', 'working'),
+      set('b', 'working'),
+      set('c', 'working'),
+    ]);
+
+    expect([...ordinals.values()]).toEqual([0, 1, 2]);
+  });
+
+  it('does not let a warm-up ramp renumber the working sets', () => {
+    // The whole reason this exists: the first working set is set 1 whether or
+    // not three warm-up rungs sit in front of it.
+    const ordinals = setOrdinals([
+      set('w1', 'warmup'),
+      set('w2', 'warmup'),
+      set('w3', 'warmup'),
+      set('a', 'working'),
+      set('b', 'working'),
+    ]);
+
+    // The rungs are numbered, but on their own sequence.
+    expect(ordinals.get('w1')).toBe(0);
+    expect(ordinals.get('w3')).toBe(2);
+    // And the first working set is still the first working set.
+    expect(ordinals.get('a')).toBe(0);
+    expect(ordinals.get('b')).toBe(1);
+  });
+
+  it('gives a child set its parent number', () => {
+    // A drop hanging off set 3 is still set 3, not set 4.
+    const ordinals = setOrdinals([
+      set('a', 'working'),
+      set('b', 'working'),
+      set('c', 'working'),
+      set('drop', 'drop', 'c'),
+      set('d', 'working'),
+    ]);
+
+    expect(ordinals.get('drop')).toBe(ordinals.get('c'));
+    expect(ordinals.get('d')).toBe(3);
+  });
+
+  it('counts a back-off set as a set of its own', () => {
+    const ordinals = setOrdinals([set('a', 'working'), set('b', 'back_off')]);
+    expect(ordinals.get('b')).toBe(1);
   });
 });

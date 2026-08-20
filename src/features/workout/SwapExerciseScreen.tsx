@@ -4,6 +4,7 @@ import type { Exercise } from '@/db/schema';
 import { useSwapOptions } from '@/db/queries';
 import { swapWorkoutExercise } from '@/db/mutations';
 import { Button, Card, Screen, ScreenTitle } from '@/components/ui';
+import { useRestTimer } from './RestTimer';
 import ExerciseImage from '@/components/ExerciseImage';
 import { EQUIPMENT_LABELS, PATTERN_LABELS_SHORT } from '@/features/exercises/labels';
 
@@ -23,6 +24,7 @@ export default function SwapExerciseScreen() {
   const navigate = useNavigate();
 
   const [anyGym, setAnyGym] = useState(false);
+  const rest = useRestTimer();
   const [keepInRoutine, setKeepInRoutine] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -185,6 +187,10 @@ export default function SwapExerciseScreen() {
           </ul>
         </section>
       ) : null}
+
+      {/* The rest dial now stays on screen while you pick a replacement, so the
+          list needs clearance beneath it. */}
+      {rest.endsAt !== null ? <div className="h-24" aria-hidden="true" /> : null}
     </Screen>
   );
 }

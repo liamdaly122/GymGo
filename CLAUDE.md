@@ -167,6 +167,53 @@ engine reads an exercise's history across every session ever logged rather than
 per plan. Regenerating the routines would hand back new exercise ids and throw
 that history away. Choosing a different split is what the Plans tab is for.
 
+## The in-gym toolkit
+
+The app is used one-handed, on a phone, under a bar. Three rules came out of
+building for that:
+
+**Set numbers come from `setOrdinals` in `src/domain/sets.ts`, never the array
+index.** A warm-up ramp sits in front of the working sets, so indexing by
+position turns the first working set into "Set 4" — which is not what a lifter
+counts, not what the rep range refers to, and would have silently repointed
+every `getByLabel('Set 1 …')` in the browser suites at a warm-up rung. Warm-ups
+are numbered on their own sequence, and a child set inherits its parent's
+number: a drop hanging off set 3 is still set 3. Because that gives a child the
+same number as its parent, children also carry a name of their own — "Drop
+under set 1" — or a screen reader announces two identical controls.
+
+**Warm-ups round down through the gym's plates and are never automatic.**
+`warmupRamp` in `src/domain/warmup.ts` opens a barbell ramp with the empty bar,
+because a percentage of a light squat is often lighter than the bar itself. A
+rung that is at or above the working weight, or that rounds onto the rung
+before it, is dropped rather than repeated — so a narrow range gives two sets
+rather than four near-identical ones, and a bare bar gives none at all. The
+generator is a button: nothing the user did not ask for may enter their log.
+
+**The plate line and the weight steppers ride on the current set only.** At
+390px the row is already 128px of fixed width before the two fields, so nothing
+more fits inline, and repeating the loading for four sets at the same weight is
+noise. One tap moves the weight by what the equipment can actually make
+(`nextLoadableAbove`/`nextLoadableBelow`), not a fixed 1kg. The plate breakdown
+is shown in **both** modes — the brief lists it under Pro, but it is
+information rather than density, and Beginner mode is precisely who does not
+know how to load a bar.
+
+`SetRow` serialises its own writes through a small promise queue. Tapping a
+stepper while the field is focused fires blur — which commits the typed value —
+and then click; without the queue the click would read a stale weight from its
+closure, and two fast taps would both read the same base and move one step
+instead of two.
+
+The rest timer and the wake lock live in `WorkoutShell`, a layout route wrapping
+both `/workout/:id` and its swap child. They used to sit inside
+`ActiveWorkoutScreen`, so tapping "Swap" mid-rest unmounted both: the countdown
+vanished and the screen was free to sleep. The countdown also persists to
+`localStorage` — deliberately not Dexie, since it is ephemeral interface state
+with nothing to sync — and the end-of-rest cue is seeded as already-fired on
+restore, or a rest that expired while the app was closed would beep the moment
+it came back.
+
 ## Gyms
 
 `gyms.equipment_available` is what plan filling, plan viability warnings, swap

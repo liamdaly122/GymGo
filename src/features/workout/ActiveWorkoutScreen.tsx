@@ -14,18 +14,9 @@ import { totalTonnage, totalWorkingSets } from '@/domain/volume';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
 import WorkoutExerciseCard from './WorkoutExerciseCard';
 import { restsAfter, supersetLabel } from '@/domain/supersets';
-import { RestTimerBar, RestTimerProvider, useRestTimer } from './RestTimer';
-import { useWakeLock } from '@/hooks/useWakeLock';
+import { useRestTimer } from './RestTimer';
 
 export default function ActiveWorkoutScreen() {
-  return (
-    <RestTimerProvider>
-      <ActiveWorkout />
-    </RestTimerProvider>
-  );
-}
-
-function ActiveWorkout() {
   const { workoutId } = useParams<{ workoutId: string }>();
   const navigate = useNavigate();
   const view = useWorkout(workoutId);
@@ -34,10 +25,6 @@ function ActiveWorkout() {
   const [confirmingFinish, setConfirmingFinish] = useState(false);
 
   const elapsed = useElapsed(view?.workout.started_at);
-
-  // Hold the screen awake for as long as the session is open. iOS drops the
-  // lock whenever the page hides, so the hook re-acquires on visibilitychange.
-  useWakeLock(view?.workout.finished_at === null);
 
   if (view === undefined) {
     return <div className="grid min-h-dvh place-items-center text-sm text-muted">Loading…</div>;
@@ -152,6 +139,8 @@ function ActiveWorkout() {
                 restsAfter={restsAfter(supersetMembers, index)}
                 supersetLabel={supersetLabel(supersetMembers, index)}
                 canPairWithNext={index < view.exercises.length - 1}
+                canMoveUp={index > 0}
+                canMoveDown={index < view.exercises.length - 1}
               />
             </li>
           ))}
@@ -162,7 +151,6 @@ function ActiveWorkout() {
         Add exercise
       </Button>
 
-      <RestTimerBar />
 
       {picking ? (
         <ExercisePicker

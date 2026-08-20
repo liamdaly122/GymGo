@@ -23,7 +23,7 @@ import {
 } from '@/domain/schedule';
 import { setsForWeek, weekModifier, type WeekModifier } from '@/domain/programmes/block';
 import { suggestNextSet, type Suggestion } from '@/domain/progression';
-import { loadingProfileFor } from '@/domain/plates';
+import { loadingProfileFor, type LoadingProfile } from '@/domain/plates';
 import { bestEstimated1RM, setsPerMuscle, totalTonnage, totalWorkingSets } from '@/domain/volume';
 import { isTopWorkingSet } from '@/domain/sets';
 
@@ -35,6 +35,12 @@ export interface WorkoutExerciseView {
   workoutExercise: WorkoutExercise;
   exercise: Exercise | undefined;
   sets: WorkoutSet[];
+  /**
+   * What this exercise can actually be loaded with, at the gym the session is
+   * being performed at. Built here rather than per screen so the plate
+   * breakdown and the weight steppers agree with the progression engine.
+   */
+  loading: LoadingProfile;
 }
 
 export interface WorkoutView {
@@ -54,6 +60,11 @@ async function composeWorkout(workoutId: string): Promise<WorkoutView | undefine
   const exercises = await db.exercises.bulkGet(workoutExercises.map((we) => we.exercise_id));
   const exerciseById = new Map(exercises.filter(Boolean).map((ex) => [ex!.id, ex!]));
 
+  // One lookup for the whole session rather than one per exercise.
+  const gym = workout.gym_id
+    ? await db.gyms.get(workout.gym_id)
+    : live(await db.gyms.toArray()).find((candidate) => candidate.is_default);
+
   return {
     workout,
     exercises: workoutExercises.map((we) => ({
@@ -62,6 +73,7 @@ async function composeWorkout(workoutId: string): Promise<WorkoutView | undefine
       sets: allSets
         .filter((set) => set.workout_exercise_id === we.id)
         .sort((a, b) => a.set_index - b.set_index),
+      loading: loadingProfileFor(exerciseById.get(we.exercise_id)?.equipment ?? 'other', gym ?? {}),
     })),
   };
 }
@@ -71,6 +83,48 @@ export function useWorkout(workoutId: string | undefined): WorkoutView | undefin
     async () => (workoutId ? composeWorkout(workoutId) : undefined),
     [workoutId],
   );
+}
+
+export interface RepeatCandidate {
+  workout: Workout;
+  exerciseCount: number;
+  setCount: number;
+  names: string[];
+}
+
+/**
+ * The last session worth repeating.
+ *
+ * Skips anything with no exercises left: finishWorkout soft-deletes exercises
+ * that were never logged against, so a session you started and immediately
+ * finished has nothing to repeat and must not be offered as an empty button.
+ */
+export function useRepeatCandidate(): RepeatCandidate | null | undefined {
+  return useLiveQuery(async () => {
+    const finished = live(await db.workouts.toArray())
+      .filter((workout) => workout.finished_at !== null)
+      .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
+
+    for (const workout of finished.slice(0, 10)) {
+      const exercises = live(await db.workout_exercises.where({ workout_id: workout.id }).toArray())
+        .sort((a, b) => a.position - b.position);
+      if (exercises.length === 0) continue;
+
+      const sets = live(
+        await db.sets.where('workout_exercise_id').anyOf(exercises.map((we) => we.id)).toArray(),
+      ).filter((set) => set.completed && set.parent_set_id === null && set.type !== 'warmup');
+
+      const named = await db.exercises.bulkGet(exercises.slice(0, 3).map((we) => we.exercise_id));
+
+      return {
+        workout,
+        exerciseCount: exercises.length,
+        setCount: sets.length,
+        names: named.filter(Boolean).map((exercise) => exercise!.name),
+      };
+    }
+    return null;
+  }, []);
 }
 
 /** The session in progress, if there is one. At most one exists at a time. */

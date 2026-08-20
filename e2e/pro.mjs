@@ -83,8 +83,8 @@ await step('the drop is indented and labelled, not shown as set 2', async () => 
 });
 
 await step('finishing leaves the 100kg record intact', async () => {
-  await p.getByLabel('Set 2 repetitions').first().fill('8');
-  await p.getByLabel(/Mark set 2 done/).first().click();
+  await p.getByLabel('Drop under set 1 repetitions').first().fill('8');
+  await p.getByLabel(/Mark drop under set 1 done/).first().click();
   await p.waitForTimeout(600);
   const skip = p.getByRole('button', { name: 'Skip', exact: true });
   if (await skip.count()) await skip.click();

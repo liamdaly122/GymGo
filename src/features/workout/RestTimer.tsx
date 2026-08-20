@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { formatClock } from '@/lib/dates';
 import { playRestFinishedTone, vibrate } from '@/lib/feedback';
+import { clearRest, readRest, writeRest } from '@/lib/restTimer';
 import { useSettings } from '@/db/queries';
 
 interface RestTimerState {
@@ -20,28 +21,52 @@ export function useRestTimer(): RestTimerState {
   return value;
 }
 
-export function RestTimerProvider({ children }: { children: ReactNode }) {
-  const [endsAt, setEndsAt] = useState<number | null>(null);
-  const [totalMs, setTotalMs] = useState(0);
+export function RestTimerProvider({
+  children,
+  scopeId = null,
+}: {
+  children: ReactNode;
+  /** The workout this rest belongs to, so a stale one cannot leak into a new session. */
+  scopeId?: string | null;
+}) {
+  // Hydrated lazily so a restored countdown is already correct on first paint
+  // rather than flashing empty and then filling in.
+  const restored = useState(() => readRest(scopeId))[0];
+  const [endsAt, setEndsAt] = useState<number | null>(restored?.endsAt ?? null);
+  const [totalMs, setTotalMs] = useState(restored?.totalMs ?? 0);
 
-  const start = useCallback((seconds: number) => {
-    const ms = Math.max(1, Math.round(seconds)) * 1000;
-    setTotalMs(ms);
-    setEndsAt(Date.now() + ms);
-  }, []);
+  const start = useCallback(
+    (seconds: number) => {
+      const ms = Math.max(1, Math.round(seconds)) * 1000;
+      const target = Date.now() + ms;
+      setTotalMs(ms);
+      setEndsAt(target);
+      writeRest({ endsAt: target, totalMs: ms, scopeId });
+    },
+    [scopeId],
+  );
 
   /** Negative shortens. Never drops below five seconds left, or below the ring. */
-  const extend = useCallback((seconds: number) => {
-    setEndsAt((current) => {
-      if (current === null) return null;
-      return Math.max(Date.now() + 5_000, current + seconds * 1000);
-    });
-    setTotalMs((current) => Math.max(5_000, current + seconds * 1000));
-  }, []);
+  const extend = useCallback(
+    (seconds: number) => {
+      setEndsAt((current) => {
+        if (current === null) return null;
+        const target = Math.max(Date.now() + 5_000, current + seconds * 1000);
+        setTotalMs((total) => {
+          const next = Math.max(5_000, total + seconds * 1000);
+          writeRest({ endsAt: target, totalMs: next, scopeId });
+          return next;
+        });
+        return target;
+      });
+    },
+    [scopeId],
+  );
 
   const stop = useCallback(() => {
     setEndsAt(null);
     setTotalMs(0);
+    clearRest();
   }, []);
 
   const value = useMemo(
@@ -64,7 +89,11 @@ export function RestTimerBar() {
   const { endsAt, totalMs, extend, stop } = useRestTimer();
   const settings = useSettings();
   const [remaining, setRemaining] = useState(0);
-  const firedFor = useRef<number | null>(null);
+  // Seeded from the restored target: a rest that expired while the app was
+  // closed must not beep and buzz the moment the page comes back.
+  const firedFor = useRef<number | null>(
+    endsAt !== null && endsAt <= Date.now() ? endsAt : null,
+  );
 
   useEffect(() => {
     if (endsAt === null) {

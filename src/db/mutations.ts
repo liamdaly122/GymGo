@@ -30,7 +30,8 @@ import type { Readiness, SetType, Technique } from '@/domain/types';
 import type { GeneratedPlan } from '@/domain/programmes/plan';
 import { DEFAULT_BLOCK_WEEKS, setsForWeek, weekModifier } from '@/domain/programmes/block';
 import { buildSchedule, currentWeek } from '@/domain/schedule';
-import { loadableWeight, loadingProfileFor, nextLoadableBelow } from '@/domain/plates';
+import { loadableWeight, loadingProfileFor, nextLoadableBelow, type LoadingProfile } from '@/domain/plates';
+import { warmupRamp } from '@/domain/warmup';
 
 /** Thrown when something tries to edit a workout that has already been finished. */
 export class ImmutableWorkoutError extends Error {
@@ -427,6 +428,133 @@ export async function toggleSupersetWithNext(workoutExerciseId: string): Promise
     const patch = { superset_group: group, updated_at: now };
     await db.workout_exercises.update(row.id, patch);
     await enqueue('workout_exercises', row.id, 'put', patch);
+  }
+}
+
+/** The loading profile a session was actually performed with. */
+async function loadingProfileForWorkoutExercise(
+  workoutExercise: WorkoutExercise,
+): Promise<LoadingProfile> {
+  const exercise = await db.exercises.get(workoutExercise.exercise_id);
+  const workout = await db.workouts.get(workoutExercise.workout_id);
+  const gym = workout?.gym_id ? await db.gyms.get(workout.gym_id) : undefined;
+  return loadingProfileFor(exercise?.equipment ?? 'other', gym ?? {});
+}
+
+/**
+ * Lays a warm-up ramp in front of an exercise's working sets.
+ *
+ * Replaces any ramp already there rather than stacking a second one, so the
+ * button can be pressed again after the working weight changes.
+ *
+ * Weight and reps arrive filled in — that is the entire point of a generator —
+ * but nothing is ticked, so none of it counts until it is actually performed.
+ * Warm-ups are excluded from volume and records even then.
+ */
+export async function generateWarmupSets(
+  workoutExerciseId: string,
+  workingWeightKg: number,
+): Promise<number> {
+  const workoutExercise = await db.workout_exercises.get(workoutExerciseId);
+  if (!workoutExercise) throw new Error(`Workout exercise ${workoutExerciseId} not found`);
+  await assertWorkoutEditable(workoutExercise.workout_id);
+
+  const profile = await loadingProfileForWorkoutExercise(workoutExercise);
+  const rungs = warmupRamp(workingWeightKg, profile);
+
+  const now = nowIso();
+  const existing = (await db.sets.where({ workout_exercise_id: workoutExerciseId }).toArray())
+    .filter((set) => set.deleted_at === null)
+    .sort((a, b) => a.set_index - b.set_index);
+
+  // Clear the previous ramp first so pressing twice replaces rather than stacks.
+  const stale = existing.filter((set) => set.type === 'warmup');
+  for (const set of stale) {
+    const patch = { deleted_at: now, updated_at: now };
+    await db.sets.update(set.id, patch);
+    await enqueue('sets', set.id, 'delete', patch);
+  }
+
+  const keep = existing.filter((set) => set.type !== 'warmup');
+  if (rungs.length === 0) {
+    // Still renumber: removing a stale ramp would otherwise leave a gap.
+    await renumberSets(keep, 0, now);
+    return 0;
+  }
+
+  // Warm-ups belong in front of the working sets, and addSet always appends.
+  await renumberSets(keep, rungs.length, now);
+
+  for (const [index, rung] of rungs.entries()) {
+    const row: WorkoutSet = {
+      id: newId(),
+      workout_exercise_id: workoutExerciseId,
+      parent_set_id: null,
+      set_index: index,
+      type: 'warmup',
+      weight_kg: rung.weight_kg,
+      reps: rung.reps,
+      rir: null,
+      is_amrap: false,
+      completed: false,
+      completed_at: null,
+      ...freshSyncFields(),
+    };
+    await db.sets.add(row);
+    await enqueue('sets', row.id, 'put', row);
+  }
+
+  return rungs.length;
+}
+
+/** Rewrites set_index across an ordered list, starting at `from`. */
+async function renumberSets(ordered: WorkoutSet[], from: number, now: string): Promise<void> {
+  for (const [offset, set] of ordered.entries()) {
+    const next = from + offset;
+    if (set.set_index === next) continue;
+    const patch = { set_index: next, updated_at: now };
+    await db.sets.update(set.id, patch);
+    await enqueue('sets', set.id, 'put', patch);
+  }
+}
+
+/**
+ * Moves an exercise up or down the session.
+ *
+ * The squat rack being busy is a real reason to reorder mid-workout, and until
+ * now `position` could only be set by a function nothing called.
+ */
+export async function moveWorkoutExercise(
+  workoutId: string,
+  workoutExerciseId: string,
+  direction: 'up' | 'down',
+): Promise<void> {
+  await assertWorkoutEditable(workoutId);
+
+  const ordered = (await db.workout_exercises.where({ workout_id: workoutId }).toArray())
+    .filter((we) => we.deleted_at === null)
+    .sort((a, b) => a.position - b.position);
+
+  const index = ordered.findIndex((we) => we.id === workoutExerciseId);
+  if (index === -1) return;
+  const target = direction === 'up' ? index - 1 : index + 1;
+  if (target < 0 || target >= ordered.length) return;
+
+  const reordered = [...ordered];
+  const [moved] = reordered.splice(index, 1);
+  reordered.splice(target, 0, moved!);
+
+  const now = nowIso();
+  await db.transaction('rw', db.workout_exercises, db.outbox, async () => {
+    for (const [position, row] of reordered.entries()) {
+      if (row.position === position) continue;
+      await db.workout_exercises.update(row.id, { position, updated_at: now });
+    }
+  });
+
+  for (const [position, row] of reordered.entries()) {
+    if (row.position === position) continue;
+    await enqueue('workout_exercises', row.id, 'put', { position, updated_at: now });
   }
 }
 
@@ -910,6 +1038,112 @@ export async function startNextBlock(planId: string): Promise<string> {
   await db.plans.add(next);
   await enqueue('plans', next.id, 'put', next);
   return next.id;
+}
+
+/**
+ * Starts a new session shaped like one you already did.
+ *
+ * Copies, never references — the same guarantee that protects a routine's
+ * history, applied to a workout. Structure comes across; numbers do not. The
+ * sets arrive empty so the previous-performance line and the progression
+ * suggestion can do their job, exactly as they do for a routine.
+ */
+export async function repeatWorkout(
+  sourceWorkoutId: string,
+  options: { gymId?: string | null; readiness?: Readiness | null } = {},
+): Promise<string> {
+  const source = await db.workouts.get(sourceWorkoutId);
+  if (!source) throw new Error(`Workout ${sourceWorkoutId} not found`);
+
+  const sourceExercises = (await db.workout_exercises.where({ workout_id: sourceWorkoutId }).toArray())
+    .filter((we) => we.deleted_at === null)
+    .sort((a, b) => a.position - b.position);
+
+  const sourceSets = (
+    await db.sets.where('workout_exercise_id').anyOf(sourceExercises.map((we) => we.id)).toArray()
+  ).filter((set) => set.deleted_at === null);
+
+  const workout: Workout = {
+    id: newId(),
+    // Kept: it is what lets the progression engine find the prescribed rep
+    // range and offer a real suggestion rather than falling back to freestyle.
+    routine_id: source.routine_id,
+    // Cleared: the calendar marks a slot done by plan week and session index,
+    // so carrying them would let today's repeat re-tick Monday's session.
+    plan_id: null,
+    plan_week: null,
+    plan_session_index: null,
+    gym_id: options.gymId ?? (await defaultGymId()),
+    started_at: nowIso(),
+    finished_at: null,
+    bodyweight_kg: null,
+    readiness: options.readiness ?? null,
+    notes: null,
+    ...freshSyncFields(),
+  };
+
+  // Superset ids are remapped rather than copied: reusing one across two
+  // unrelated sessions would make the same id mean two different pairings.
+  const groups = new Map<string, string>();
+
+  const copied: WorkoutExercise[] = sourceExercises.map((we, index) => ({
+    id: newId(),
+    workout_id: workout.id,
+    exercise_id: we.exercise_id,
+    position: index,
+    superset_group:
+      we.superset_group === null
+        ? null
+        : (groups.get(we.superset_group) ??
+          (groups.set(we.superset_group, newId()), groups.get(we.superset_group)!)),
+    technique: we.technique,
+    // Notes are about the day they were written, not about the session shape.
+    notes: null,
+    rest_seconds: we.rest_seconds,
+    tempo: we.tempo,
+    ...freshSyncFields(),
+  }));
+
+  const plannedSets: WorkoutSet[] = copied.flatMap((we, index) => {
+    const sourceId = sourceExercises[index]!.id;
+    // How many sets to lay out: the working sets actually completed last time.
+    // Warm-ups are regenerated rather than copied, and child sets are attached
+    // in the moment rather than planned.
+    const performed = sourceSets.filter(
+      (set) =>
+        set.workout_exercise_id === sourceId &&
+        set.parent_set_id === null &&
+        set.completed &&
+        set.type !== 'warmup',
+    ).length;
+
+    return Array.from({ length: Math.max(1, performed) }, (_unused, setIndex) => ({
+      id: newId(),
+      workout_exercise_id: we.id,
+      parent_set_id: null,
+      set_index: setIndex,
+      type: 'working' as const,
+      weight_kg: 0,
+      reps: 0,
+      rir: null,
+      is_amrap: false,
+      completed: false,
+      completed_at: null,
+      ...freshSyncFields(),
+    }));
+  });
+
+  await db.transaction('rw', db.workouts, db.workout_exercises, db.sets, db.outbox, async () => {
+    await db.workouts.add(workout);
+    if (copied.length > 0) await db.workout_exercises.bulkAdd(copied);
+    if (plannedSets.length > 0) await db.sets.bulkAdd(plannedSets);
+  });
+
+  await enqueue('workouts', workout.id, 'put', workout);
+  for (const row of copied) await enqueue('workout_exercises', row.id, 'put', row);
+  for (const row of plannedSets) await enqueue('sets', row.id, 'put', row);
+
+  return workout.id;
 }
 
 export type SwapOutcome = 'replaced' | 'appended';

@@ -1,7 +1,17 @@
 import { Link } from 'react-router-dom';
 import type { WorkoutExerciseView } from '@/db/queries';
 import { usePreviousPerformance, useSetSuggestion, useSettings } from '@/db/queries';
-import { addSet, removeExerciseFromWorkout, toggleSupersetWithNext, updateSet } from '@/db/mutations';
+import {
+  addSet,
+  generateWarmupSets,
+  moveWorkoutExercise,
+  removeExerciseFromWorkout,
+  toggleSupersetWithNext,
+  updateSet,
+} from '@/db/mutations';
+import { setOrdinals } from '@/domain/sets';
+import { warmupRamp } from '@/domain/warmup';
+import { nextLoadableAbove, nextLoadableBelow } from '@/domain/plates';
 import { Button, Card } from '@/components/ui';
 import { formatDayLabel } from '@/lib/dates';
 import { formatSetSummary } from '@/domain/previousPerformance';
@@ -22,6 +32,8 @@ export default function WorkoutExerciseCard({
   restsAfter = true,
   supersetLabel = null,
   canPairWithNext = false,
+  canMoveUp = false,
+  canMoveDown = false,
 }: {
   entry: WorkoutExerciseView;
   workoutId: string;
@@ -30,6 +42,8 @@ export default function WorkoutExerciseCard({
   /** "A1", "A2" — null when this exercise is not in a superset. */
   supersetLabel?: string | null;
   canPairWithNext?: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }) {
   const previous = usePreviousPerformance(entry.exercise?.id, workoutId);
   const suggestion = useSetSuggestion(workoutId, entry.exercise?.id);
@@ -40,6 +54,25 @@ export default function WorkoutExerciseCard({
   // Most specific wins. The routine's prescription is the whole reason a
   // strength primary rests 210s and an accessory 75s; falling straight to the
   // exercise default made every generated plan rest the same.
+  /*
+   * Set numbers come from the domain, not the array index: a warm-up ramp sits
+   * in front of the working sets and must not renumber them.
+   */
+  const ordinals = setOrdinals(entry.sets);
+
+  // The set you are about to do — the only row that carries the tools.
+  const activeSetId =
+    entry.sets.find((set) => !set.completed && set.parent_set_id === null && set.type !== 'warmup')
+      ?.id ?? null;
+
+  const hasWarmup = entry.sets.some((set) => set.type === 'warmup');
+  const firstWorking = entry.sets.find(
+    (set) => set.parent_set_id === null && set.type === 'working' && set.weight_kg > 0,
+  );
+  const warmupTarget =
+    firstWorking?.weight_kg ?? suggestion?.weight_kg ?? previous?.top_set?.weight_kg ?? 0;
+  const ramp = warmupRamp(warmupTarget, entry.loading);
+
   const restSeconds =
     entry.workoutExercise.rest_seconds ??
     entry.exercise?.default_rest_seconds ??
@@ -176,6 +209,17 @@ export default function WorkoutExerciseCard({
         <p className="mb-2 text-xs text-muted">First time logging this one.</p>
       ) : null}
 
+      {/* Hidden when the ramp is empty, which covers bodyweight work and a
+          working weight already at the bare bar without a second rule. */}
+      {ramp.length > 0 && !hasWarmup ? (
+        <button
+          onClick={() => void generateWarmupSets(entry.workoutExercise.id, warmupTarget)}
+          className="mb-2 w-full rounded-lg border border-line bg-raised py-2 text-[11px] text-muted active:bg-line"
+        >
+          Warm up to {warmupTarget}kg · {ramp.length} sets
+        </button>
+      ) : null}
+
       <div className="flex items-center gap-2 pb-1 text-[10px] uppercase tracking-wide text-muted">
         <span className="w-6 text-center">Set</span>
         <span className="flex-1 text-center">Weight</span>
@@ -184,21 +228,33 @@ export default function WorkoutExerciseCard({
         <span className="w-7" />
       </div>
 
-      {entry.sets.map((set, setIndex) => {
-        const lastTime = set.parent_set_id === null ? workingSets[setIndex] : undefined;
+      {entry.sets.map((set) => {
+        const ordinal = ordinals.get(set.id);
+        // Keyed off the set's own number, so a warm-up ramp cannot shift last
+        // session's figures onto the wrong rows.
+        const lastTime = ordinal === undefined ? undefined : workingSets[ordinal];
         // The suggestion is the better hint where there is one; last time's
         // numbers fill in otherwise.
+        const hintable = set.parent_set_id === null && set.type !== 'warmup';
         const weightHint = suggestion?.weight_kg ?? lastTime?.weight_kg;
         const repsHint = suggestion?.reps ?? lastTime?.reps;
         return (
           <SetRow
             key={set.id}
             set={set}
-            index={setIndex}
-            {...(set.parent_set_id === null && weightHint !== undefined ? { weightHint } : {})}
-            {...(set.parent_set_id === null && repsHint !== undefined ? { repsHint } : {})}
+            index={ordinal ?? 0}
+            {...(hintable && weightHint !== undefined ? { weightHint } : {})}
+            {...(hintable && repsHint !== undefined ? { repsHint } : {})}
             restSeconds={restsAfter ? restSeconds : 0}
             pro={pro}
+            loading={entry.loading}
+            showTools={set.id === activeSetId}
+            weightStep={{
+              // One tap lands on a weight this equipment can actually make —
+              // 2.5kg on a barbell with 1.25s, a full 5kg on a coarse stack.
+              up: round2(Math.max(0.5, nextLoadableAbove(set.weight_kg, entry.loading) - set.weight_kg)),
+              down: round2(Math.max(0.5, set.weight_kg - nextLoadableBelow(set.weight_kg, entry.loading))),
+            }}
           />
         );
       })}
@@ -206,6 +262,30 @@ export default function WorkoutExerciseCard({
       <Button className="mt-2 w-full" onClick={() => void handleAddSet(entry)}>
         Add set
       </Button>
+
+      {/* Reordering is what a busy squat rack actually forces. Footer rather
+          than the header, which already carries Swap and Remove and would leave
+          the exercise name about 76px at 390px. */}
+      {canMoveUp || canMoveDown ? (
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={() => void moveWorkoutExercise(workoutId, entry.workoutExercise.id, 'up')}
+            disabled={!canMoveUp}
+            aria-label={`Move ${entry.exercise?.name ?? 'exercise'} earlier`}
+            className="h-11 flex-1 rounded-lg border border-line bg-raised text-xs text-muted disabled:opacity-25 active:bg-line"
+          >
+            ↑ Earlier
+          </button>
+          <button
+            onClick={() => void moveWorkoutExercise(workoutId, entry.workoutExercise.id, 'down')}
+            disabled={!canMoveDown}
+            aria-label={`Move ${entry.exercise?.name ?? 'exercise'} later`}
+            className="h-11 flex-1 rounded-lg border border-line bg-raised text-xs text-muted disabled:opacity-25 active:bg-line"
+          >
+            ↓ Later
+          </button>
+        </div>
+      ) : null}
 
       {/* Supersetting is a Pro control: it changes when the timer runs, which
           is confusing if you did not ask for it. */}
@@ -228,9 +308,18 @@ export default function WorkoutExerciseCard({
 
 /** Carries the previous set's numbers forward — most sets repeat the one before. */
 async function handleAddSet(entry: WorkoutExerciseView) {
-  const last = entry.sets.filter((set) => set.parent_set_id === null).at(-1);
+  // Working sets only: inheriting a warm-up rung's weight would start the set
+  // at 40% of what you are meant to be lifting.
+  const last = entry.sets
+    .filter((set) => set.parent_set_id === null && set.type === 'working')
+    .at(-1);
   await addSet(entry.workoutExercise.id, {
     weight_kg: last?.weight_kg ?? 0,
     reps: last?.reps ?? 0,
   });
+}
+
+/** Two decimal places, so a plate step never renders as 2.4999999999999996. */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }

@@ -4,6 +4,7 @@ import { useAppInit } from './hooks/useAppInit';
 import HomeScreen from './features/home/HomeScreen';
 import ActiveWorkoutScreen from './features/workout/ActiveWorkoutScreen';
 import SwapExerciseScreen from './features/workout/SwapExerciseScreen';
+import WorkoutShell from './features/workout/WorkoutShell';
 import ExerciseLibraryScreen from './features/exercises/ExerciseLibraryScreen';
 import ExerciseDetailScreen from './features/exercises/ExerciseDetailScreen';
 import HistoryScreen from './features/history/HistoryScreen';
@@ -65,12 +66,13 @@ export default function App() {
           <Route path="/gyms/:gymId" element={<GymEditorScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
         </Route>
-        {/* The active workout is full screen: no tab bar competing with set entry. */}
-        <Route path="/workout/:workoutId" element={<ActiveWorkoutScreen />} />
-        <Route
-          path="/workout/:workoutId/swap/:workoutExerciseId"
-          element={<SwapExerciseScreen />}
-        />
+        {/* The active workout is full screen: no tab bar competing with set entry.
+            Both screens sit under one shell so the rest timer and the wake lock
+            survive a trip to the swap picker. */}
+        <Route path="/workout/:workoutId" element={<WorkoutShell />}>
+          <Route index element={<ActiveWorkoutScreen />} />
+          <Route path="swap/:workoutExerciseId" element={<SwapExerciseScreen />} />
+        </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>
