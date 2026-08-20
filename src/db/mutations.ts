@@ -855,6 +855,63 @@ export async function createRoutinesFromPlan(
   return { planId: planRow.id, routineIds: routines.map((routine) => routine.id) };
 }
 
+// ---------------------------------------------------------------------------
+// Block lifecycle
+//
+// A five-week block is the app's organising idea and it had no ending:
+// completed_at was in the schema and nothing ever wrote it, so a finished plan
+// sat on the Train screen forever showing "Week 5/5" with every session behind
+// it marked missed.
+// ---------------------------------------------------------------------------
+
+/** Strips a trailing "(block N)" so the counter does not stack up. */
+function baseBlockName(name: string): string {
+  return name.replace(/\s*\(block \d+\)$/, '');
+}
+
+export async function completePlan(planId: string): Promise<void> {
+  const now = nowIso();
+  const patch = { completed_at: now, updated_at: now };
+  await db.plans.update(planId, patch);
+  await enqueue('plans', planId, 'put', patch);
+}
+
+/**
+ * Closes this block and opens the next one on the same routines.
+ *
+ * Achieved weights carry forward for free: the progression engine reads an
+ * exercise's history across every session ever logged, not per plan, so the
+ * first session of block two opens on what block one finished with. That is
+ * also why the routines are reused rather than regenerated — a new set of
+ * exercise ids would throw away the history that makes the suggestions work.
+ * Choosing a different split is what the Plans tab is for.
+ */
+export async function startNextBlock(planId: string): Promise<string> {
+  const previous = await db.plans.get(planId);
+  if (!previous) throw new Error(`Plan ${planId} not found`);
+
+  const base = baseBlockName(previous.name);
+  const siblings = (await db.plans.toArray()).filter(
+    (plan) => plan.deleted_at === null && baseBlockName(plan.name) === base,
+  );
+
+  const next: Plan = {
+    ...previous,
+    id: newId(),
+    name: `${base} (block ${siblings.length + 1})`,
+    current_week: 1,
+    started_at: nowIso(),
+    phase_name: weekModifier(1, previous.block_weeks).label,
+    completed_at: null,
+    ...freshSyncFields(),
+  };
+
+  await completePlan(planId);
+  await db.plans.add(next);
+  await enqueue('plans', next.id, 'put', next);
+  return next.id;
+}
+
 export type SwapOutcome = 'replaced' | 'appended';
 
 export interface SwapResult {

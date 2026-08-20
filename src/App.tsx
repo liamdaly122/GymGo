@@ -8,7 +8,7 @@ import ExerciseLibraryScreen from './features/exercises/ExerciseLibraryScreen';
 import ExerciseDetailScreen from './features/exercises/ExerciseDetailScreen';
 import HistoryScreen from './features/history/HistoryScreen';
 import WorkoutDetailScreen from './features/history/WorkoutDetailScreen';
-import RoutinesScreen from './features/routines/RoutinesScreen';
+import ProgrammeScreen from '@/features/programme/ProgrammeScreen';
 import RoutineEditorScreen from './features/routines/RoutineEditorScreen';
 import SettingsScreen from './features/settings/SettingsScreen';
 import GymsScreen from './features/gyms/GymsScreen';
@@ -50,7 +50,7 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<HomeScreen />} />
-          <Route path="/routines" element={<RoutinesScreen />} />
+          <Route path="/routines" element={<ProgrammeScreen />} />
           <Route path="/routines/:routineId" element={<RoutineEditorScreen />} />
           <Route path="/history" element={<HistoryScreen />} />
           <Route path="/history/:workoutId" element={<WorkoutDetailScreen />} />

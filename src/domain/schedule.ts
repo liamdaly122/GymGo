@@ -167,6 +167,23 @@ export function blockProgress(schedule: ScheduledSession[]): BlockProgress {
   };
 }
 
+/**
+ * Has the block run its course?
+ *
+ * True when nothing is left to train: no session is today, and none is still
+ * upcoming. Missed sessions do not hold a block open — a week you skipped in
+ * week two is not a reason to keep week five running in March.
+ *
+ * An empty schedule is not complete. A plan whose training days were cleared
+ * would otherwise report itself finished the moment it was made.
+ */
+export function isBlockComplete(schedule: ScheduledSession[]): boolean {
+  if (schedule.length === 0) return false;
+  return !schedule.some(
+    (session) => session.status === 'today' || session.status === 'upcoming',
+  );
+}
+
 /** One week of a block, with its sessions, for the expanded plan view. */
 export interface WeekSummary {
   week: number;

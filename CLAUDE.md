@@ -148,6 +148,25 @@ plus a hand-written override table, and it **must be populated for every
 exercise** — it is what makes both the generator and swap suggestions work.
 `npm run seed:check` fails the build if any seeded exercise lacks a valid pattern.
 
+## The block lifecycle
+
+A plan runs for five weeks and then it has to end. `plan.completed_at` sat in
+the schema unwritten for most of this project's life, so a finished block stayed
+on the Train screen forever showing "Week 5/5" with every session behind it
+marked missed, and there was no way to start another.
+
+`isBlockComplete` in `src/domain/schedule.ts` is the rule: nothing is today and
+nothing is upcoming. Missed sessions do **not** hold a block open — a week you
+skipped in February is no reason to keep the block running in March. An empty
+schedule is deliberately not complete, or a plan with no training days would
+declare itself finished the moment it was made.
+
+`startNextBlock` closes the old plan and opens a new one **on the same
+routines**. Achieved weights carry forward for free, because the progression
+engine reads an exercise's history across every session ever logged rather than
+per plan. Regenerating the routines would hand back new exercise ids and throw
+that history away. Choosing a different split is what the Plans tab is for.
+
 ## Gyms
 
 `gyms.equipment_available` is what plan filling, plan viability warnings, swap

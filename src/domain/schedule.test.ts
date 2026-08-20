@@ -5,7 +5,10 @@ import {
   currentSession,
   currentWeek,
   groupByWeek,
+  isBlockComplete,
   weekStrip,
+  type ScheduledSession,
+  type SessionStatus,
 } from './schedule';
 import { blockWeeks, formatWeekLabel, setsForWeek, weekModifier } from './programmes/block';
 import { makeWorkout } from './testFactories';
@@ -308,5 +311,38 @@ describe('grouping a block into weeks', () => {
 
     const dates = groupByWeek(schedule, 5)[2]!.sessions.map((session) => session.date);
     expect([...dates].sort()).toEqual(dates);
+  });
+});
+
+describe('knowing when a block is over', () => {
+  const scheduleWith = (statuses: SessionStatus[]): ScheduledSession[] =>
+    statuses.map((status, index) => ({
+      date: `2026-08-${String(index + 1).padStart(2, '0')}`,
+      week: 1,
+      sessionIndex: index,
+      routineId: 'r1',
+      name: 'Day',
+      status,
+      modifier: weekModifier(1, 5),
+    }));
+
+  it('is over when everything has been trained', () => {
+    expect(isBlockComplete(scheduleWith(['done', 'done', 'done']))).toBe(true);
+  });
+
+  it('is not over while something is still to come', () => {
+    expect(isBlockComplete(scheduleWith(['done', 'done', 'upcoming']))).toBe(false);
+    expect(isBlockComplete(scheduleWith(['done', 'today']))).toBe(false);
+  });
+
+  it('is over even with sessions missed along the way', () => {
+    // A week skipped in February is no reason to keep the block open in March.
+    expect(isBlockComplete(scheduleWith(['done', 'missed', 'done']))).toBe(true);
+  });
+
+  it('is not over when there is no schedule at all', () => {
+    // A plan with no training days would otherwise declare itself finished the
+    // moment it was created.
+    expect(isBlockComplete([])).toBe(false);
   });
 });
