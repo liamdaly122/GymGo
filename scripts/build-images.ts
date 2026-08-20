@@ -22,6 +22,7 @@ import { TRAINING_GOALS } from '../src/domain/programmes/goals.ts';
 import { SPLITS } from '../src/domain/programmes/splits.ts';
 import { buildPlan } from '../src/domain/programmes/plan.ts';
 import { STAPLE_IDS } from '../src/domain/programmes/staples.ts';
+import { swapSuggestions } from '../src/domain/search.ts';
 import type { Exercise } from '../src/db/schema.ts';
 import type { Equipment } from '../src/domain/types.ts';
 
@@ -70,8 +71,22 @@ function exercisesPlansUse(): Set<string> {
     }
   }
 
-  // The curated staples too — they are what search and swap surface first.
+  // The curated staples too — they are what search surfaces first.
   for (const id of STAPLE_IDS) used.add(id);
+
+  // And whatever the swap screen can offer instead of any of them. Swapping is
+  // a prominent screen now, and a list of grey initials tiles undercuts the
+  // point of having photography at all.
+  const bySourceId = new Map(EXERCISES.map((exercise) => [exercise.source_id, exercise]));
+  for (const id of [...used]) {
+    const exercise = bySourceId.get(id);
+    if (!exercise) continue;
+    const { direct, alternative } = swapSuggestions(exercise, EXERCISES, { limit: 10 });
+    for (const candidate of [...direct, ...alternative]) {
+      if (candidate.source_id) used.add(candidate.source_id);
+    }
+  }
+
   return used;
 }
 

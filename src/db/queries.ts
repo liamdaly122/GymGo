@@ -8,6 +8,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db';
 import { SETTINGS_ID, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
+import { swapSuggestions, type SwapSuggestions } from '@/domain/search';
 import { personalRecords } from '@/domain/prs';
 import { summariseSession } from '@/domain/sessionSummary';
 import { blockProgress, buildSchedule, currentSession, type ScheduledSession } from '@/domain/schedule';
@@ -470,4 +471,58 @@ export function useExerciseTrend(exerciseId: string | undefined): TrendPoint[] |
       .filter((point): point is TrendPoint => point !== null)
       .sort((a, b) => Date.parse(a.performed_at) - Date.parse(b.performed_at));
   }, [exerciseId]);
+}
+
+export interface SwapOptionsView {
+  /** The exercise being swapped out. */
+  current: Exercise;
+  /** How many sets are already logged — they stay on the current exercise. */
+  loggedSets: number;
+  /** The routine this session came from, when it came from one. */
+  routineName: string | null;
+  gymName: string | null;
+  suggestions: SwapSuggestions;
+}
+
+/**
+ * What to offer instead of the exercise in progress.
+ *
+ * `anyGym` drops the equipment filter, for a gym profile that is wrong or a
+ * session away from home.
+ */
+export function useSwapOptions(
+  workoutExerciseId: string | undefined,
+  options: { anyGym?: boolean } = {},
+): SwapOptionsView | null | undefined {
+  const anyGym = options.anyGym ?? false;
+
+  return useLiveQuery(async () => {
+    if (!workoutExerciseId) return null;
+
+    const workoutExercise = await db.workout_exercises.get(workoutExerciseId);
+    if (!workoutExercise) return null;
+
+    const current = await db.exercises.get(workoutExercise.exercise_id);
+    if (!current) return null;
+
+    const workout = await db.workouts.get(workoutExercise.workout_id);
+    const sets = live(await db.sets.where({ workout_exercise_id: workoutExerciseId }).toArray());
+
+    const gym = workout?.gym_id
+      ? await db.gyms.get(workout.gym_id)
+      : live(await db.gyms.toArray()).find((candidate) => candidate.is_default);
+
+    const routine = workout?.routine_id ? await db.routines.get(workout.routine_id) : undefined;
+
+    return {
+      current,
+      loggedSets: sets.filter((set) => set.completed).length,
+      routineName: routine?.name ?? null,
+      gymName: gym?.name ?? null,
+      suggestions: swapSuggestions(current, live(await db.exercises.toArray()), {
+        availableEquipment: anyGym ? null : (gym?.equipment_available ?? null),
+        limit: 10,
+      }),
+    };
+  }, [workoutExerciseId, anyGym]);
 }

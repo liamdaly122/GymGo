@@ -82,13 +82,22 @@ export default function WorkoutExerciseCard({
             {entry.exercise?.primary_muscle}
           </p>
         </div>
-        <button
-          onClick={() => void removeExerciseFromWorkout(entry.workoutExercise.id)}
-          aria-label={`Remove ${entry.exercise?.name ?? 'exercise'} from this workout`}
-          className="shrink-0 px-2 py-1 text-xs text-muted active:text-red-400"
-        >
-          Remove
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <Link
+            to={`/workout/${workoutId}/swap/${entry.workoutExercise.id}`}
+            aria-label={`Swap ${entry.exercise?.name ?? 'exercise'} for something else`}
+            className="rounded-lg px-2 py-1 text-xs text-accent active:opacity-60"
+          >
+            Swap
+          </Link>
+          <button
+            onClick={() => void removeExerciseFromWorkout(entry.workoutExercise.id)}
+            aria-label={`Remove ${entry.exercise?.name ?? 'exercise'} from this workout`}
+            className="rounded-lg px-2 py-1 text-xs text-muted active:text-red-400"
+          >
+            Remove
+          </button>
+        </div>
       </div>
 
       {/* Setup notes: seat height, pin position, which bar. Shown where they are used. */}

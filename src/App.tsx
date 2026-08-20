@@ -3,6 +3,7 @@ import Layout from './components/Layout';
 import { useAppInit } from './hooks/useAppInit';
 import HomeScreen from './features/home/HomeScreen';
 import ActiveWorkoutScreen from './features/workout/ActiveWorkoutScreen';
+import SwapExerciseScreen from './features/workout/SwapExerciseScreen';
 import ExerciseLibraryScreen from './features/exercises/ExerciseLibraryScreen';
 import ExerciseDetailScreen from './features/exercises/ExerciseDetailScreen';
 import HistoryScreen from './features/history/HistoryScreen';
@@ -62,6 +63,10 @@ export default function App() {
         </Route>
         {/* The active workout is full screen: no tab bar competing with set entry. */}
         <Route path="/workout/:workoutId" element={<ActiveWorkoutScreen />} />
+        <Route
+          path="/workout/:workoutId/swap/:workoutExerciseId"
+          element={<SwapExerciseScreen />}
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>

@@ -675,3 +675,142 @@ export async function createRoutinesFromPlan(
 
   return { planId: planRow.id, routineIds: routines.map((routine) => routine.id) };
 }
+
+export type SwapOutcome = 'replaced' | 'appended';
+
+export interface SwapResult {
+  outcome: SwapOutcome;
+  /** The row now carrying the replacement — a new one when sets were kept. */
+  workoutExerciseId: string;
+}
+
+/**
+ * Swaps an exercise mid-session, for when the rack is taken.
+ *
+ * The important part is what happens to sets already logged. Repointing a row
+ * that holds a completed 100kg bench press would file that set in history as a
+ * 100kg dumbbell press: a personal record you never set, and a previous
+ * performance figure you cannot beat because you never hit it.
+ *
+ * So work already done stays attached to the lift that produced it, and the
+ * replacement is inserted below it carrying whatever was left to do. The session
+ * ends up showing both, which is what actually happened.
+ */
+export async function swapWorkoutExercise(
+  workoutExerciseId: string,
+  newExerciseId: string,
+  options: { updateRoutine?: boolean } = {},
+): Promise<SwapResult> {
+  const current = await db.workout_exercises.get(workoutExerciseId);
+  if (!current) throw new Error(`Workout exercise ${workoutExerciseId} not found`);
+  await assertWorkoutEditable(current.workout_id);
+
+  if (current.exercise_id === newExerciseId) {
+    return { outcome: 'replaced', workoutExerciseId };
+  }
+
+  const sets = (await db.sets.where({ workout_exercise_id: workoutExerciseId }).toArray()).filter(
+    (set) => set.deleted_at === null,
+  );
+  const completed = sets.filter((set) => set.completed);
+  const pending = sets.filter((set) => !set.completed);
+  const now = nowIso();
+
+  // Nothing performed yet, so nothing to protect: repoint the row and keep the
+  // sets that were planned for it.
+  if (completed.length === 0) {
+    await db.workout_exercises.update(workoutExerciseId, {
+      exercise_id: newExerciseId,
+      updated_at: now,
+    });
+    await enqueue('workout_exercises', workoutExerciseId, 'put', {
+      exercise_id: newExerciseId,
+      updated_at: now,
+    });
+    await maybeUpdateRoutine(current, newExerciseId, options.updateRoutine ?? false);
+    return { outcome: 'replaced', workoutExerciseId };
+  }
+
+  const replacement: WorkoutExercise = {
+    id: newId(),
+    workout_id: current.workout_id,
+    exercise_id: newExerciseId,
+    position: current.position + 1,
+    superset_group: current.superset_group,
+    technique: current.technique,
+    notes: null,
+    ...freshSyncFields(),
+  };
+
+  // Carry across what was left to do, at least one row to type into.
+  const carried = Math.max(1, pending.length);
+  const plannedSets: WorkoutSet[] = Array.from({ length: carried }, (_unused, index) => ({
+    id: newId(),
+    workout_exercise_id: replacement.id,
+    parent_set_id: null,
+    set_index: index,
+    type: 'working' as const,
+    weight_kg: 0,
+    reps: 0,
+    rir: pending[index]?.rir ?? null,
+    is_amrap: false,
+    completed: false,
+    completed_at: null,
+    ...freshSyncFields(),
+  }));
+
+  const siblings = (await db.workout_exercises.where({ workout_id: current.workout_id }).toArray())
+    .filter((we) => we.deleted_at === null && we.position > current.position);
+
+  await db.transaction('rw', db.workout_exercises, db.sets, db.outbox, async () => {
+    // Sets never started are not history; drop them so the finished session does
+    // not show empty rows against a lift that was abandoned.
+    for (const set of pending) {
+      await db.sets.update(set.id, { deleted_at: now, updated_at: now });
+    }
+    for (const sibling of siblings) {
+      await db.workout_exercises.update(sibling.id, { position: sibling.position + 1, updated_at: now });
+    }
+    await db.workout_exercises.add(replacement);
+    await db.sets.bulkAdd(plannedSets);
+  });
+
+  for (const set of pending) await enqueue('sets', set.id, 'delete', { deleted_at: now });
+  for (const sibling of siblings) {
+    await enqueue('workout_exercises', sibling.id, 'put', { position: sibling.position + 1 });
+  }
+  await enqueue('workout_exercises', replacement.id, 'put', replacement);
+  for (const set of plannedSets) await enqueue('sets', set.id, 'put', set);
+
+  await maybeUpdateRoutine(current, newExerciseId, options.updateRoutine ?? false);
+
+  return { outcome: 'appended', workoutExerciseId: replacement.id };
+}
+
+/**
+ * Optionally keeps the swap for next time.
+ *
+ * Safe to offer because starting a routine COPIES it: editing the routine now
+ * cannot reach into a session already performed, whatever it says about the
+ * next one.
+ */
+async function maybeUpdateRoutine(
+  original: WorkoutExercise,
+  newExerciseId: string,
+  update: boolean,
+): Promise<void> {
+  if (!update) return;
+
+  const workout = await db.workouts.get(original.workout_id);
+  if (!workout?.routine_id) return;
+
+  const routineExercises = (
+    await db.routine_exercises.where({ routine_id: workout.routine_id }).toArray()
+  ).filter((row) => row.deleted_at === null && row.exercise_id === original.exercise_id);
+
+  const now = nowIso();
+  for (const row of routineExercises) {
+    await db.routine_exercises.update(row.id, { exercise_id: newExerciseId, updated_at: now });
+    await enqueue('routine_exercises', row.id, 'put', { exercise_id: newExerciseId, updated_at: now });
+  }
+}
