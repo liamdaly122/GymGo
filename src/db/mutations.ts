@@ -396,6 +396,40 @@ export async function addSet(
   return row.id;
 }
 
+/**
+ * Pairs an exercise with the one after it, or breaks the pair.
+ *
+ * Grouping is stored on the rows rather than derived from adjacency so that
+ * removing something from between a pair does not silently dissolve it.
+ */
+export async function toggleSupersetWithNext(workoutExerciseId: string): Promise<void> {
+  const current = await db.workout_exercises.get(workoutExerciseId);
+  if (!current) throw new Error(`Workout exercise ${workoutExerciseId} not found`);
+  await assertWorkoutEditable(current.workout_id);
+
+  const ordered = (await db.workout_exercises.where({ workout_id: current.workout_id }).toArray())
+    .filter((we) => we.deleted_at === null)
+    .sort((a, b) => a.position - b.position);
+
+  const index = ordered.findIndex((we) => we.id === workoutExerciseId);
+  const next = ordered[index + 1];
+  if (!next) return;
+
+  const now = nowIso();
+  const alreadyPaired =
+    current.superset_group !== null && current.superset_group === next.superset_group;
+
+  // Breaking the pair clears both ends; leaving one row pointing at a group
+  // nothing else belongs to would show a stray A1 with no A2.
+  const group = alreadyPaired ? null : (current.superset_group ?? newId());
+
+  for (const row of [current, next]) {
+    const patch = { superset_group: group, updated_at: now };
+    await db.workout_exercises.update(row.id, patch);
+    await enqueue('workout_exercises', row.id, 'put', patch);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Advanced set techniques
 //

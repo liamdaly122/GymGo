@@ -160,6 +160,24 @@ export default function SetRow({
               {value}
             </button>
           ))}
+
+          {/* AMRAP is a property of the set you are about to do, so it sits with
+              RIR rather than waiting for the set to be ticked. The reps field
+              relabels itself once it is on. */}
+          {!child ? (
+            <button
+              onClick={() => void updateSet(set.id, { is_amrap: !set.is_amrap })}
+              aria-label={`Set ${index + 1} as many reps as possible`}
+              aria-pressed={set.is_amrap}
+              className={`ml-auto rounded-full px-2.5 py-1 text-[10px] font-medium tracking-wide transition-colors ${
+                set.is_amrap
+                  ? 'bg-accent text-ink'
+                  : 'border border-line bg-raised text-muted'
+              }`}
+            >
+              AMRAP
+            </button>
+          ) : null}
         </div>
       ) : null}
 

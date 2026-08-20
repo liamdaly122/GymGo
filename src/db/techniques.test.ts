@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from './db';
 import {
   ChildOfChildError,
+  toggleSupersetWithNext,
   ImmutableWorkoutError,
   addBackOffSet,
   addChildSet,
@@ -230,5 +231,69 @@ describe('guards', () => {
     await finishWorkout(workoutId);
 
     await expect(addChildSet(setId, 'drop')).rejects.toBeInstanceOf(ImmutableWorkoutError);
+  });
+});
+
+describe('supersets', () => {
+  const groupsOf = async (workoutId: string) =>
+    (await db.workout_exercises.where({ workout_id: workoutId }).toArray())
+      .filter((we) => we.deleted_at === null)
+      .sort((a, b) => a.position - b.position)
+      .map((we) => we.superset_group);
+
+  it('pairs an exercise with the one after it', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const first = await addExerciseToWorkout(workoutId, BENCH);
+    await addExerciseToWorkout(workoutId, BENCH);
+
+    await toggleSupersetWithNext(first);
+
+    const [a, b] = await groupsOf(workoutId);
+    expect(a).not.toBeNull();
+    expect(a).toBe(b);
+  });
+
+  it('clears both ends when the pair is broken', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const first = await addExerciseToWorkout(workoutId, BENCH);
+    await addExerciseToWorkout(workoutId, BENCH);
+    await toggleSupersetWithNext(first);
+
+    await toggleSupersetWithNext(first);
+
+    // Leaving one row pointing at a group nothing else belongs to would show a
+    // stray A1 with no A2.
+    expect(await groupsOf(workoutId)).toEqual([null, null]);
+  });
+
+  it('extends an existing pair into a giant set rather than starting a new group', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const first = await addExerciseToWorkout(workoutId, BENCH);
+    const second = await addExerciseToWorkout(workoutId, BENCH);
+    await addExerciseToWorkout(workoutId, BENCH);
+    await toggleSupersetWithNext(first);
+
+    await toggleSupersetWithNext(second);
+
+    const groups = await groupsOf(workoutId);
+    expect(new Set(groups).size).toBe(1);
+    expect(groups[0]).not.toBeNull();
+  });
+
+  it('does nothing on the last exercise, which has no next', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const only = await addExerciseToWorkout(workoutId, BENCH);
+
+    await expect(toggleSupersetWithNext(only)).resolves.toBeUndefined();
+    expect(await groupsOf(workoutId)).toEqual([null]);
+  });
+
+  it('refuses to regroup a finished workout', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const first = await addExerciseToWorkout(workoutId, BENCH);
+    await addExerciseToWorkout(workoutId, BENCH);
+    await finishWorkout(workoutId);
+
+    await expect(toggleSupersetWithNext(first)).rejects.toBeInstanceOf(ImmutableWorkoutError);
   });
 });

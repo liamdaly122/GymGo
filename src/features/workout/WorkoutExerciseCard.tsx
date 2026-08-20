@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { WorkoutExerciseView } from '@/db/queries';
 import { usePreviousPerformance, useSetSuggestion, useSettings } from '@/db/queries';
-import { addSet, removeExerciseFromWorkout, updateSet } from '@/db/mutations';
+import { addSet, removeExerciseFromWorkout, toggleSupersetWithNext, updateSet } from '@/db/mutations';
 import { Button, Card } from '@/components/ui';
 import { formatDayLabel } from '@/lib/dates';
 import { formatSetSummary } from '@/domain/previousPerformance';
@@ -19,9 +19,17 @@ import ExerciseImage from '@/components/ExerciseImage';
 export default function WorkoutExerciseCard({
   entry,
   workoutId,
+  restsAfter = true,
+  supersetLabel = null,
+  canPairWithNext = false,
 }: {
   entry: WorkoutExerciseView;
   workoutId: string;
+  /** False for the first half of a superset, which runs straight into the next. */
+  restsAfter?: boolean;
+  /** "A1", "A2" — null when this exercise is not in a superset. */
+  supersetLabel?: string | null;
+  canPairWithNext?: boolean;
 }) {
   const previous = usePreviousPerformance(entry.exercise?.id, workoutId);
   const suggestion = useSetSuggestion(workoutId, entry.exercise?.id);
@@ -85,6 +93,11 @@ export default function WorkoutExerciseCard({
             <span className="text-sm text-muted">Unknown exercise</span>
           )}
           <p className="truncate text-xs text-muted first-letter:uppercase">
+            {supersetLabel ? (
+              <span className="mr-1.5 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-accent">
+                {supersetLabel}
+              </span>
+            ) : null}
             {entry.exercise?.primary_muscle}
           </p>
         </div>
@@ -184,7 +197,7 @@ export default function WorkoutExerciseCard({
             index={setIndex}
             {...(set.parent_set_id === null && weightHint !== undefined ? { weightHint } : {})}
             {...(set.parent_set_id === null && repsHint !== undefined ? { repsHint } : {})}
-            restSeconds={restSeconds}
+            restSeconds={restsAfter ? restSeconds : 0}
             pro={pro}
           />
         );
@@ -193,6 +206,22 @@ export default function WorkoutExerciseCard({
       <Button className="mt-2 w-full" onClick={() => void handleAddSet(entry)}>
         Add set
       </Button>
+
+      {/* Supersetting is a Pro control: it changes when the timer runs, which
+          is confusing if you did not ask for it. */}
+      {pro && canPairWithNext ? (
+        <button
+          onClick={() => void toggleSupersetWithNext(entry.workoutExercise.id)}
+          aria-pressed={!restsAfter}
+          className={`mt-2 w-full rounded-xl border px-3 py-2 text-[11px] transition-colors ${
+            !restsAfter
+              ? 'border-accent/40 bg-accent/10 text-accent'
+              : 'border-line bg-raised text-muted'
+          }`}
+        >
+          {!restsAfter ? 'Supersetted with the next exercise' : 'Superset with next'}
+        </button>
+      ) : null}
     </Card>
   );
 }

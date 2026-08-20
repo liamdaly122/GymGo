@@ -144,14 +144,16 @@ await step('starting it copies the prescription onto the session', async () => {
   await p.waitForURL(/#\/workout\//, { timeout: 15000 });
   await p.waitForTimeout(900);
 
-  const copied = await p.evaluate(async () => {
+  // Scope to this workout: getAll() returns rows in uuid order, so "the last
+  // one" is arbitrary once earlier sessions exist.
+  const workoutId = new URL(p.url()).hash.split('/')[2];
+  const copied = await p.evaluate(async (id) => {
     const open = indexedDB.open('gymgo');
     const db = await new Promise((res, rej) => { open.onsuccess = () => res(open.result); open.onerror = () => rej(open.error); });
     const get = (s) => new Promise((res, rej) => { const r = db.transaction(s).objectStore(s).getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
-    const wes = (await get('workout_exercises')).filter(w => w.deleted_at === null);
-    const latest = wes.at(-1);
-    return { rest: latest.rest_seconds, tempo: latest.tempo };
-  });
+    const mine = (await get('workout_exercises')).filter(w => w.deleted_at === null && w.workout_id === id);
+    return { count: mine.length, rest: mine[0]?.rest_seconds, tempo: mine[0]?.tempo };
+  }, workoutId);
   console.log('       copied:', JSON.stringify(copied));
   if (copied.rest !== 210) throw new Error(`expected the prescribed 210s, got ${copied.rest}`);
   if (copied.tempo !== '3-1-1-0') throw new Error(`expected the prescribed tempo, got ${copied.tempo}`);
@@ -170,6 +172,79 @@ await step('and the rest timer runs for the prescribed 210s, not the default', a
     throw new Error(`expected a 3:30 rest, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
   }
   console.log('       timer shows:', (body.match(/\d:\d\d/) ?? ['?'])[0]);
+});
+
+await step('AMRAP relabels the reps field', async () => {
+  const amrap = p.getByLabel(/Set 1 as many reps as possible/).first();
+  if (!(await amrap.count())) throw new Error('Pro mode should offer an AMRAP flag');
+  await amrap.click();
+  await p.waitForTimeout(500);
+  const suffix = await p.locator('body').innerText();
+  if (!/AMRAP/.test(suffix)) throw new Error('the reps field should say AMRAP');
+});
+
+await step('supersetting two exercises stops the timer running between them', async () => {
+  // A fresh session: the previous one has a ticked set and a running timer,
+  // which would make "the first unticked set" ambiguous. Close it properly
+  // rather than resuming it.
+  const skip = p.getByRole('button', { name: 'Skip', exact: true });
+  if (await skip.count()) await skip.click();
+  await p.getByRole('button', { name: 'Finish', exact: true }).click();
+  await p.getByRole('button', { name: 'Finish and save' }).click();
+  await p.waitForURL(/#\/history\//, { timeout: 15000 });
+
+  await p.goto(BASE + '#/', { waitUntil: 'networkidle' });
+  await p.getByRole('button', { name: 'Start empty workout' }).click();
+  await p.waitForURL(/#\/workout\//, { timeout: 15000 });
+
+  for (const [query, name] of [
+    ['barbell bench press', /^Barbell Bench Press - Medium Grip/],
+    ['one-arm dumbbell row', /^One-Arm Dumbbell Row/],
+  ]) {
+    await p.getByRole('button', { name: 'Add exercise' }).click();
+    await p.getByPlaceholder('Add exercise').fill(query);
+    await p.getByRole('button', { name }).first().click();
+    await p.waitForTimeout(800);
+  }
+
+  const pair = p.getByRole('button', { name: 'Superset with next' }).first();
+  if (!(await pair.count())) throw new Error('Pro mode should offer to superset with the next exercise');
+  await pair.click();
+  await p.waitForTimeout(700);
+
+  const body = await p.locator('body').innerText();
+  if (!/A1/.test(body) || !/A2/.test(body)) {
+    throw new Error(`expected A1 / A2 badges, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
+  }
+});
+await p.screenshot({ path: 'e2e/shot-superset.png', fullPage: true });
+
+await step('finishing the first half of the pair starts no rest', async () => {
+  await p.getByLabel('Set 1 weight in kilograms').first().fill('60');
+  await p.getByLabel('Set 1 repetitions').first().fill('5');
+  await p.getByLabel(/Mark set 1 done/).first().click();
+  await p.waitForTimeout(1000);
+
+  const body = await p.locator('body').innerText();
+  // Case-insensitive: the label is uppercased by CSS, and innerText respects
+  // text-transform, so /Resting/ would never match and the check would pass
+  // whatever happened.
+  if (/resting/i.test(body)) throw new Error('rest must not run between the halves of a superset');
+});
+
+await step('finishing the second half does start the rest', async () => {
+  // The first card's button now reads "tap to undo", so the only remaining
+  // "Mark set 1 done" is the second half of the pair.
+  await p.getByLabel('Set 1 weight in kilograms').nth(1).fill('30');
+  await p.getByLabel('Set 1 repetitions').nth(1).fill('10');
+  await p.getByLabel(/Mark set 1 done/).first().click();
+  await p.waitForTimeout(1000);
+
+  const body = await p.locator('body').innerText();
+  if (!/resting/i.test(body)) {
+    throw new Error(`rest should run after the round, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
+  }
+  console.log('       rest after the round:', (body.match(/\d:\d\d/) ?? ['?'])[0]);
 });
 
 console.log(errs.length ? '\nBrowser errors:\n' + errs.join('\n') : '\nNo browser errors.');

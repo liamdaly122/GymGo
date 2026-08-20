@@ -13,6 +13,7 @@ import { useElapsed } from '@/hooks/useElapsed';
 import { totalTonnage, totalWorkingSets } from '@/domain/volume';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
 import WorkoutExerciseCard from './WorkoutExerciseCard';
+import { restsAfter, supersetLabel } from '@/domain/supersets';
 import { RestTimerBar, RestTimerProvider, useRestTimer } from './RestTimer';
 import { useWakeLock } from '@/hooks/useWakeLock';
 
@@ -55,6 +56,10 @@ function ActiveWorkout() {
   }
 
   const allSets = view.exercises.flatMap((entry) => entry.sets);
+  const supersetMembers = view.exercises.map((entry) => ({
+    id: entry.workoutExercise.id,
+    superset_group: entry.workoutExercise.superset_group,
+  }));
   const completedSets = totalWorkingSets(allSets);
   const tonnage = totalTonnage(allSets);
 
@@ -136,9 +141,18 @@ function ActiveWorkout() {
         </div>
       ) : (
         <ul className="space-y-3">
-          {view.exercises.map((entry) => (
+          {view.exercises.map((entry, index) => (
             <li key={entry.workoutExercise.id}>
-              <WorkoutExerciseCard entry={entry} workoutId={workoutId} />
+              <WorkoutExerciseCard
+                entry={entry}
+                workoutId={workoutId}
+                // Superset membership is a property of the whole session, so it
+                // is resolved here where the ordered list lives rather than in
+                // each card.
+                restsAfter={restsAfter(supersetMembers, index)}
+                supersetLabel={supersetLabel(supersetMembers, index)}
+                canPairWithNext={index < view.exercises.length - 1}
+              />
             </li>
           ))}
         </ul>
