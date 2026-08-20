@@ -82,6 +82,18 @@ export class GymGoDB extends Dexie {
           settings.week_starts_on ??= 1; // Monday
         });
       });
+
+    // Version 3 carries the routine's prescribed rest and tempo onto the
+    // workout. No index changes — the fields are read through the row, never
+    // queried — so this is an upgrade hook only.
+    this.version(3).upgrade(async (tx) => {
+      await tx.table('workout_exercises').toCollection().modify((workoutExercise) => {
+        // Existing sessions were performed under the exercise default, and
+        // leaving these null is what keeps saying so.
+        workoutExercise.rest_seconds ??= null;
+        workoutExercise.tempo ??= null;
+      });
+    });
   }
 }
 

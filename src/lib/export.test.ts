@@ -29,6 +29,8 @@ const workoutExercise: WorkoutExercise = {
   superset_group: null,
   technique: 'drop_set',
   notes: null,
+  rest_seconds: null,
+  tempo: null,
   ...sync,
 };
 

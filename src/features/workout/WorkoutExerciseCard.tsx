@@ -29,9 +29,14 @@ export default function WorkoutExerciseCard({
   const pro = settings?.mode === 'pro';
   const workingSets = previous?.working_sets ?? [];
 
-  // Per-exercise rest wins over the global default: the brief's defaults are
-  // 150-180s for compounds and 60-90s for isolation, which the seed applies.
-  const restSeconds = entry.exercise?.default_rest_seconds ?? settings?.default_rest_seconds ?? 120;
+  // Most specific wins. The routine's prescription is the whole reason a
+  // strength primary rests 210s and an accessory 75s; falling straight to the
+  // exercise default made every generated plan rest the same.
+  const restSeconds =
+    entry.workoutExercise.rest_seconds ??
+    entry.exercise?.default_rest_seconds ??
+    settings?.default_rest_seconds ??
+    120;
 
   /** Copies last session's numbers into any set not yet logged. Never overwrites. */
   const applyLastTime = async () => {

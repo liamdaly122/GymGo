@@ -120,6 +120,58 @@ await step('finishing leaves the 100kg record intact', async () => {
 });
 await p.screenshot({ path: 'e2e/shot-pro-summary.png', fullPage: true });
 
+await step('a routine can prescribe rest and tempo in Pro mode', async () => {
+  await p.goto(BASE + '#/routines', { waitUntil: 'networkidle' });
+  await p.getByRole('button', { name: /New|Add/i }).first().click();
+  await p.getByPlaceholder(/Lower A, Push/).fill('Strength A');
+  await p.getByRole('button', { name: 'Create' }).click();
+  await p.waitForTimeout(900);
+  await p.getByRole('button', { name: 'Add exercise' }).first().click();
+  await p.getByPlaceholder('Add to routine').fill('barbell bench press');
+  await p.getByRole('button', { name: /^Barbell Bench Press - Medium Grip/ }).first().click();
+  await p.waitForTimeout(800);
+
+  const restField = p.getByLabel(/rest seconds/i).first();
+  if (!(await restField.count())) throw new Error('Pro mode should expose a per-exercise rest field');
+  await restField.fill('210');
+  await p.getByLabel(/tempo/i).first().fill('3-1-1-0');
+  await p.locator('body').click({ position: { x: 5, y: 5 } });
+  await p.waitForTimeout(600);
+});
+
+await step('starting it copies the prescription onto the session', async () => {
+  await p.getByRole('button', { name: /Start workout|Start/i }).first().click();
+  await p.waitForURL(/#\/workout\//, { timeout: 15000 });
+  await p.waitForTimeout(900);
+
+  const copied = await p.evaluate(async () => {
+    const open = indexedDB.open('gymgo');
+    const db = await new Promise((res, rej) => { open.onsuccess = () => res(open.result); open.onerror = () => rej(open.error); });
+    const get = (s) => new Promise((res, rej) => { const r = db.transaction(s).objectStore(s).getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    const wes = (await get('workout_exercises')).filter(w => w.deleted_at === null);
+    const latest = wes.at(-1);
+    return { rest: latest.rest_seconds, tempo: latest.tempo };
+  });
+  console.log('       copied:', JSON.stringify(copied));
+  if (copied.rest !== 210) throw new Error(`expected the prescribed 210s, got ${copied.rest}`);
+  if (copied.tempo !== '3-1-1-0') throw new Error(`expected the prescribed tempo, got ${copied.tempo}`);
+});
+
+await step('and the rest timer runs for the prescribed 210s, not the default', async () => {
+  await p.getByLabel('Set 1 weight in kilograms').first().fill('60');
+  await p.getByLabel('Set 1 repetitions').first().fill('5');
+  await p.getByLabel(/Mark set 1 done/).first().click();
+  await p.waitForTimeout(800);
+
+  const body = await p.locator('body').innerText();
+  // 210s is 3:30. The exercise default for a barbell bench is 180s (3:00), so
+  // a clock reading 3:2x proves the routine's prescription won.
+  if (!/3:2\d|3:30/.test(body)) {
+    throw new Error(`expected a 3:30 rest, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
+  }
+  console.log('       timer shows:', (body.match(/\d:\d\d/) ?? ['?'])[0]);
+});
+
 console.log(errs.length ? '\nBrowser errors:\n' + errs.join('\n') : '\nNo browser errors.');
 await b.close();
 process.exit(errs.length ? 1 : 0);

@@ -134,6 +134,16 @@ export interface WorkoutExercise extends SyncFields {
   superset_group: string | null;
   technique: Technique;
   notes: string | null;
+  /**
+   * Copied from the routine at workout start, never referenced live.
+   *
+   * A strength primary is prescribed 210s and an accessory 75s; without this
+   * the timer fell back to the exercise's generic default and every plan's
+   * prescribed rest was decorative. Null means "use the exercise default".
+   */
+  rest_seconds: number | null;
+  /** Four-digit string such as "3-1-1-0". Copied from the routine. */
+  tempo: string | null;
 }
 
 export interface WorkoutSet extends SyncFields {

@@ -153,16 +153,12 @@ export default function RoutineEditorScreen() {
                   </Field>
                 </div>
 
-                {/* Pro prescriptions. target_rir already exists in the schema
-                    and is stored null in Beginner, so switching modes never
-                    migrates anything or loses what you set — it is copied onto
-                    every planned set by startWorkoutFromRoutine.
-
-                    Tempo and per-exercise rest are deliberately absent: both
-                    are stored on the routine but there is nowhere on
-                    workout_exercises to copy them to, so an input for either
-                    would edit a value nothing reads. See the note in
-                    startWorkoutFromRoutine. */}
+                {/* Pro prescriptions. Every field here already exists in the
+                    schema and is stored null in Beginner, so switching modes
+                    never migrates anything or loses what you set. All three are
+                    copied onto the session by startWorkoutFromRoutine rather
+                    than referenced, so editing them later cannot reach a
+                    workout already performed. */}
                 {pro ? (
                   <div className="mt-2 grid grid-cols-3 gap-2 border-t border-line pt-2">
                     <Field label="Target RIR">
@@ -176,6 +172,36 @@ export default function RoutineEditorScreen() {
                           })
                         }
                         aria-label={`${entry.exercise?.name ?? 'Exercise'} target reps in reserve`}
+                      />
+                    </Field>
+                    <Field label="Rest">
+                      <NumberField
+                        value={entry.routineExercise.rest_seconds ?? 0}
+                        blankWhenZero
+                        // Blank means "use the exercise default", which is why
+                        // this is nullable rather than pre-filled.
+                        placeholder={String(entry.exercise?.default_rest_seconds ?? 120)}
+                        suffix="s"
+                        onCommit={(value) =>
+                          void updateRoutineExercise(entry.routineExercise.id, {
+                            rest_seconds: value <= 0 ? null : Math.round(value),
+                          })
+                        }
+                        aria-label={`${entry.exercise?.name ?? 'Exercise'} rest seconds`}
+                      />
+                    </Field>
+                    <Field label="Tempo">
+                      <input
+                        defaultValue={entry.routineExercise.tempo ?? ''}
+                        placeholder="3-1-1-0"
+                        onBlur={(event) => {
+                          const value = event.currentTarget.value.trim();
+                          void updateRoutineExercise(entry.routineExercise.id, {
+                            tempo: value === '' ? null : value,
+                          });
+                        }}
+                        aria-label={`${entry.exercise?.name ?? 'Exercise'} tempo`}
+                        className="h-11 w-full rounded-xl border border-line bg-raised px-2 text-center text-sm text-white placeholder:text-muted focus:border-accent focus:outline-none"
                       />
                     </Field>
                   </div>

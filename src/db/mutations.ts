@@ -191,6 +191,10 @@ export async function startWorkoutFromRoutine(
     superset_group: re.superset_group,
     technique: re.technique,
     notes: null,
+    // Copied, not referenced: editing the routine's rest later must not change
+    // what this session was performed under.
+    rest_seconds: re.rest_seconds,
+    tempo: re.tempo,
     ...freshSyncFields(),
   }));
 
@@ -312,6 +316,9 @@ export async function addExerciseToWorkout(
     exercise_id: exerciseId,
     position,
     superset_group: options.supersetGroup ?? null,
+    // Added by hand mid-session, so there is no prescription to inherit.
+    rest_seconds: null,
+    tempo: null,
     technique: options.technique ?? 'straight',
     notes: null,
     ...freshSyncFields(),
@@ -876,6 +883,9 @@ export async function swapWorkoutExercise(
     position: current.position + 1,
     superset_group: current.superset_group,
     technique: current.technique,
+    // The replacement stands in the same slot, so it inherits its prescription.
+    rest_seconds: current.rest_seconds,
+    tempo: current.tempo,
     notes: null,
     ...freshSyncFields(),
   };

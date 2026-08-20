@@ -49,6 +49,16 @@ async function makeVersion1Database(name: string) {
     notes: 'from the old version',
     ...sync,
   });
+  await legacy.table('workout_exercises').add({
+    id: 'old-workout-exercise',
+    workout_id: 'old-workout',
+    exercise_id: 'some-exercise',
+    position: 0,
+    superset_group: null,
+    technique: 'straight',
+    notes: null,
+    ...sync,
+  });
   await legacy.table('plans').add({
     id: 'old-plan',
     name: 'Old plan',
@@ -101,6 +111,15 @@ describe('upgrading a version 1 database', () => {
     const settings = await upgraded.settings.get(SETTINGS_ID);
     expect(settings!.week_starts_on).toBe(1);
     expect(settings!.default_rest_seconds).toBe(120);
+
+    const workoutExercise = await upgraded.workout_exercises.get('old-workout-exercise');
+    expect(workoutExercise, 'the old workout exercise survived').toBeDefined();
+    expect(workoutExercise!.technique).toBe('straight');
+    // Version 3 adds the prescription carried over from the routine. Sessions
+    // performed before it existed ran on the exercise default, and null is what
+    // keeps saying so rather than inventing a rest they never took.
+    expect(workoutExercise!.rest_seconds).toBeNull();
+    expect(workoutExercise!.tempo).toBeNull();
 
     upgraded.close();
   });

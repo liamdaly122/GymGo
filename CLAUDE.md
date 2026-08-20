@@ -41,6 +41,14 @@ This is guaranteed structurally, not by convention: starting a workout from a
 routine **copies** `routine_exercises` into `workout_exercises`. It never holds a
 live reference. See `startWorkoutFromRoutine` in `src/db/mutations.ts`.
 
+The copy has to carry **everything the session needs**, not just the exercise
+ids. `rest_seconds` and `tempo` were left off the copy at first, and because
+`workout_exercises` had nowhere to put them the rest timer silently fell back to
+each exercise's generic default — so a strength primary prescribed 210s and an
+accessory prescribed 75s both rested the same, and the plan generator's rest
+values were decorative. If a prescription field is added to `routine_exercises`,
+it needs a home on `workout_exercises` too, or it does nothing.
+
 Every chart, PR and progression suggestion reads from the **workout** tables,
 never from the routine tables. If this gets collapsed into one table to save
 effort, the history becomes worthless.

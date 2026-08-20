@@ -30,6 +30,44 @@ beforeEach(async () => {
  * the routine's exercises rather than referencing them — so these tests poke at
  * the structure, not just the happy path.
  */
+describe('the routine prescription reaches the session', () => {
+  it('copies rest and tempo onto the workout exercise', async () => {
+    const routineId = await createRoutine('Strength A');
+    const reId = await addExerciseToRoutine(routineId, EXERCISE_A);
+    // A strength primary rests far longer than the exercise default.
+    await updateRoutineExercise(reId, { rest_seconds: 210, tempo: '3-1-1-0' });
+
+    const workoutId = await startWorkoutFromRoutine(routineId);
+
+    const [copied] = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
+    expect(copied!.rest_seconds).toBe(210);
+    expect(copied!.tempo).toBe('3-1-1-0');
+  });
+
+  it('but editing the routine afterwards cannot change what was performed', async () => {
+    const routineId = await createRoutine('Strength A');
+    const reId = await addExerciseToRoutine(routineId, EXERCISE_A);
+    await updateRoutineExercise(reId, { rest_seconds: 210 });
+    const workoutId = await startWorkoutFromRoutine(routineId);
+
+    await updateRoutineExercise(reId, { rest_seconds: 60 });
+
+    const [copied] = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
+    // Copied, not referenced — the same guarantee that protects the sets.
+    expect(copied!.rest_seconds).toBe(210);
+  });
+
+  it('leaves rest null when the routine prescribes none, meaning use the default', async () => {
+    const routineId = await createRoutine('Freestyle-ish');
+    await addExerciseToRoutine(routineId, EXERCISE_A);
+
+    const workoutId = await startWorkoutFromRoutine(routineId);
+
+    const [copied] = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
+    expect(copied!.rest_seconds).toBeNull();
+  });
+});
+
 describe('routine edits cannot reach finished workouts', () => {
   it('copies routine exercises into the workout instead of referencing them', async () => {
     const routineId = await createRoutine('Lower A');
