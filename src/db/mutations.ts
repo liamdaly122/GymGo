@@ -14,6 +14,7 @@ import { db } from './db';
 import {
   SETTINGS_ID,
   type Exercise,
+  type Gym,
   type Plan,
   type Routine,
   type RoutineExercise,
@@ -93,7 +94,9 @@ export async function startFreestyleWorkout(options: {
     plan_id: null,
     plan_week: null,
     plan_session_index: null,
-    gym_id: options.gymId ?? null,
+    // Recorded so weight suggestions round to the plates that were actually
+    // there, rather than whichever gym happens to be default when you look back.
+    gym_id: options.gymId ?? (await defaultGymId()),
     started_at: nowIso(),
     finished_at: null,
     bodyweight_kg: null,
@@ -170,7 +173,7 @@ export async function startWorkoutFromRoutine(
     plan_id: plan?.id ?? null,
     plan_week: week,
     plan_session_index: sessionIndex >= 0 ? sessionIndex : null,
-    gym_id: options.gymId ?? null,
+    gym_id: options.gymId ?? (await defaultGymId()),
     started_at: nowIso(),
     finished_at: null,
     bodyweight_kg: null,
@@ -813,4 +816,109 @@ async function maybeUpdateRoutine(
     await db.routine_exercises.update(row.id, { exercise_id: newExerciseId, updated_at: now });
     await enqueue('routine_exercises', row.id, 'put', { exercise_id: newExerciseId, updated_at: now });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Gyms
+//
+// What equipment you actually have is load-bearing: plans are filled from it,
+// swap suggestions are filtered by it, and the progression engine rounds weights
+// to the plates it lists. Until there was a screen for this, every gym claimed to
+// own everything and none of that could do its job.
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_BAR_WEIGHTS = [20, 15, 10];
+export const DEFAULT_PLATES = [25, 20, 15, 10, 5, 2.5, 1.25];
+
+export async function createGym(
+  name: string,
+  values: Partial<Pick<Gym, 'equipment_available' | 'bar_weights' | 'plates_available' | 'is_default'>> = {},
+): Promise<string> {
+  const existing = (await db.gyms.toArray()).filter((gym) => gym.deleted_at === null);
+
+  const row: Gym = {
+    id: newId(),
+    name,
+    // A new gym starts empty rather than fully equipped: ticking what you have
+    // is quicker and more accurate than un-ticking what you have not.
+    equipment_available: values.equipment_available ?? ['bodyweight'],
+    bar_weights: values.bar_weights ?? DEFAULT_BAR_WEIGHTS,
+    plates_available: values.plates_available ?? DEFAULT_PLATES,
+    is_default: values.is_default ?? existing.length === 0,
+    ...freshSyncFields(),
+  };
+
+  await db.gyms.add(row);
+  await enqueue('gyms', row.id, 'put', row);
+  if (row.is_default) await setDefaultGym(row.id);
+  return row.id;
+}
+
+export async function updateGym(
+  gymId: string,
+  changes: Partial<Pick<Gym, 'name' | 'equipment_available' | 'bar_weights' | 'plates_available'>>,
+): Promise<void> {
+  const patch = { ...changes, updated_at: nowIso() };
+  await db.gyms.update(gymId, patch);
+  await enqueue('gyms', gymId, 'put', patch);
+}
+
+/** Exactly one gym is the default, so this clears the others in the same pass. */
+export async function setDefaultGym(gymId: string): Promise<void> {
+  const now = nowIso();
+  const gyms = (await db.gyms.toArray()).filter((gym) => gym.deleted_at === null);
+
+  await db.transaction('rw', db.gyms, db.settings, db.outbox, async () => {
+    for (const gym of gyms) {
+      const shouldBeDefault = gym.id === gymId;
+      if (gym.is_default === shouldBeDefault) continue;
+      await db.gyms.update(gym.id, { is_default: shouldBeDefault, updated_at: now });
+    }
+    await db.settings.update(SETTINGS_ID, { default_gym_id: gymId, updated_at: now });
+  });
+
+  for (const gym of gyms) {
+    await enqueue('gyms', gym.id, 'put', { is_default: gym.id === gymId, updated_at: now });
+  }
+  await enqueue('settings', SETTINGS_ID, 'put', { default_gym_id: gymId, updated_at: now });
+}
+
+export class LastGymError extends Error {
+  constructor() {
+    super('You need at least one gym — plans and weight suggestions are built from its equipment.');
+    this.name = 'LastGymError';
+  }
+}
+
+export async function deleteGym(gymId: string): Promise<void> {
+  const live = (await db.gyms.toArray()).filter((gym) => gym.deleted_at === null);
+  const remaining = live.filter((gym) => gym.id !== gymId);
+  // Deleting the last one would leave plans and plate rounding with nothing to
+  // work from, so it is refused rather than silently degraded.
+  if (remaining.length === 0) throw new LastGymError();
+
+  const settings = await db.settings.get(SETTINGS_ID);
+  const wasDefault =
+    (live.find((gym) => gym.id === gymId)?.is_default ?? false) ||
+    settings?.default_gym_id === gymId;
+
+  const now = nowIso();
+  // is_default is cleared as part of the delete. A tombstone that still claims
+  // to be the default would win the fallback in defaultGymId the moment a pull
+  // brought it back, so the flag goes down with the row.
+  const patch = { deleted_at: now, is_default: false, updated_at: now };
+  await db.gyms.update(gymId, patch);
+  await enqueue('gyms', gymId, 'delete', patch);
+
+  if (wasDefault) await setDefaultGym(remaining[0]!.id);
+}
+
+/** The gym a new session should be recorded against. */
+export async function defaultGymId(): Promise<string | null> {
+  const settings = await db.settings.get(SETTINGS_ID);
+  const gyms = (await db.gyms.toArray()).filter((gym) => gym.deleted_at === null);
+  const preferred = settings?.default_gym_id
+    ? gyms.find((gym) => gym.id === settings.default_gym_id)
+    : undefined;
+  return (preferred ?? gyms.find((gym) => gym.is_default) ?? gyms[0])?.id ?? null;
 }

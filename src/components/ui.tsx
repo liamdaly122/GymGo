@@ -85,8 +85,9 @@ export function NumberField({
 }
 
 export function Screen({ children, className = '' }: { children: ReactNode; className?: string }) {
-  // pb-28 clears the fixed bottom navigation.
-  return <div className={`mx-auto min-h-dvh max-w-lg px-4 pb-28 pt-4 ${className}`}>{children}</div>;
+  // pb-28 clears the fixed bottom navigation. <main> rather than <div> so every
+  // screen carries the one landmark that lets a screen reader skip the nav.
+  return <main className={`mx-auto min-h-dvh max-w-lg px-4 pb-28 pt-4 ${className}`}>{children}</main>;
 }
 
 export function ScreenTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {

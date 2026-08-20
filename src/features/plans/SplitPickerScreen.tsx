@@ -125,8 +125,11 @@ export default function SplitPickerScreen() {
 
       {gym ? (
         <p className="mt-4 text-[11px] text-muted">
-          Built from the equipment at {gym.name}. Change your gym in Settings to see different
-          options.
+          Built from the equipment at {gym.name}.{' '}
+          <Link to="/gyms" className="text-accent">
+            Change what it has
+          </Link>{' '}
+          to see different options.
         </p>
       ) : null}
     </Screen>

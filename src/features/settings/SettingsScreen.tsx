@@ -165,6 +165,9 @@ export default function SettingsScreen() {
         </p>
 
         <div className="grid gap-2">
+          <Button onClick={() => void navigate('/gyms')}>
+            Gyms and equipment
+          </Button>
           <Button onClick={() => void navigate('/exercises')}>
             Browse all exercises
           </Button>

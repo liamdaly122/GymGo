@@ -18,7 +18,8 @@
     "templates:check": "tsx scripts/check-templates.ts",
     "test:plans": "node e2e/plans.mjs",
     "images:build": "tsx scripts/build-images.ts",
-    "test:swap": "node e2e/swap.mjs"
+    "test:swap": "node e2e/swap.mjs",
+    "test:gyms": "node e2e/gyms.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

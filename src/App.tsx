@@ -11,6 +11,8 @@ import WorkoutDetailScreen from './features/history/WorkoutDetailScreen';
 import RoutinesScreen from './features/routines/RoutinesScreen';
 import RoutineEditorScreen from './features/routines/RoutineEditorScreen';
 import SettingsScreen from './features/settings/SettingsScreen';
+import GymsScreen from './features/gyms/GymsScreen';
+import GymEditorScreen from './features/gyms/GymEditorScreen';
 import PlansScreen from './features/plans/PlansScreen';
 import ProgressScreen from './features/progress/ProgressScreen';
 import SplitPickerScreen from './features/plans/SplitPickerScreen';
@@ -59,6 +61,8 @@ export default function App() {
           {/* The A-Z browse still exists, just not as a tab of its own. */}
           <Route path="/exercises" element={<ExerciseLibraryScreen />} />
           <Route path="/exercises/:exerciseId" element={<ExerciseDetailScreen />} />
+          <Route path="/gyms" element={<GymsScreen />} />
+          <Route path="/gyms/:gymId" element={<GymEditorScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
         </Route>
         {/* The active workout is full screen: no tab bar competing with set entry. */}
