@@ -77,7 +77,7 @@ export default function SetRow({
   /** True for the set you are about to do — the only row that gets the tools. */
   showTools?: boolean;
   /** How far one tap moves the weight, computed by the card from the equipment. */
-  weightStep?: { up: number; down: number };
+  weightStep?: { up: number | null; down: number | null };
 }) {
   const child = isChildSet(set);
   const label = TYPE_LABELS[set.type] ?? '';
@@ -204,22 +204,30 @@ export default function SetRow({
 
         {weightStep ? (
           <div className={`flex gap-1.5 pb-1.5 ${indent}`}>
-            <StepButton
-              label={`− ${weightStep.down}`}
-              aria-label={`Set ${index + 1} weight down ${weightStep.down} kilograms`}
-              onClick={() =>
-                void run(() =>
-                  updateSet(set.id, { weight_kg: Math.max(0, set.weight_kg - weightStep.down) }),
-                )
-              }
-            />
-            <StepButton
-              label={`+ ${weightStep.up}`}
-              aria-label={`Set ${index + 1} weight up ${weightStep.up} kilograms`}
-              onClick={() =>
-                void run(() => updateSet(set.id, { weight_kg: set.weight_kg + weightStep.up }))
-              }
-            />
+            {weightStep.down === null ? null : (
+              <StepButton
+                label={`− ${weightStep.down}`}
+                aria-label={`Set ${index + 1} weight down ${weightStep.down} kilograms`}
+                onClick={() =>
+                  void run(() =>
+                    updateSet(set.id, {
+                      weight_kg: Math.max(0, set.weight_kg - (weightStep.down ?? 0)),
+                    }),
+                  )
+                }
+              />
+            )}
+            {weightStep.up === null ? null : (
+              <StepButton
+                label={`+ ${weightStep.up}`}
+                aria-label={`Set ${index + 1} weight up ${weightStep.up} kilograms`}
+                onClick={() =>
+                  void run(() =>
+                    updateSet(set.id, { weight_kg: set.weight_kg + (weightStep.up ?? 0) }),
+                  )
+                }
+              />
+            )}
             <StepButton
               label="− 1 rep"
               aria-label={`Set ${index + 1} one rep fewer`}

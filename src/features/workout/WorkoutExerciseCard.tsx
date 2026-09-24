@@ -11,7 +11,12 @@ import {
 } from '@/db/mutations';
 import { setOrdinals } from '@/domain/sets';
 import { warmupRamp } from '@/domain/warmup';
-import { nextLoadableAbove, nextLoadableBelow } from '@/domain/plates';
+import {
+  loadableWeight,
+  nextLoadableAbove,
+  nextLoadableBelow,
+  type LoadingProfile,
+} from '@/domain/plates';
 import { Button, Card } from '@/components/ui';
 import { formatDayLabel } from '@/lib/dates';
 import { formatSetSummary } from '@/domain/previousPerformance';
@@ -249,12 +254,7 @@ export default function WorkoutExerciseCard({
             pro={pro}
             loading={entry.loading}
             showTools={set.id === activeSetId}
-            weightStep={{
-              // One tap lands on a weight this equipment can actually make —
-              // 2.5kg on a barbell with 1.25s, a full 5kg on a coarse stack.
-              up: round2(Math.max(0.5, nextLoadableAbove(set.weight_kg, entry.loading) - set.weight_kg)),
-              down: round2(Math.max(0.5, set.weight_kg - nextLoadableBelow(set.weight_kg, entry.loading))),
-            }}
+            weightStep={weightStep(set.weight_kg, entry.loading)}
           />
         );
       })}
@@ -322,4 +322,29 @@ async function handleAddSet(entry: WorkoutExerciseView) {
 /** Two decimal places, so a plate step never renders as 2.4999999999999996. */
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * How far one tap moves the weight, in the equipment's own increments.
+ *
+ * From an empty field the first tap gives you the smallest thing you can
+ * actually pick up — the bare bar on a barbell, one plate on a stack. Stepping
+ * up from zero the same way as from a loaded bar offered "+ 22.5kg", which is
+ * the bar plus a plate each side, skipping the bar itself; and stepping down
+ * from zero offered "− 0.5kg", which is not a weight at all.
+ */
+function weightStep(
+  weight: number,
+  loading: LoadingProfile,
+): { up: number | null; down: number | null } {
+  if (weight <= 0) {
+    return { up: round2(loadableWeight(0.1, loading)), down: null };
+  }
+
+  // A zero delta means the equipment has nothing further in that direction —
+  // an empty bar has nothing lighter. Clamping it to a token 0.5 offered
+  // "− 0.5kg", which is not a weight you can take off anything.
+  const up = round2(nextLoadableAbove(weight, loading) - weight);
+  const down = round2(weight - nextLoadableBelow(weight, loading));
+  return { up: up > 0 ? up : null, down: down > 0 ? down : null };
 }

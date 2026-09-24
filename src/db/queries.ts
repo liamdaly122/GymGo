@@ -23,6 +23,7 @@ import {
 } from '@/domain/schedule';
 import { setsForWeek, weekModifier, type WeekModifier } from '@/domain/programmes/block';
 import { suggestNextSet, type Suggestion } from '@/domain/progression';
+import { estimateOpeningWeight } from '@/domain/coldStart';
 import { loadingProfileFor, type LoadingProfile } from '@/domain/plates';
 import { bestEstimated1RM, setsPerMuscle, totalTonnage, totalWorkingSets } from '@/domain/volume';
 import { isTopWorkingSet } from '@/domain/sets';
@@ -545,6 +546,37 @@ export function useBlockOverview(): BlockWeekView[] | undefined | null {
  * Assembles everything the progression engine needs — history, the gym's plates,
  * today's readiness, the block week — so no screen has to know those rules.
  */
+/**
+ * Lifts with history that an unperformed one could be reasoned from.
+ *
+ * Narrowed before any set is read: only exercises sharing a movement pattern or
+ * a primary muscle can transfer at all, and only ones actually trained are
+ * worth loading. That keeps this to a handful of reads even with 675 exercises
+ * seeded, and it only ever runs on the first exposure to a lift.
+ */
+async function referenceLifts(target: Exercise, excludeWorkoutId: string) {
+  const trainedIds = [
+    ...new Set(live(await db.workout_exercises.toArray()).map((we) => we.exercise_id)),
+  ].filter((id) => id !== target.id);
+
+  const candidates = (await db.exercises.bulkGet(trainedIds)).filter(
+    (exercise): exercise is Exercise =>
+      Boolean(exercise) &&
+      exercise!.deleted_at === null &&
+      (exercise!.movement_pattern === target.movement_pattern ||
+        exercise!.primary_muscle === target.primary_muscle),
+  );
+
+  const references = [];
+  for (const exercise of candidates) {
+    const history = (await exerciseSessions(exercise.id)).filter(
+      (session) => session.workout_id !== excludeWorkoutId,
+    );
+    if (history.length > 0) references.push({ exercise, history });
+  }
+  return references;
+}
+
 export function useSetSuggestion(
   workoutId: string | undefined,
   exerciseId: string | undefined,
@@ -559,7 +591,6 @@ export function useSetSuggestion(
     const sessions = (await exerciseSessions(exerciseId)).filter(
       (session) => session.workout_id !== workoutId,
     );
-    if (sessions.length === 0) return null;
 
     // Rep range comes from the routine this session was started from. A
     // freestyle session has none, and inventing one would make heavy low-rep
@@ -583,11 +614,39 @@ export function useSetSuggestion(
         ? weekModifier(workout.plan_week, plan.block_weeks)
         : null;
 
+    const loading = loadingProfileFor(exercise.equipment, gym ?? {});
+
+    /*
+     * Never done this lift before.
+     *
+     * The engine says nothing without history, which is right — a number with
+     * nothing behind it still looks authoritative. But a freshly generated plan
+     * is entirely made of lifts you have not done, so the whole first block
+     * arrived with no guidance at all. Reason from the closest lift you HAVE
+     * done instead, clearly labelled as an estimate.
+     */
+    if (sessions.length === 0) {
+      const references = await referenceLifts(exercise, workoutId);
+      const estimate = estimateOpeningWeight(exercise, references, loading, { repRange });
+      if (!estimate) return null;
+
+      return {
+        weight_kg: estimate.weight_kg,
+        reps: estimate.reps,
+        kind: 'estimate' as const,
+        scaled_down: false,
+        reason:
+          `You have not done this one before. From your ${estimate.basis}, ` +
+          `${estimate.weight_kg}kg is a sensible first try — it is an estimate, not ` +
+          'history, so change it to whatever it turns out to be.',
+      };
+    }
+
     return suggestNextSet({
       exercise,
       repRange,
       history: sessions,
-      loading: loadingProfileFor(exercise.equipment, gym ?? {}),
+      loading,
       readiness: workout.readiness,
       week: week ? { loadMultiplier: week.loadMultiplier, isDeload: week.isDeload } : null,
     });

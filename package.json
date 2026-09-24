@@ -23,7 +23,8 @@
     "test:pro": "node e2e/pro.mjs",
     "test:block": "node e2e/block.mjs",
     "test:programme": "node e2e/programme.mjs",
-    "test:toolkit": "node e2e/toolkit.mjs"
+    "test:toolkit": "node e2e/toolkit.mjs",
+    "test:smart": "node e2e/smart.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

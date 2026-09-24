@@ -16,6 +16,8 @@ import {
   updateSet,
 } from './mutations';
 import { newId } from '@/lib/ids';
+import { estimateOpeningWeight } from '@/domain/coldStart';
+import { exerciseSessions } from './queries';
 import { nowIso } from '@/lib/dates';
 import { previousPerformance } from '@/domain/previousPerformance';
 import { totalTonnage } from '@/domain/volume';
@@ -310,5 +312,63 @@ describe('repeating a session', () => {
 
     expect(rows[0]!.superset_group).toBe(rows[1]!.superset_group);
     expect(rows[0]!.superset_group).not.toBe(sourceGroup);
+  });
+});
+
+describe('a lift you have never done', () => {
+  it('is estimated from a related lift, against real logged history', async () => {
+    const incline = 'exercise-incline';
+    await db.exercises.add(
+      exercise(incline, { name: 'Barbell Incline Press', equipment: 'barbell' }),
+    );
+
+    // Actually train the bench, so the estimate reasons from logged sets rather
+    // than from a fixture.
+    const workoutId = await startFreestyleWorkout();
+    const benchWe = await addExerciseToWorkout(workoutId, BENCH);
+    const setId = await addSet(benchWe, { weight_kg: 100, reps: 5 });
+    await completeSet(setId, true);
+    await finishWorkout(workoutId);
+
+    const benchExercise = (await db.exercises.get(BENCH))!;
+    const inclineExercise = (await db.exercises.get(incline))!;
+
+    const estimate = estimateOpeningWeight(
+      inclineExercise,
+      [{ exercise: benchExercise, history: await exerciseSessions(BENCH) }],
+      { mode: 'barbell', barWeight: 20, plates: [25, 20, 15, 10, 5, 2.5, 1.25] },
+    )!;
+
+    // Names the lift it reasoned from, so the reason can say so out loud.
+    expect(estimate.basis).toBe(benchExercise.name);
+    expect(estimate.weight_kg).toBeGreaterThan(0);
+    expect(estimate.weight_kg).toBeLessThan(100);
+    expect((estimate.weight_kg - 20) % 2.5).toBe(0);
+  });
+
+  it('says nothing when the only history is an unrelated lift', async () => {
+    const curl = 'exercise-curl';
+    await db.exercises.add(
+      exercise(curl, {
+        name: 'Dumbbell Curl',
+        equipment: 'dumbbell',
+        movement_pattern: 'isolation',
+        primary_muscle: 'biceps',
+      }),
+    );
+
+    const workoutId = await startFreestyleWorkout();
+    const curlWe = await addExerciseToWorkout(workoutId, curl);
+    const setId = await addSet(curlWe, { weight_kg: 12.5, reps: 10 });
+    await completeSet(setId, true);
+    await finishWorkout(workoutId);
+
+    const estimate = estimateOpeningWeight(
+      (await db.exercises.get(BENCH))!,
+      [{ exercise: (await db.exercises.get(curl))!, history: await exerciseSessions(curl) }],
+      { mode: 'barbell', barWeight: 20, plates: [25, 20, 15, 10, 5, 2.5, 1.25] },
+    );
+
+    expect(estimate).toBeNull();
   });
 });
