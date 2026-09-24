@@ -50,3 +50,42 @@ export function supersetLabel(entries: SupersetMember[], index: number): string 
   const letter = String.fromCharCode(65 + groups.indexOf(entry.superset_group));
   return `${letter}${members.findIndex((member) => member.id === entry.id) + 1}`;
 }
+
+/**
+ * The session as you actually walk it, one stop at a time.
+ *
+ * A station is a solo exercise, or a whole superset group. It has to be the
+ * group rather than the exercise: a superset is performed by alternating
+ * between its members, so showing one at a time would make an A1/A2 pair
+ * unloggable — you would be paging back and forth between two screens for
+ * every single set.
+ *
+ * Grouping is read from the stored `superset_group` rather than from
+ * adjacency, so members that are not next to each other still form one
+ * station; the station takes its place from whichever member comes first. A
+ * group left with one member behaves as a solo station, consistent with
+ * `supersetLabel` declining to letter it.
+ *
+ * Returns arrays of indices into `entries`, in the order the session runs.
+ */
+export function sessionStations(entries: SupersetMember[]): number[][] {
+  const stations: number[][] = [];
+  const groupStation = new Map<string, number>();
+
+  for (const [index, entry] of entries.entries()) {
+    if (entry.superset_group === null) {
+      stations.push([index]);
+      continue;
+    }
+
+    const existing = groupStation.get(entry.superset_group);
+    if (existing === undefined) {
+      groupStation.set(entry.superset_group, stations.length);
+      stations.push([index]);
+    } else {
+      stations[existing]!.push(index);
+    }
+  }
+
+  return stations;
+}

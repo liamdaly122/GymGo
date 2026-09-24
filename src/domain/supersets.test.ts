@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { restsAfter, supersetLabel, type SupersetMember } from './supersets';
+import { restsAfter, sessionStations, supersetLabel, type SupersetMember } from './supersets';
 
 const entries = (...groups: (string | null)[]): SupersetMember[] =>
   groups.map((superset_group, index) => ({ id: `e${index}`, superset_group }));
@@ -50,5 +50,51 @@ describe('labels', () => {
 
   it('does not label a group of one', () => {
     expect(supersetLabel(entries('a'), 0)).toBeNull();
+  });
+});
+
+describe('walking the session one stop at a time', () => {
+  it('gives a solo exercise a station of its own', () => {
+    expect(sessionStations(entries(null, null, null))).toEqual([[0], [1], [2]]);
+  });
+
+  it('keeps a superset pair together', () => {
+    // Both halves have to be on screen at once: you alternate between them.
+    expect(sessionStations(entries('a', 'a'))).toEqual([[0, 1]]);
+  });
+
+  it('keeps a giant set of three together', () => {
+    expect(sessionStations(entries('a', 'a', 'a'))).toEqual([[0, 1, 2]]);
+  });
+
+  it('keeps two supersets apart', () => {
+    expect(sessionStations(entries('a', 'a', 'b', 'b'))).toEqual([
+      [0, 1],
+      [2, 3],
+    ]);
+  });
+
+  it('reunites a group whose members are not next to each other', () => {
+    // Grouping lives on the rows, so something logged between the halves does
+    // not split the pair — it just gets its own stop.
+    expect(sessionStations(entries('a', null, 'a'))).toEqual([
+      [0, 2],
+      [1],
+    ]);
+  });
+
+  it('treats a group left with one member as a solo stop', () => {
+    expect(sessionStations(entries('a'))).toEqual([[0]]);
+  });
+
+  it('has no stops at all in an empty session', () => {
+    expect(sessionStations([])).toEqual([]);
+  });
+
+  it('covers every exercise exactly once', () => {
+    const list = entries('a', null, 'b', 'a', 'b', null);
+    const visited = sessionStations(list).flat().sort((x, y) => x - y);
+
+    expect(visited).toEqual([0, 1, 2, 3, 4, 5]);
   });
 });
