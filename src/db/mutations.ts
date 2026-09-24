@@ -223,7 +223,19 @@ export async function startWorkoutFromRoutine(
       type: 'working' as const,
       weight_kg: 0,
       reps: 0,
-      rir: modifier?.targetRir ?? source?.target_rir ?? null,
+      /*
+       * Null, always. `rir` means "what the lifter assessed", and nothing else.
+       *
+       * This used to be seeded with `modifier?.targetRir ?? source?.target_rir`,
+       * so every set of every plan session arrived carrying the block week's
+       * PRESCRIBED reps-in-reserve — a number nobody had judged. The moment the
+       * progression engine started reading rir back, that turned into the engine
+       * reading its own prescription as evidence and handing out a double jump
+       * in week one on the strength of it. The target still reaches the lifter,
+       * from `routine_exercises.target_rir` and `weekModifier.targetRir`, shown
+       * as a target rather than pre-filled as an answer.
+       */
+      rir: null,
       is_amrap: false,
       completed: false,
       completed_at: null,

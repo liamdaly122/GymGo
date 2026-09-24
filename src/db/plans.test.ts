@@ -165,7 +165,7 @@ describe('training blocks', () => {
     expect(week5).toBeGreaterThanOrEqual(1);
   });
 
-  it('records the week\'s RIR target on the sets it lays out', async () => {
+  it('lays out sets with no RIR, because nobody has assessed them yet', async () => {
     const { result } = await generate(3);
     const workoutId = await startWorkoutFromRoutine(result.routineIds[0]!);
     const workoutExercises = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
@@ -173,7 +173,19 @@ describe('training blocks', () => {
       .where('workout_exercise_id')
       .anyOf(workoutExercises.map((we) => we.id))
       .toArray();
-    // Week 1 is Foundations: stop three reps shy of failure.
-    expect(sets[0]!.rir).toBe(3);
+
+    /*
+     * This used to stamp the block week's target — 3 for Foundations — onto
+     * every planned set, and this test asserted it did.
+     *
+     * That conflated two different things under one column. `sets.rir` is what
+     * the lifter judged after doing the work; the week's target is what the
+     * plan asked for beforehand. Once the progression engine started reading
+     * rir back, the stamp meant the engine was reading its own prescription as
+     * evidence — a double jump in week one off a number the app wrote itself.
+     * The target still reaches the lifter from weekModifier.targetRir and
+     * routine_exercises.target_rir, shown as a target rather than an answer.
+     */
+    expect(sets.every((set) => set.rir === null)).toBe(true);
   });
 });
