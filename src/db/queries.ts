@@ -22,9 +22,9 @@ import {
   type WeekSummary,
 } from '@/domain/schedule';
 import { setsForWeek, weekModifier, type WeekModifier } from '@/domain/programmes/block';
-import { suggestNextSet, type Suggestion } from '@/domain/progression';
+import { suggestNextSet, LOW_READINESS_MULTIPLIER, type Suggestion } from '@/domain/progression';
 import { estimateOpeningWeight } from '@/domain/coldStart';
-import { loadingProfileFor, type LoadingProfile } from '@/domain/plates';
+import { loadableWeight, loadingProfileFor, type LoadingProfile } from '@/domain/plates';
 import { bestEstimated1RM, setsPerMuscle, totalTonnage, totalWorkingSets } from '@/domain/volume';
 import { isTopWorkingSet } from '@/domain/sets';
 
@@ -630,15 +630,26 @@ export function useSetSuggestion(
       const estimate = estimateOpeningWeight(exercise, references, loading, { repRange });
       if (!estimate) return null;
 
+      // An estimate is still a suggested load, so a bad day pulls it down like
+      // any other. Leaving it alone would make answering "rough" look like it
+      // only half worked.
+      const rough = workout.readiness === 'low';
+      const weight = rough
+        ? loadableWeight(estimate.weight_kg * LOW_READINESS_MULTIPLIER, loading, {
+            direction: 'down',
+          })
+        : estimate.weight_kg;
+
       return {
-        weight_kg: estimate.weight_kg,
+        weight_kg: weight,
         reps: estimate.reps,
         kind: 'estimate' as const,
-        scaled_down: false,
+        scaled_down: rough,
         reason:
           `You have not done this one before. From your ${estimate.basis}, ` +
-          `${estimate.weight_kg}kg is a sensible first try — it is an estimate, not ` +
-          'history, so change it to whatever it turns out to be.',
+          `${weight}kg is a sensible first try — it is an estimate, not ` +
+          'history, so change it to whatever it turns out to be.' +
+          (rough ? ' Scaled down 10% because you logged low readiness.' : ''),
       };
     }
 

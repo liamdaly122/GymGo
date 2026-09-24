@@ -22,6 +22,24 @@ p.on('console', m => {
 });
 const step = async (l, fn) => { try { await fn(); console.log('  ok   '+l); } catch(e) { console.log('  FAIL '+l+': '+e.message); throw e; } };
 
+/** Swap, warm-up, move and remove all live behind the exercise overflow now. */
+const openMore = async (name) => {
+  await p.getByRole('button', { name: `More for ${name}` }).first().click();
+  await p.waitForTimeout(250);
+};
+
+/** The screen shows one station, so switching is a tap on the strip. */
+const focusStation = async (name) => {
+  await p.getByRole('button', { name: new RegExp(`^${name}, \\d+ of \\d+ sets done$`) }).click();
+  await p.waitForTimeout(400);
+};
+
+/** Every station pill, in session order — the only place the whole order shows. */
+const stationOrder = async () =>
+  p.locator('header li button').evaluateAll((els) =>
+    els.map((e) => e.getAttribute('aria-label')).filter((l) => / \d+ of \d+ sets done$/.test(l ?? ''))
+       .map((l) => l.replace(/,[^,]*$/, '')));
+
 const addExercise = async (query, name) => {
   await p.getByRole('button', { name: 'Add exercise' }).click();
   await p.getByPlaceholder('Add exercise').fill(query);
@@ -69,6 +87,7 @@ await step('and the plate line follows the weight', async () => {
 await step('generate a warm-up ramp', async () => {
   await p.getByLabel(/Set 1 weight down .* kilograms/).first().click();
   await p.waitForTimeout(400);
+  await openMore('Barbell Bench Press - Medium Grip');
   const warm = p.getByRole('button', { name: /Warm up to/ }).first();
   if (!(await warm.count())) throw new Error('expected a warm-up button');
   await warm.click();
@@ -118,6 +137,7 @@ await step('the rest timer survives a trip to the swap screen', async () => {
   let body = await p.locator('body').innerText();
   if (!/resting/i.test(body)) throw new Error('the working set should start a rest');
 
+  await openMore('Barbell Bench Press - Medium Grip');
   await p.getByRole('link', { name: /Swap Barbell Bench Press/ }).click();
   await p.getByRole('heading', { name: 'Swap exercise' }).waitFor({ timeout: 15000 });
   await p.waitForTimeout(600);
@@ -147,10 +167,14 @@ await step('reorder two exercises', async () => {
   await p.waitForTimeout(400);
   await addExercise('one-arm dumbbell row', /^One-Arm Dumbbell Row/);
 
-  const before = await p.locator('a[href*="/exercises/"]').evaluateAll(els => els.map(e => e.innerText));
+  // Adding an exercise focuses it, so the bench has to be brought back on
+  // screen before its overflow exists to open.
+  const before = await stationOrder();
+  await focusStation('Barbell Bench Press - Medium Grip');
+  await openMore('Barbell Bench Press - Medium Grip');
   await p.getByLabel(/Move Barbell Bench Press.* later/i).first().click();
   await p.waitForTimeout(700);
-  const after = await p.locator('a[href*="/exercises/"]').evaluateAll(els => els.map(e => e.innerText));
+  const after = await stationOrder();
 
   console.log('       order:', JSON.stringify(before), '→', JSON.stringify(after));
   if (JSON.stringify(before) === JSON.stringify(after)) throw new Error('the order did not change');
@@ -158,9 +182,10 @@ await step('reorder two exercises', async () => {
 });
 
 await step('a dumbbell lift gets no plate line', async () => {
+  await focusStation('One-Arm Dumbbell Row');
   const body = await p.locator('body').innerText();
-  const rowSection = body.slice(body.indexOf('One-Arm Dumbbell Row'));
-  if (/bar \+/.test(rowSection)) throw new Error('dumbbells have no plates to load');
+  if (!/One-Arm Dumbbell Row/.test(body)) throw new Error('the row should be the station on screen');
+  if (/bar \+/.test(body)) throw new Error('dumbbells have no plates to load');
 });
 
 await step('finish, then repeat the session from Train', async () => {

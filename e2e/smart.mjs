@@ -4,7 +4,7 @@
  */
 import { chromium } from 'playwright';
 
-const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:5183/';
+const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:5185/';
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const c = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 const p = await c.newPage();
@@ -41,8 +41,14 @@ await step('the block appears on the Train calendar', async () => {
 await step('the week strip shows a full week with training days marked', async () => {
   const dots = await p.locator('ul li button[aria-label]').count();
   if (dots !== 7) throw new Error(`expected a 7 day strip, got ${dots}`);
-  const trainable = await p.locator('ul li button[aria-label]:not([disabled])').count();
-  if (trainable < 1 || trainable > 3) throw new Error(`expected 1-3 training days this week, got ${trainable}`);
+  // A scheduled day is labelled "<session> on <date>, <status>"; everything
+  // else is a rest day.
+  const rest = await p.locator('ul li button[aria-label*="rest day"]').count();
+  if (7 - rest < 1 || 7 - rest > 3) throw new Error(`expected 1-3 training days this week, got ${7 - rest}`);
+  // Nothing is logged yet, so no day has anywhere to go. The strip used to
+  // enable every scheduled day and navigate nowhere.
+  const live = await p.locator('ul li button[aria-label]:not([disabled])').count();
+  if (live !== 0) throw new Error(`no session is logged, so no day should be tappable — ${live} were`);
 });
 
 await step('a plan created today shows nothing already missed', async () => {
@@ -94,6 +100,15 @@ await step('the calendar marks that session done', async () => {
   // completed sessions is fixed.
   if (!/1 of \d+ sessions done/.test(body)) throw new Error(`expected block progress, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
   if (/-\d+ days ago/.test(body)) throw new Error('a future session rendered as a negative day count');
+
+  // The day you trained is now the one live button in the strip, and it opens
+  // what you logged.
+  const live = p.locator('ul li button[aria-label]:not([disabled])');
+  if (await live.count() !== 1) throw new Error(`expected exactly the trained day to be tappable, got ${await live.count()}`);
+  await live.first().click();
+  await p.waitForURL(/#\/history\//, { timeout: 15000 });
+  await p.goBack();
+  await p.waitForTimeout(800);
 });
 
 await step('the progression engine suggests the next jump', async () => {
@@ -103,17 +118,38 @@ await step('the progression engine suggests the next jump', async () => {
   await p.getByRole('button', { name: 'Start this workout' }).waitFor({ timeout: 15000 });
   await p.getByRole('button', { name: 'Start this workout' }).click();
   await p.waitForTimeout(1500);
+
+  // The suggestion is a placeholder in the row, not a card above it — that is
+  // what the brief specifies, and it is the number the lifter actually reads.
+  const weightField = p.getByLabel('Set 1 weight in kilograms').first();
+  const suggested = Number(await weightField.getAttribute('placeholder'));
+  const suggestedReps = Number(await p.getByLabel('Set 1 repetitions').first().getAttribute('placeholder'));
+  if (!suggested) throw new Error('the set row carried no suggested weight');
+  if (suggested <= 100) throw new Error(`suggestion did not go up: ${suggested}kg after logging 100kg`);
+  if (!suggestedReps) throw new Error('the set row carried no suggested reps');
+
+  // Nothing has been written for the lifter — a placeholder is a hint, not a log.
+  if (await weightField.inputValue() !== '') throw new Error('the suggestion must not pre-fill the field');
+
   const body = await p.locator('body').innerText();
-  if (!/Suggested/i.test(body)) throw new Error(`expected a suggestion, saw: ${body.replace(/\n/g,' | ').slice(0,500)}`);
+  if (!/go up/i.test(body)) throw new Error(`expected the plan line to say what to do, saw: ${body.replace(/\n/g,' | ').slice(0,500)}`);
   if (!/hit 10 on every set/i.test(body)) throw new Error(`expected the reason to explain itself, saw: ${body.replace(/\n/g,' | ').slice(0,500)}`);
-  // The suggested weight must actually be heavier than what was logged, and the
-  // reason must not claim a jump the number does not show.
-  const suggested = /SUGGESTED[^]*?\n([\d.]+)kg × (\d+)/.exec(body);
-  if (!suggested) throw new Error(`could not read the suggested weight from: ${body.replace(/\n/g,' | ').slice(0,400)}`);
-  if (Number(suggested[1]) <= 100) throw new Error(`suggestion did not go up: ${suggested[1]}kg after logging 100kg`);
+
+  // The reason must not claim a jump the number does not show.
   const claimed = /Add ([\d.]+)kg/.exec(body);
-  if (claimed && Number(suggested[1]) - 100 !== Number(claimed[1])) {
-    throw new Error(`reason claims +${claimed[1]}kg but suggests ${suggested[1]}kg`);
+  if (claimed && suggested - 100 !== Number(claimed[1])) {
+    throw new Error(`reason claims +${claimed[1]}kg but suggests ${suggested}kg`);
+  }
+
+  // One "Use", and it fills every unlogged set rather than just the first.
+  await p.getByRole('button', { name: 'Use', exact: true }).first().click();
+  await p.waitForTimeout(600);
+  if (await weightField.inputValue() !== String(suggested)) {
+    throw new Error(`Use should have written ${suggested}, field holds ${await weightField.inputValue()}`);
+  }
+  const second = p.getByLabel('Set 2 weight in kilograms').first();
+  if (await second.count() && await second.inputValue() !== String(suggested)) {
+    throw new Error('Use should fill every unlogged set, not only the first');
   }
 });
 await p.screenshot({ path: 'e2e/shot-suggestion.png' });

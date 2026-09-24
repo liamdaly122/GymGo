@@ -128,9 +128,15 @@ export default function HomeScreen() {
             </span>
           </button>
 
+          {/* onSelect matters: without it the seven day buttons rendered with
+              press states and did nothing at all. A day you have trained opens
+              what you logged; one you have not is not a link to anywhere. */}
           <WeekStrip
             schedule={planned.schedule}
             weekStartsOn={settings?.week_starts_on ?? 1}
+            onSelect={(session) => {
+              if (session.workoutId) void navigate(`/history/${session.workoutId}`);
+            }}
             {...(next ? { selectedDate: next.date } : {})}
           />
 

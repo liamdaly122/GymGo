@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import type { WorkoutSet } from '@/db/schema';
 import { NumberField } from '@/components/ui';
 import { addChildSet, completeSet, removeSet, updateSet } from '@/db/mutations';
@@ -61,6 +61,7 @@ export default function SetRow({
   loading,
   showTools = false,
   weightStep,
+  repsBase,
 }: {
   set: WorkoutSet;
   index: number;
@@ -76,12 +77,28 @@ export default function SetRow({
   loading?: LoadingProfile;
   /** True for the set you are about to do — the only row that gets the tools. */
   showTools?: boolean;
-  /** How far one tap moves the weight, computed by the card from the equipment. */
-  weightStep?: { up: number | null; down: number | null };
+  /**
+   * How far one tap moves the weight, and what it moves from — which is the
+   * suggested weight while the field is still empty, not zero.
+   */
+  weightStep?: { up: number | null; down: number | null; base: number };
+  /** The same, for reps: the placeholder until something is typed. */
+  repsBase?: number;
 }) {
   const child = isChildSet(set);
   const label = TYPE_LABELS[set.type] ?? '';
   const rest = useRestTimer();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  /*
+   * Deleting a set you have done asks first; deleting an empty row does not.
+   *
+   * Every other delete in the app confirms — gyms, routines, settings, and now
+   * the exercise itself. This one sat two thumb-widths from the tick you press
+   * after every single set, with no undo behind it. An untouched planned row
+   * has nothing to lose, so making that ask would be friction for its own sake.
+   */
+  const hasWork = set.completed || set.weight_kg > 0 || set.reps > 0;
 
   /*
    * One write at a time per row.
@@ -120,11 +137,19 @@ export default function SetRow({
     if (set.type !== 'warmup' && restSeconds) rest.start(restSeconds);
   };
 
+  /*
+   * Three states, three sizes. The set you are about to do is the only thing
+   * on screen worth reading from arm's length; one already behind you is
+   * present but done with. Both stay real inputs — a mistyped rep you spot
+   * after ticking has to be fixable.
+   */
+  const fieldSize = set.completed ? 'done' : showTools ? 'log' : 'read';
+
   const row = (
-    <div className={`flex items-center gap-2 py-1.5 ${child ? 'pl-6' : ''}`}>
+    <div className={`flex items-center gap-2 py-2 ${child ? 'pl-6' : ''}`}>
       <span
-        className={`w-6 shrink-0 text-center text-xs tabular-nums ${
-          set.type === 'warmup' ? 'text-amber-400' : child ? 'text-muted' : 'text-muted'
+        className={`w-6 shrink-0 text-center text-note tabular-nums ${
+          set.type === 'warmup' ? 'text-amber-400' : 'text-muted'
         }`}
         title={child ? 'Child set — counts toward volume, never toward a PR' : undefined}
       >
@@ -135,6 +160,7 @@ export default function SetRow({
         key={`${set.id}-weight-${set.weight_kg}`}
         value={set.weight_kg}
         blankWhenZero
+        size={fieldSize}
         placeholder={weightHint !== undefined ? String(weightHint) : undefined}
         onCommit={(value) => void run(() => updateSet(set.id, { weight_kg: value }))}
         suffix="kg"
@@ -144,6 +170,7 @@ export default function SetRow({
         key={`${set.id}-reps-${set.reps}`}
         value={set.reps}
         blankWhenZero
+        size={fieldSize}
         placeholder={repsHint !== undefined ? String(repsHint) : undefined}
         onCommit={(value) => void run(() => updateSet(set.id, { reps: Math.round(value) }))}
         suffix={set.is_amrap ? 'AMRAP' : 'reps'}
@@ -156,7 +183,9 @@ export default function SetRow({
           set.completed ? `${setName} done, tap to undo` : `Mark ${setName.toLowerCase()} done`
         }
         aria-pressed={set.completed}
-        className={`grid h-11 w-11 shrink-0 place-items-center rounded-lg border transition-colors ${
+        className={`grid w-12 shrink-0 place-items-center rounded-lg border transition-colors ${
+          showTools ? 'h-16' : 'h-11'
+        } ${
           set.completed
             ? 'border-accent bg-accent text-ink'
             : 'border-line bg-raised text-muted active:bg-line'
@@ -167,17 +196,57 @@ export default function SetRow({
         </svg>
       </button>
 
-      <button
-        onClick={() => void removeSet(set.id)}
-        aria-label={`Delete ${setName.toLowerCase()}`}
-        className="grid h-11 w-7 shrink-0 place-items-center text-muted active:text-red-400"
-      >
-        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
-        </svg>
-      </button>
+      {/* Not on the set in hand. At 56px of fixed width it took the fields down
+          to about 99px, where a three-digit decimal clips — and it put an
+          unconfirmed delete one thumb-width from the tick you press after every
+          single set. It stays on the rows either side, where it is out of the
+          way. */}
+      {showTools ? null : (
+        <button
+          onClick={() => (hasWork ? setConfirmingDelete(true) : void removeSet(set.id))}
+          aria-label={`Delete ${setName.toLowerCase()}`}
+          className="grid h-11 w-7 shrink-0 place-items-center text-muted active:text-red-400"
+        >
+          <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
+          </svg>
+        </button>
+      )}
     </div>
   );
+
+  const confirm = confirmingDelete ? (
+    <div
+      className="fixed inset-0 z-40 grid place-items-end bg-black/60 sm:place-items-center"
+      onClick={() => setConfirmingDelete(false)}
+    >
+      <div
+        className="w-full max-w-lg rounded-t-2xl border-t border-line bg-surface p-5 sm:rounded-2xl sm:border"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 1.25rem)' }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <p className="text-meta text-white">
+          Delete {setName.toLowerCase()}
+          {set.weight_kg > 0 || set.reps > 0 ? ` — ${set.weight_kg}kg × ${set.reps}` : ''}?
+        </p>
+        <div className="mt-4 grid gap-2">
+          <button
+            onClick={() => void removeSet(set.id)}
+            aria-label={`Delete ${setName.toLowerCase()} for good`}
+            className="grid min-h-11 place-items-center rounded-xl bg-red-500/15 px-4 text-meta text-red-300 active:bg-red-500/25"
+          >
+            Delete it
+          </button>
+          <button
+            onClick={() => setConfirmingDelete(false)}
+            className="grid min-h-11 place-items-center rounded-xl border border-line bg-raised px-4 text-meta text-white active:bg-line"
+          >
+            Keep it
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   const indent = child ? 'pl-14' : 'pl-8';
 
@@ -211,7 +280,7 @@ export default function SetRow({
                 onClick={() =>
                   void run(() =>
                     updateSet(set.id, {
-                      weight_kg: Math.max(0, set.weight_kg - (weightStep.down ?? 0)),
+                      weight_kg: Math.max(0, weightStep.base - (weightStep.down ?? 0)),
                     }),
                   )
                 }
@@ -223,7 +292,7 @@ export default function SetRow({
                 aria-label={`Set ${index + 1} weight up ${weightStep.up} kilograms`}
                 onClick={() =>
                   void run(() =>
-                    updateSet(set.id, { weight_kg: set.weight_kg + (weightStep.up ?? 0) }),
+                    updateSet(set.id, { weight_kg: weightStep.base + (weightStep.up ?? 0) }),
                   )
                 }
               />
@@ -231,12 +300,14 @@ export default function SetRow({
             <StepButton
               label="− 1 rep"
               aria-label={`Set ${index + 1} one rep fewer`}
-              onClick={() => void run(() => updateSet(set.id, { reps: Math.max(0, set.reps - 1) }))}
+              onClick={() =>
+                void run(() => updateSet(set.id, { reps: Math.max(0, (repsBase ?? set.reps) - 1) }))
+              }
             />
             <StepButton
               label="+ 1 rep"
               aria-label={`Set ${index + 1} one more rep`}
-              onClick={() => void run(() => updateSet(set.id, { reps: set.reps + 1 }))}
+              onClick={() => void run(() => updateSet(set.id, { reps: (repsBase ?? set.reps) + 1 }))}
             />
           </div>
         ) : null}
@@ -244,13 +315,12 @@ export default function SetRow({
     ) : null;
 
   if (!pro) {
-    return tools ? (
+    return (
       <div>
         {row}
         {tools}
+        {confirm}
       </div>
-    ) : (
-      row
     );
   }
 
@@ -260,6 +330,7 @@ export default function SetRow({
     <div>
       {row}
       {tools}
+      {confirm}
       {/* RIR and the attachments live on a second line rather than in the row
           itself: a third input would squeeze weight and reps below a usable tap
           target on a phone, and both are things you decide after the set. */}

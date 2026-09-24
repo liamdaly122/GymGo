@@ -1,20 +1,18 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useWorkout } from '@/db/queries';
-import {
-  addExerciseToWorkout,
-  addSet,
-  discardWorkout,
-  finishWorkout,
-} from '@/db/mutations';
+import { addExerciseToWorkout, addSet, discardWorkout, finishWorkout } from '@/db/mutations';
 import { Button } from '@/components/ui';
 import { formatDuration } from '@/lib/dates';
 import { useElapsed } from '@/hooks/useElapsed';
 import { totalTonnage, totalWorkingSets } from '@/domain/volume';
+import { isLive } from '@/domain/sets';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
-import WorkoutExerciseCard from './WorkoutExerciseCard';
-import { restsAfter, supersetLabel } from '@/domain/supersets';
+import { restsAfter, sessionStations, supersetLabel } from '@/domain/supersets';
 import { useRestTimer } from './RestTimer';
+import ExercisePanel from './ExercisePanel';
+import ExerciseStrip from './ExerciseStrip';
+import ReadinessPrompt from './ReadinessPrompt';
 
 export default function ActiveWorkoutScreen() {
   const { workoutId } = useParams<{ workoutId: string }>();
@@ -23,6 +21,17 @@ export default function ActiveWorkoutScreen() {
   const rest = useRestTimer();
   const [picking, setPicking] = useState(false);
   const [confirmingFinish, setConfirmingFinish] = useState(false);
+  const [dismissedReadiness, setDismissedReadiness] = useState(false);
+
+  /**
+   * Which station is on screen.
+   *
+   * Null means "wherever the session has got to", which is the seed, not live
+   * truth. If focus followed the first unfinished exercise, ticking the last
+   * set of a station would teleport the screen while the rest dial is up and
+   * you are about to correct a mistyped rep. Forward is a deliberate tap.
+   */
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   const elapsed = useElapsed(view?.workout.started_at);
 
@@ -43,24 +52,68 @@ export default function ActiveWorkoutScreen() {
   }
 
   const allSets = view.exercises.flatMap((entry) => entry.sets);
-  const supersetMembers = view.exercises.map((entry) => ({
+  const completedSets = totalWorkingSets(allSets);
+  /*
+   * Out of how many, so the line reads "1/12 sets" rather than "1 sets".
+   *
+   * Same population as the numerator minus the `completed` requirement, child
+   * sets included — `countsTowardVolume` counts a drop set, so leaving children
+   * out of the denominator alone would let a session read "5/4 sets".
+   */
+  const plannedSets = allSets.filter((set) => isLive(set) && set.type !== 'warmup').length;
+  const tonnage = totalTonnage(allSets);
+
+  const members = view.exercises.map((entry) => ({
     id: entry.workoutExercise.id,
     superset_group: entry.workoutExercise.superset_group,
   }));
-  const completedSets = totalWorkingSets(allSets);
-  const tonnage = totalTonnage(allSets);
+  const stations = sessionStations(members);
 
-  // Which exercise you are on: the first with anything still unticked.
-  const firstUnfinished = view.exercises.findIndex((entry) =>
-    entry.sets.some((set) => !set.completed),
+  // Where the session has got to: the first station with anything unticked.
+  const firstUnfinished = stations.findIndex((station) =>
+    station.some((index) => view.exercises[index]!.sets.some((set) => !set.completed)),
   );
-  const currentExercise = firstUnfinished === -1 ? view.exercises.length - 1 : firstUnfinished;
+  const seeded = firstUnfinished === -1 ? Math.max(0, stations.length - 1) : firstUnfinished;
+
+  const focused = focusId
+    ? Math.max(
+        0,
+        stations.findIndex((station) =>
+          station.some((index) => view.exercises[index]!.workoutExercise.id === focusId),
+        ),
+      )
+    : seeded;
+  const station = stations[focused] ?? [];
+
+  /*
+   * One active set for the whole session, not one per exercise.
+   *
+   * Computed per card, five unfinished exercises put five adjuster rows —
+   * twenty buttons — on the page at once, which defeated the point of
+   * attaching the tools to the set you are about to do.
+   */
+  const activeSetId =
+    station
+      .flatMap((index) => view.exercises[index]!.sets)
+      .find((set) => !set.completed && set.parent_set_id === null && set.type !== 'warmup')?.id ??
+    null;
+
+  const stationComplete =
+    station.length > 0 &&
+    station.every((index) => view.exercises[index]!.sets.every((set) => set.completed));
+  const nextStation = focused + 1 < stations.length ? focused + 1 : null;
+
+  const focusStation = (index: number) => {
+    const first = stations[index]?.[0];
+    setFocusId(first === undefined ? null : view.exercises[first]!.workoutExercise.id);
+  };
 
   const handleAddExercise = async (exerciseId: string) => {
     setPicking(false);
     const workoutExerciseId = await addExerciseToWorkout(workoutId, exerciseId);
     // Open with one empty set ready, so the next tap is a number, not a button.
     await addSet(workoutExerciseId);
+    setFocusId(workoutExerciseId);
   };
 
   const handleFinish = async () => {
@@ -73,84 +126,102 @@ export default function ActiveWorkoutScreen() {
     void navigate('/', { replace: true });
   };
 
+  const showReadiness =
+    view.workout.readiness === null && completedSets === 0 && !dismissedReadiness;
+
   return (
-    // Extra clearance while the rest dial is up, so it never sits on top of the
-    // set you are trying to type into.
     <div className={`mx-auto min-h-dvh max-w-lg px-4 ${rest.endsAt === null ? 'pb-28' : 'pb-52'}`}>
       <header
-        className="sticky top-0 z-10 -mx-4 mb-4 border-b border-line bg-ink/95 px-4 pb-3 backdrop-blur"
-        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' }}
+        /*
+         * pt-3 and no safe-area inset. The header is sticky, so it is still
+         * inside the padding body applies for the notch (src/index.css);
+         * adding the inset again here double-counted it and stole ~47px of
+         * screen on every notched phone — most of a set row, on the screen
+         * that can least afford it. The picker, being `fixed`, does need its
+         * own inset, which is why it keeps one.
+         */
+        className="sticky top-0 z-10 -mx-4 mb-4 border-b border-line bg-ink/95 px-4 pb-2 pt-3 backdrop-blur"
       >
         <div className="flex items-center justify-between gap-3">
           <button
             onClick={() => void navigate('/')}
-            className="text-xs text-muted active:text-white"
+            className="-my-2 shrink-0 py-2 text-meta text-muted active:text-white"
           >
             Back
           </button>
-          <p className="eyebrow">
-            {view.exercises.length > 0
-              ? `Exercise ${Math.min(currentExercise + 1, view.exercises.length)}/${view.exercises.length}`
+
+          {/* One line where three stat tiles used to be. Session tonnage is a
+              number you read afterwards, not between sets. */}
+          <p className="min-w-0 truncate text-note tabular-nums text-muted">
+            {formatDuration(elapsed)} · {Math.round(tonnage).toLocaleString('en-GB')} kg ·{' '}
+            {completedSets}/{plannedSets} sets ·{' '}
+            {stations.length > 0
+              ? `Exercise ${focused + 1}/${stations.length}`
               : 'No exercises yet'}
           </p>
-          <Button variant="primary" className="h-9 px-4" onClick={() => setConfirmingFinish(true)}>
+
+          <Button variant="primary" className="h-9 shrink-0 px-4" onClick={() => setConfirmingFinish(true)}>
             Finish
           </Button>
         </div>
 
-        {/* The three numbers worth watching mid-session. */}
-        <dl className="mt-3 grid grid-cols-3 divide-x divide-line rounded-xl bg-surface py-2">
-          <div className="px-2 text-center">
-            <dt className="eyebrow">Time</dt>
-            <dd className="mt-0.5 text-base font-semibold tabular-nums text-white">
-              {formatDuration(elapsed)}
-            </dd>
-          </div>
-          <div className="px-2 text-center">
-            <dt className="eyebrow">Volume</dt>
-            <dd className="mt-0.5 text-base font-semibold tabular-nums text-white">
-              {Math.round(tonnage).toLocaleString('en-GB')} kg
-            </dd>
-          </div>
-          <div className="px-2 text-center">
-            <dt className="eyebrow">Sets</dt>
-            <dd className="mt-0.5 text-base font-semibold tabular-nums text-white">
-              {completedSets}
-            </dd>
-          </div>
-        </dl>
+        <div className="mt-2">
+          <ExerciseStrip
+            stations={stations}
+            exercises={view.exercises}
+            focused={focused}
+            onFocus={focusStation}
+            onAdd={() => setPicking(true)}
+          />
+        </div>
       </header>
+
+      {showReadiness ? (
+        <ReadinessPrompt workoutId={workoutId} onDismiss={() => setDismissedReadiness(true)} />
+      ) : null}
 
       {view.exercises.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line px-6 py-12 text-center">
           <p className="text-sm text-white">Nothing logged yet.</p>
           <p className="mt-1 text-xs text-muted">Add your first exercise to get going.</p>
+          <Button variant="secondary" className="mt-4 w-full" onClick={() => setPicking(true)}>
+            Add exercise
+          </Button>
         </div>
       ) : (
-        <ul className="space-y-3">
-          {view.exercises.map((entry, index) => (
-            <li key={entry.workoutExercise.id}>
-              <WorkoutExerciseCard
+        <div className="space-y-8">
+          {station.map((index) => {
+            const entry = view.exercises[index]!;
+            return (
+              <ExercisePanel
+                key={entry.workoutExercise.id}
                 entry={entry}
                 workoutId={workoutId}
                 // Superset membership is a property of the whole session, so it
-                // is resolved here where the ordered list lives rather than in
-                // each card.
-                restsAfter={restsAfter(supersetMembers, index)}
-                supersetLabel={supersetLabel(supersetMembers, index)}
+                // is resolved here where the ordered list lives.
+                restsAfter={restsAfter(members, index)}
+                supersetLabel={supersetLabel(members, index)}
                 canPairWithNext={index < view.exercises.length - 1}
                 canMoveUp={index > 0}
                 canMoveDown={index < view.exercises.length - 1}
+                activeSetId={activeSetId}
               />
-            </li>
-          ))}
-        </ul>
+            );
+          })}
+        </div>
       )}
 
-      <Button variant="secondary" className="mt-4 w-full" onClick={() => setPicking(true)}>
-        Add exercise
-      </Button>
-
+      {/* Forward is a thumb-zone button; jumping about is the strip. It lights
+          up once the station is done rather than moving the screen for you. */}
+      {nextStation !== null ? (
+        <Button
+          variant={stationComplete ? 'primary' : 'secondary'}
+          className="mt-6 w-full"
+          onClick={() => focusStation(nextStation)}
+        >
+          Next exercise →
+        </Button>
+      ) : null}
 
       {picking ? (
         <ExercisePicker
@@ -163,10 +234,7 @@ export default function ActiveWorkoutScreen() {
         <div className="fixed inset-0 z-40 grid place-items-end bg-black/60 sm:place-items-center">
           <div className="w-full max-w-lg rounded-t-2xl border-t border-line bg-surface p-5 sm:rounded-2xl sm:border">
             <h2 className="text-base font-semibold text-white">Finish this workout?</h2>
-            <p className="mt-1 text-xs text-muted">
-              Sets you did not tick off are discarded. Once finished, the session cannot be
-              edited — that is what keeps your history honest.
-            </p>
+            <p className="mt-1 text-note text-muted">Sets you did not tick off are discarded.</p>
             <div className="mt-4 grid gap-2">
               <Button variant="primary" onClick={() => void handleFinish()}>
                 Finish and save

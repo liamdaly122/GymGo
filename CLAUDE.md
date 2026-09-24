@@ -167,6 +167,59 @@ engine reads an exercise's history across every session ever logged rather than
 per plan. Regenerating the routines would hand back new exercise ids and throw
 that history away. Choosing a different split is what the Plans tab is for.
 
+## The logging screen shows one station
+
+The unit on screen is a **station**: a solo exercise, or a whole superset group.
+Not one exercise — an A1/A2 pair is performed by alternating, so splitting it
+across two screens would make it unloggable. `sessionStations` in
+`src/domain/supersets.ts` does the grouping, and like every other superset rule
+it reads the stored `superset_group` rather than adjacency, so a pair with
+something between them is still one station.
+
+Before this, a five-exercise session put 147 interactive controls on the page,
+only 40 of which were the weight and reps fields the task actually needs, and
+one exercise card rendered taller than the window — at 390×844 a complete
+exercise never fit on screen at all, and a six-exercise session was seven
+screen-heights of scrolling.
+
+**Focus never moves on its own.** It is seeded from the first station with
+anything unticked, and after that it only moves because you tapped the strip or
+"Next exercise". If it followed the session, ticking the last set of a station
+would teleport the screen while the rest dial is up and you are about to correct
+a mistyped rep — and every `.first()` in the browser suites would quietly
+retarget.
+
+**At most one border between you and the background.** The panel *is* the
+screen: its body sits on the ground colour, sets are rows separated by
+`divide-y`, and the only bordered things are the fields, the tick and the sheet.
+Nested cards are what made the old card unreadable, not the amount of
+information on it. `Card` still belongs on Train, Programme and History, which
+are read rather than operated.
+
+**One line of prose maximum, with the rest behind a tap.** The suggestion is a
+placeholder in the set row — that is what the brief specifies — plus one plan
+line carrying a verb chip and a single `Use`. Two cards used to sit above the
+rows, each with its own `Use`, showing two different weights about 250px apart,
+both looking authoritative.
+
+Everything that is not logging a set — swap, warm-up, move earlier, move later,
+remove, and in Pro the superset toggle — lives in one overflow sheet per
+exercise, opened by the `More for …` button.
+
+## The steppers move the number you can see
+
+Quick-adjust steps from the value on the row, and while the field is still empty
+that value is the **placeholder**, not zero. Stepping from zero offered "+ 20" —
+the bare bar — beside a suggested 102.5kg, so one tap threw the suggestion away
+and called it an adjustment. `weightStep` therefore carries the base it was
+computed from, and `SetRow` does its arithmetic on that rather than on
+`set.weight_kg`.
+
+Deleting a set that has work on it asks first; deleting an untouched row does
+not, because there is nothing to lose and the confirm would be friction for its
+own sake. It is hidden altogether on the set in hand, where it sat one
+thumb-width from the tick you press after every single set.
+
 ## The in-gym toolkit
 
 The app is used one-handed, on a phone, under a bar. Three rules came out of
@@ -190,11 +243,15 @@ before it, is dropped rather than repeated — so a narrow range gives two sets
 rather than four near-identical ones, and a bare bar gives none at all. The
 generator is a button: nothing the user did not ask for may enter their log.
 
-**The plate line and the weight steppers ride on the current set only.** At
-390px the row is already 128px of fixed width before the two fields, so nothing
-more fits inline, and repeating the loading for four sets at the same weight is
-noise. One tap moves the weight by what the equipment can actually make
-(`nextLoadableAbove`/`nextLoadableBelow`), not a fixed 1kg. The plate breakdown
+**The plate line and the weight steppers ride on the current set only** — one
+set for the whole session, resolved in `ActiveWorkoutScreen`. Computed per card
+it was one *per card*, so five unfinished exercises put five adjuster rows —
+twenty buttons — on the page and defeated the point of attaching the tools to
+the set you are about to do. At 390px the row is already 128px of fixed width
+before the two fields, so nothing more fits inline, and repeating the loading
+for four sets at the same weight is noise. One tap moves the weight by what the
+equipment can actually make (`nextLoadableAbove`/`nextLoadableBelow`), not a
+fixed 1kg. The plate breakdown
 is shown in **both** modes — the brief lists it under Pro, but it is
 information rather than density, and Beginner mode is precisely who does not
 know how to load a bar.
@@ -258,6 +315,52 @@ routines, which is what keeps this feature clear of the immutability rule.
 gym profiles. A commercial gym must fill everything; a constrained gym may rule
 combinations out but must still leave one workable option at every day count.
 
+## What the suggestion engine may read
+
+`src/domain/progression.ts` reasons from history; `src/domain/coldStart.ts`
+covers the case where there is none. Both are pure, and both are conservative on
+purpose — a number with nothing behind it still looks authoritative.
+
+**`sets.rir` means what the lifter assessed, and nothing else.** It used to be
+stamped at creation with the block week's *target* (3, 2, 2, 1, 4), so every set
+of every plan session arrived carrying an RIR nobody had judged. Reading that
+back would have handed week 1 a double jump on the strength of a number the app
+wrote itself. `startWorkoutFromRoutine` now writes `rir: null`; the week's target
+still reaches the lifter, as a prescription on `routine_exercises.target_rir` and
+`weekModifier.targetRir`, not as a pre-filled answer. Rows written before that
+change are guarded by a fingerprint: an RIR identical across every set of a
+session is not read back. That ignores a genuine "2, 2, 2", which errs
+conservative — the safe direction for a self-reported number.
+
+**Effort may withhold a jump or raise a rep target. It may never add load.**
+That asymmetry is what makes a self-reported number safe to act on at all. An
+AMRAP is the exception, because it is an objective count rather than a feeling —
+but an AMRAP result must never *become* the next target either, so the fallback
+rep range is built from the heaviest **non**-AMRAP set. Otherwise an open-ended
+15 would demand 15 forever.
+
+**The failure counter judges all of a session's working sets, not just the
+heaviest.** Working up to a heavy top single and then hitting the range on the
+back-offs is a good session, and reading only the top set recorded it as a
+failure. It does *not* require the failures to be at the same weight: the brief
+says "in two consecutive sessions", and backing off and still missing is exactly
+when a deload is due.
+
+**A cold start reasons from a lift you have done, never from a table.**
+`estimateOpeningWeight` ranks references with the same `swapSuggestions` tiering
+the swap screen uses, prefers a reference on the same equipment, takes a
+conservative fraction, rounds **down** through `loadableWeight`, and returns null
+when nothing related has history. Saying nothing beats guessing. It surfaces as
+`kind: 'estimate'` with a reason that names the reference, because it must never
+read as history.
+
+**Low readiness is the one thing that scales a suggested load**, by
+`LOW_READINESS_MULTIPLIER`, and it applies to a cold-start estimate too — a
+control that moved the numbers on some lifts and not others would look broken.
+`ReadinessPrompt` is the only writer of `workout.readiness`; brief rule 5 was
+implemented and unit tested for most of this project's life with no screen able
+to trigger it.
+
 ## Security
 
 - No secret ever enters the repo. Keys live in `.env.local` (gitignored) and in
@@ -283,9 +386,29 @@ Three layers, each earning its place:
   the whole architecture exists for, so it is not optional before a release.
 
 The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
-`test:plans`, `test:swap`, `test:gyms` and `test:pro`. They expect a preview
-server on `127.0.0.1:5185` — `test:offline` runs its own on 5190. Each takes a
-`BASE_URL` override.
+`test:plans`, `test:swap`, `test:gyms`, `test:pro`, `test:block`,
+`test:programme`, `test:toolkit`, `test:smart` and `test:session`. They expect a
+preview server on `127.0.0.1:5185` — `test:offline` runs its own on 5190. Each
+takes a `BASE_URL` override.
+
+**Accessible names are this app's test API.** Around 1,700 lines of Playwright
+key on them, so renaming one is a breaking change to the suites even when the
+screen looks identical. These in particular are load-bearing:
+
+- `Set N weight in kilograms`, `Set N repetitions`, `Mark set N done`,
+  `Delete set N`, `Warm-up N …` — the logging path
+- `<Exercise>, N of M sets done` — the station strip, and the only handle on
+  session order now that one station renders at a time
+- `More for <Exercise>` — the overflow, which everything secondary now sits
+  behind
+- `Swap <Exercise> for something else`, `Move <Exercise> earlier` / `later`,
+  `Readiness low` — inside it
+- `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
+
+`Add exercise` names exactly one control at a time: the empty state owns it
+until there is a session, then the strip's `+` does. Two controls under one name
+are ambiguous to a screen reader and resolve strictly in Playwright, so the
+strip renders nothing at all when the session is empty.
 
 **`innerText` respects CSS `text-transform`.** The `.eyebrow` class uppercases,
 so a check for `/Resting/` can never match and passes whatever happened. Two

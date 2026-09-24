@@ -14,6 +14,11 @@ p.on('pageerror', e => errs.push('pageerror: ' + e.message));
 p.on('console', m => { if (m.type()==='error' && !/Failed to load resource/i.test(m.text())) errs.push('console: '+m.text()); });
 const step = async (l, fn) => { try { await fn(); console.log('  ok   '+l); } catch(e) { console.log('  FAIL '+l+': '+e.message); throw e; } };
 
+/** Swap, warm-up, move and remove all live behind the exercise overflow now. */
+const openMore = async (page, name) => {
+  await page.getByRole('button', { name: `More for ${name}` }).first().click();
+};
+
 await p.goto(BASE, { waitUntil: 'networkidle' });
 await step('app loads', async () => { await p.getByRole('heading', {name:'Train'}).waitFor({timeout:40000}); });
 
@@ -142,6 +147,7 @@ await step('swap suggestions at a dumbbell gym stay dumbbell', async () => {
   await p.getByRole('button', { name: /^Dumbbell Bench Press/ }).first().click();
   await p.getByLabel('Set 1 weight in kilograms').first().waitFor({ timeout: 20000 });
 
+  await openMore(p, 'Dumbbell Bench Press');
   await p.getByRole('link', { name: /Swap Dumbbell Bench Press/ }).click();
   await p.getByRole('heading', { name: 'Swap exercise' }).waitFor({ timeout: 15000 });
   await p.waitForTimeout(800);

@@ -42,14 +42,29 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
  * without the spinner arrows stealing width, and so a part-typed value like
  * "2." does not get eaten by the browser mid-keystroke.
  */
+/**
+ * How loud the number is.
+ *
+ * `log` is the set you are about to do — the one thing on screen worth reading
+ * from arm's length. `read` is a set still to come, and `done` is one already
+ * behind you: both stay editable, because a mistyped rep you spot after ticking
+ * has to be fixable, but neither competes with the set in hand.
+ */
+const FIELD_SIZES = {
+  log: 'h-16 text-log',
+  read: 'h-12 text-read',
+  done: 'h-11 text-meta text-muted',
+} as const;
+
 export function NumberField({
   value,
   onCommit,
   suffix,
   blankWhenZero = false,
+  size = 'read',
   className = '',
   ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'> & {
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'size'> & {
   value: number | null;
   onCommit: (value: number) => void;
   suffix?: string;
@@ -59,6 +74,7 @@ export function NumberField({
    * misleading zero.
    */
   blankWhenZero?: boolean;
+  size?: keyof typeof FIELD_SIZES;
 }) {
   const initial = value === null || (blankWhenZero && value === 0) ? '' : String(value);
   return (
@@ -73,10 +89,12 @@ export function NumberField({
           const parsed = Number.parseFloat(event.currentTarget.value.replace(',', '.'));
           onCommit(Number.isFinite(parsed) && parsed >= 0 ? parsed : 0);
         }}
-        className={`h-11 w-full rounded-lg border border-line bg-raised text-center text-base tabular-nums text-white placeholder:text-muted/50 focus:border-accent focus:outline-none ${className}`}
+        className={`w-full rounded-lg border border-line bg-raised text-center tabular-nums text-white placeholder:text-muted/50 focus:border-accent focus:outline-none ${FIELD_SIZES[size]} ${className}`}
       />
       {suffix ? (
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted">
+        // Bottom-right rather than centred: at 32px a three-digit weight runs
+        // straight into a vertically centred suffix.
+        <span className="pointer-events-none absolute bottom-1.5 right-2 text-[10px] text-muted">
           {suffix}
         </span>
       ) : null}

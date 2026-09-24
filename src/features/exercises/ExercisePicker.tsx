@@ -47,6 +47,10 @@ export default function ExercisePicker({
     <div className="fixed inset-0 z-30 flex flex-col bg-ink">
       <div
         className="border-b border-line px-4 pb-3"
+        // This one genuinely needs the inset. The picker is `fixed inset-0`, so
+        // it is positioned against the viewport and escapes the padding body
+        // applies for the notch — unlike the workout header, which is sticky
+        // and therefore still inside it.
         style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.75rem)' }}
       >
         <div className="mx-auto flex max-w-lg items-center gap-3">

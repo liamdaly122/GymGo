@@ -37,7 +37,10 @@ export default function WeekStrip({
         return (
           <li key={iso} className="flex-1">
             <button
-              disabled={!session}
+              // Only a trained day goes anywhere. Enabling the rest would give
+              // every day a press state and no destination, which is what the
+              // strip did before it was wired up at all.
+              disabled={!session || !onSelect || !session.workoutId}
               onClick={() => session && onSelect?.(session)}
               aria-label={
                 session
@@ -47,7 +50,7 @@ export default function WeekStrip({
               aria-current={isToday ? 'date' : undefined}
               className={`flex w-full flex-col items-center gap-1.5 rounded-xl py-2 transition-colors ${
                 isSelected ? 'bg-raised' : ''
-              } ${session ? 'active:bg-raised' : 'cursor-default'}`}
+              } ${session?.workoutId && onSelect ? 'active:bg-raised' : 'cursor-default'}`}
             >
               <span className={`text-[10px] ${isToday ? 'text-accent' : 'text-muted'}`}>
                 {DAY_INITIALS[day.getDay()]}

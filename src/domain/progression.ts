@@ -54,6 +54,16 @@ export interface ProgressionInput {
   week?: WeekAdjustment | null;
 }
 
+/**
+ * Brief rule 5: a session logged as low readiness carries 10% less load.
+ *
+ * Exported because the cold-start estimate has to apply the same rule. A bad
+ * day that moved the numbers on lifts you have done and left the new ones
+ * alone would make the control look broken, and re-typing 0.9 at the second
+ * call site is how the two drift apart.
+ */
+export const LOW_READINESS_MULTIPLIER = 0.9;
+
 /** The brief's defaults: 2.5kg for lower-body compounds, 1.25kg for everything else. */
 const LOWER_BODY_PATTERNS = new Set(['squat', 'hinge', 'lunge']);
 const LOWER_BODY_MUSCLES = new Set(['quadriceps', 'hamstrings', 'glutes', 'calves', 'adductors', 'abductors']);
@@ -278,7 +288,7 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
   // Brief rule 5: a bad day scales the load, and only for this session.
   let scaledDown = false;
   if (input.readiness === 'low') {
-    weight *= 0.9;
+    weight *= LOW_READINESS_MULTIPLIER;
     scaledDown = true;
     goingLighter = true;
   }

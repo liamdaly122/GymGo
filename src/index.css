@@ -18,6 +18,36 @@
   --color-info: #60a5fa;
   --color-warn: #fbbf24;
   --color-muted: #8b9aad;
+
+  /*
+   * A type scale for the logging screen.
+   *
+   * The two numbers you read mid-set — weight and reps — were the same size as
+   * everything else on a card that held about thirty controls. They are the
+   * only things the task actually requires, so they get to be the biggest
+   * thing on screen and everything else gets quieter.
+   */
+
+  /* The number you are about to log. Legible at arm's length, under a bar. */
+  --text-log: 2rem;
+  --text-log--line-height: 1;
+  --text-log--font-weight: 600;
+  --text-log--letter-spacing: -0.02em;
+
+  /* A number already logged. Present, but done with. */
+  --text-read: 1.125rem;
+  --text-read--line-height: 1.2;
+
+  /* The exercise you are on. Said once. */
+  --text-title: 1.375rem;
+  --text-title--line-height: 1.15;
+  --text-title--letter-spacing: -0.01em;
+
+  /* Muscle, target, last time. */
+  --text-meta: 0.8125rem;
+
+  /* Reasons, plate loading, anything behind a tap. */
+  --text-note: 0.75rem;
 }
 
 html {

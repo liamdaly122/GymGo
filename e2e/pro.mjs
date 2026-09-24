@@ -207,6 +207,14 @@ await step('supersetting two exercises stops the timer running between them', as
     await p.waitForTimeout(800);
   }
 
+  // Adding an exercise focuses it, and only an exercise with something after
+  // it can be paired — so the bench has to come back on screen first. Pairing
+  // lives in the overflow now.
+  await p.getByRole('button', { name: /^Barbell Bench Press - Medium Grip, \d+ of \d+ sets done$/ }).click();
+  await p.waitForTimeout(400);
+  await p.getByRole('button', { name: 'More for Barbell Bench Press - Medium Grip' }).first().click();
+  await p.waitForTimeout(250);
+
   const pair = p.getByRole('button', { name: 'Superset with next' }).first();
   if (!(await pair.count())) throw new Error('Pro mode should offer to superset with the next exercise');
   await pair.click();
