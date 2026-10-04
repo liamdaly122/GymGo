@@ -32,9 +32,9 @@ export interface FakeSupabase {
   pg: PGlite;
   /** What `getClient()` hands the sync layer. */
   client: unknown;
-  /** The code the last email to this address carried. */
-  codeFor(email: string): string | undefined;
-  /** Signs straight in, as entering the emailed code would. */
+  /** Makes an account with a password, as Authentication → Users → Add user does. */
+  createUser(email: string, password: string): Promise<string>;
+  /** Signs straight in, as a correct password would. */
   signIn(email: string): Promise<string>;
   /** Forgets the session, as wiping the phone's storage would. */
   forgetSession(): void;
@@ -42,20 +42,17 @@ export interface FakeSupabase {
   rows(table: string): Promise<Array<Record<string, unknown>>>;
   /** Makes uploads fail until cleared, as a dropped connection would. */
   failUploads(message: string | null): void;
-  /** Makes sign-in emails fail until cleared, as a refusing mail server would. */
-  failEmails(error: { message: string; code?: string; status: number } | null): void;
   /** Every upload request, by table and size. */
   uploads: Array<{ table: string; rows: number }>;
 }
 
 export async function createFakeSupabase(): Promise<FakeSupabase> {
   const pg = await createSupabaseDb(MIGRATIONS);
-  const codes = new Map<string, string>();
+  const passwords = new Map<string, string>();
   const listeners = new Set<AuthListener>();
   const uploads: Array<{ table: string; rows: number }> = [];
   let session: { access_token: string; user: FakeUser } | null = null;
   let uploadFailure: string | null = null;
-  let emailFailure: { message: string; code?: string; status: number } | null = null;
 
   const notify = (event: string) => {
     for (const listener of listeners) listener(event, session);
@@ -72,17 +69,13 @@ export async function createFakeSupabase(): Promise<FakeSupabase> {
     async getSession() {
       return { data: { session }, error: null };
     },
-    async signInWithOtp({ email }: { email: string }) {
-      // Shaped like supabase-js's AuthApiError: message, code and status.
-      if (emailFailure) return { data: { user: null, session: null }, error: { ...emailFailure } };
-      codes.set(email, String(100000 + codes.size * 7919).slice(0, 6));
-      return { data: { user: null, session: null }, error: null };
-    },
-    async verifyOtp({ email, token }: { email: string; token: string; type: string }) {
-      if (!token || codes.get(email) !== token) {
+    async signInWithPassword({ email, password }: { email: string; password: string }) {
+      // Shaped like supabase-js's AuthApiError: message, code and status. One
+      // answer for an unknown account and a wrong password, as Supabase gives.
+      if (!passwords.has(email) || passwords.get(email) !== password) {
         return {
           data: { user: null, session: null },
-          error: { message: 'Token has expired or is invalid', status: 403 },
+          error: { message: 'Invalid login credentials', code: 'invalid_credentials', status: 400 },
         };
       }
       await startSession(email);
@@ -152,7 +145,10 @@ export async function createFakeSupabase(): Promise<FakeSupabase> {
   return {
     pg,
     client: { auth, from },
-    codeFor: (email) => codes.get(email),
+    createUser: async (email, password) => {
+      passwords.set(email, password);
+      return ensureUser(pg, email);
+    },
     signIn: startSession,
     forgetSession: () => {
       session = null;
@@ -160,9 +156,6 @@ export async function createFakeSupabase(): Promise<FakeSupabase> {
     rows: (table) => serverRows(pg, table),
     failUploads: (message) => {
       uploadFailure = message;
-    },
-    failEmails: (error) => {
-      emailFailure = error;
     },
     uploads,
   };

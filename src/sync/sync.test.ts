@@ -33,7 +33,7 @@ const { seedIfEmpty } = await import('@/db/seed');
 const { pushOutbox, pendingCount, UPLOAD_BATCH } = await import('./push');
 const { pullSince } = await import('./pull');
 const { syncNow, resetSyncSession } = await import('./engine');
-const { currentAccount, sendSignInCode, verifySignInCode } = await import('./auth');
+const { currentAccount, signInWithPassword } = await import('./auth');
 const { forgetLedgers, readLedger, writeLedger } = await import('./ledger');
 const { getSyncStatus, setSyncStatus } = await import('./status');
 const { exportAsJson, importFromJson } = await import('@/db/backup');
@@ -78,7 +78,6 @@ beforeEach(async () => {
   );
   await wipeThePhone();
   fake.failUploads(null);
-  fake.failEmails(null);
   fake.uploads.length = 0;
   userId = await ensureUser(fake.pg, EMAIL);
 });
@@ -98,30 +97,27 @@ async function logASession(weights: number[] = [100, 102.5]) {
 }
 
 describe('signing in', () => {
-  it('signs the app in with the emailed code', async () => {
-    await sendSignInCode(EMAIL);
-    await verifySignInCode(EMAIL, ` ${fake.codeFor(EMAIL)} `);
+  const PASSWORD = 'correct horse battery staple';
+
+  it('signs the app in with an email and password', async () => {
+    await fake.createUser(EMAIL, PASSWORD);
+
+    await signInWithPassword(` ${EMAIL} `, PASSWORD);
 
     expect((await currentAccount())?.email).toBe(EMAIL);
   });
 
-  it('says a wrong code did not work, rather than Supabase\u2019s wording', async () => {
-    await sendSignInCode(EMAIL);
-
-    await expect(verifySignInCode(EMAIL, '000000')).rejects.toThrow(/That code did not work/);
-    expect(await currentAccount()).toBeNull();
-  });
-
   /**
-   * The owner's first sign-in: a custom SMTP server refused, and all Supabase
-   * said was "Error sending confirmation email".
+   * Supabase gives one answer for a wrong password and an account nobody made
+   * — "Invalid login credentials" — and the second is the likelier on a first
+   * sign-in, so the app says how to make one.
    */
-  it('turns a refused email into where to look', async () => {
-    fake.failEmails({ message: 'Error sending confirmation email', code: 'unexpected_failure', status: 500 });
-    const before = fake.codeFor(EMAIL);
+  it('says how to make the account when the sign-in is refused', async () => {
+    await fake.createUser(EMAIL, PASSWORD);
 
-    await expect(sendSignInCode(EMAIL)).rejects.toThrow(/SMTP Settings/);
-    expect(fake.codeFor(EMAIL), 'no new code was sent').toBe(before);
+    await expect(signInWithPassword(EMAIL, 'wrong')).rejects.toThrow(/Add user, with Auto Confirm User ticked/);
+    await expect(signInWithPassword('nobody@example.com', PASSWORD)).rejects.toThrow(/Wrong email or password/);
+    expect(await currentAccount()).toBeNull();
   });
 });
 

@@ -59,7 +59,7 @@ Plus:
       plate rounding, every suggestion explained
 - [x] Five-week training blocks with a deload, plotted onto a calendar
 - [x] Redesign: navy ground, exercise photography, Progress tab with charts
-- [x] Supabase backup and sync — schema, RLS, sign-in by emailed code, a full
+- [x] Supabase backup and sync — schema, RLS, email and password sign-in, a full
       first backup, a daily catch-up and restore onto a new phone (needs your
       project; the setup steps are in `supabase/README.md`)
 

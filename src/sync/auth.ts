@@ -1,14 +1,18 @@
 /**
- * Email sign-in. One user, one phone, signed in once.
+ * Sign-in for backup: email and password. One user, one phone, signed in once.
  *
- * No password to remember and nothing to leak. The only thing the client ever
- * holds is the anon public key and a session token.
+ * The brief asked for an emailed magic link, and that cannot reach a
+ * home-screen app on an iPhone: the app keeps its storage apart from Safari,
+ * and a link tapped in Mail opens Safari, which signs Safari in and leaves the
+ * app signed out. A code typed into the app would get round that, but
+ * Supabase's built-in email sends fixed templates — a link, no code — and only
+ * a custom SMTP server unlocks them, which means another service. A password
+ * involves no email at all. The account is made once in the Supabase
+ * dashboard, signing in happens inside the app, and the phone can keep the
+ * password in its keychain.
  *
- * The email carries a six-digit code as well as a link, and the code is the
- * one that matters on an iPhone. A home-screen app keeps its storage apart
- * from Safari, and a link tapped in Mail opens in Safari — so the link signs
- * Safari in and leaves the app exactly where it was. Typing the code into the
- * app signs in the app itself.
+ * The client only ever holds the anon public key and a session token; the
+ * password goes to Supabase and is not kept.
  */
 import { db } from '@/db/db';
 import { SETTINGS_ID } from '@/db/schema';
@@ -29,36 +33,15 @@ export async function currentAccount(): Promise<SyncAccount | null> {
 }
 
 /**
- * Emails a sign-in code (and a link, for a browser). Creates the account on
- * first use. A refusal is thrown as what to do about it (`explainSignInError`),
- * not Supabase's own wording.
+ * Signs this app in. A refusal is thrown as what to do about it
+ * (`explainSignInError`), not in Supabase's own wording.
  */
-export async function sendSignInCode(email: string): Promise<void> {
+export async function signInWithPassword(email: string, password: string): Promise<void> {
   const client = getClient();
   if (!client) throw new Error('No Supabase project is configured.');
 
-  const redirectTo = typeof window === 'undefined' ? undefined : window.location.origin;
-  const { error } = await client.auth.signInWithOtp({
-    email,
-    options: { shouldCreateUser: true, ...(redirectTo ? { emailRedirectTo: redirectTo } : {}) },
-  });
+  const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
   if (error) throw new Error(explainSignInError(error));
-}
-
-/** Signs this app in with the code from the email. */
-export async function verifySignInCode(email: string, code: string): Promise<void> {
-  const client = getClient();
-  if (!client) throw new Error('No Supabase project is configured.');
-
-  const token = code.replace(/\s+/g, '');
-  const { error } = await client.auth.verifyOtp({ email, token, type: 'email' });
-  if (error) {
-    throw new Error(
-      error.code === 'otp_expired' || /expired|invalid/i.test(error.message)
-        ? 'That code did not work. Codes expire after an hour — check it, or send a new one.'
-        : explainSignInError(error),
-    );
-  }
 }
 
 /**

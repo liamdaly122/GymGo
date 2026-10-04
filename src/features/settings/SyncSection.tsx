@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Button, SectionLabel } from '@/components/ui';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import { describeSyncStatus } from '@/sync/status';
-import { currentAccount, sendSignInCode, signOut, verifySignInCode, type SyncAccount } from '@/sync/auth';
+import { currentAccount, signInWithPassword, signOut, type SyncAccount } from '@/sync/auth';
 import { isSyncConfigured } from '@/sync/config';
 import { syncNow } from '@/sync/engine';
 import { formatSince } from '@/lib/dates';
@@ -13,19 +13,18 @@ import { formatSince } from '@/lib/dates';
  * Signing in is the one place the interface deliberately waits on the network,
  * because the user asked it to. Nothing on the logging path ever does.
  *
- * Sign-in is by a code typed into the app, because that is what works in a
- * home-screen app on an iPhone: the link in the same email opens Safari, which
- * keeps its own storage, so it would sign Safari in and leave the app signed
- * out. The link still works in a browser.
+ * Email and password, typed into the app itself — see `src/sync/auth.ts` for
+ * why not a magic link. A real form, so Return signs in and the phone offers to
+ * keep the password; the password lives in this component only until it is
+ * sent.
  */
 export default function SyncSection() {
   const status = useSyncStatus();
   const [account, setAccount] = useState<SyncAccount | null | undefined>(undefined);
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     void currentAccount().then(setAccount);
@@ -49,36 +48,20 @@ export default function SyncSection() {
     );
   }
 
-  const run = async (work: () => Promise<void>) => {
+  const handleSignIn = async (event: FormEvent) => {
+    event.preventDefault();
     setBusy(true);
-    setNote(null);
+    setError(null);
     try {
-      await work();
+      await signInWithPassword(email, password);
+      setPassword('');
+      setAccount(await currentAccount());
     } catch (cause) {
-      setNote({ tone: 'error', text: cause instanceof Error ? cause.message : String(cause) });
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
     }
   };
-
-  const handleSend = () =>
-    run(async () => {
-      const address = email.trim();
-      await sendSignInCode(address);
-      setSentTo(address);
-      setCode('');
-      setNote({ tone: 'ok', text: `Code sent to ${address}.` });
-    });
-
-  const handleVerify = () =>
-    run(async () => {
-      if (!sentTo) return;
-      await verifySignInCode(sentTo, code);
-      setAccount(await currentAccount());
-      setSentTo(null);
-      setCode('');
-      setNote(null);
-    });
 
   const backedUp = status.state === 'idle' && status.pending === 0 && status.lastSyncedAt !== null;
 
@@ -127,92 +110,49 @@ export default function SyncSection() {
           </button>
         </>
       ) : account === null ? (
-        sentTo === null ? (
-          <>
-            <p className="font-semibold">Sign in to back up this phone.</p>
-            <p className="t-meta">
-              No password. You get a six-digit code by email, type it in here, and stay signed in.
-            </p>
-            <input
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-              aria-label="Email address"
-              className="field"
-            />
-            <Button
-              variant="primary"
-              block
-              disabled={busy || email.trim() === ''}
-              onClick={() => void handleSend()}
-            >
-              {busy ? 'Sending…' : 'Email me a code'}
-            </Button>
-            {/* For a code that came through after all: a slow email, or one
-                sent before Supabase's hourly limit stopped the next. */}
-            <button
-              type="button"
-              className="btn-text self-start"
-              disabled={busy || email.trim() === ''}
-              onClick={() => {
-                setSentTo(email.trim());
-                setCode('');
-                setNote(null);
-              }}
-            >
-              I already have a code
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="font-semibold">Enter the code from the email.</p>
-            <p className="t-meta">
-              Type it here rather than tapping the link: on an iPhone the link opens Safari, which
-              keeps its own storage, and this app would stay signed out.
-            </p>
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={code}
-              onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
-              placeholder="123456"
-              aria-label="Sign-in code"
-              className="field text-center text-2xl tracking-[0.3em]"
-            />
-            <Button
-              variant="primary"
-              block
-              disabled={busy || code.length < 6}
-              onClick={() => void handleVerify()}
-            >
-              {busy ? 'Signing in…' : 'Sign in'}
-            </Button>
-            <div className="flex justify-between gap-3">
-              <button type="button" className="btn-text" disabled={busy} onClick={() => void handleSend()}>
-                Send a new code
-              </button>
-              <button
-                type="button"
-                className="btn-text"
-                onClick={() => {
-                  setSentTo(null);
-                  setNote(null);
-                }}
-              >
-                Use another email
-              </button>
-            </div>
-          </>
-        )
+        <form className="stack-sm" onSubmit={(event) => void handleSignIn(event)}>
+          <p className="font-semibold">Sign in to back up this phone.</p>
+          <p className="t-meta">
+            Once, and it stays signed in. Your phone can keep the password for you.
+          </p>
+          <input
+            type="email"
+            inputMode="email"
+            autoComplete="username"
+            autoCapitalize="none"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@example.com"
+            aria-label="Email address"
+            className="field"
+          />
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Password"
+            aria-label="Password"
+            className="field"
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            block
+            disabled={busy || email.trim() === '' || password === ''}
+          >
+            {busy ? 'Signing in…' : 'Sign in'}
+          </Button>
+          <p className="t-meta">
+            No account yet? Make it once in Supabase: Authentication → Users → Add user, with Auto
+            Confirm User ticked.
+          </p>
+        </form>
       ) : null}
 
-      {note ? (
-        <p className={`text-sm ${note.tone === 'ok' ? 'text-hot' : 'text-warn'}`} role="status">
-          {note.text}
+      {error ? (
+        <p className="text-sm text-warn" role="status">
+          {error}
         </p>
       ) : null}
 

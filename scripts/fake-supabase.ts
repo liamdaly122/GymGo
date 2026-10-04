@@ -2,17 +2,17 @@
  * A stand-in Supabase project over HTTP, for the backup browser suite.
  *
  * Serves the slice of Auth and the REST API the app's real supabase-js client
- * calls — email sign-in codes, sessions, upsert and select — on real Postgres
+ * calls — password sign-in, sessions, upsert and select — on real Postgres
  * (PGlite) with the real migrations applied, so row level security and the
- * newest-write-wins trigger are in force. Not for anything but tests: the codes
- * are readable through /__test, and tokens are not signed.
+ * newest-write-wins trigger are in force. Not for anything but tests: accounts
+ * are made through /__test as the dashboard's Add user would, passwords are
+ * held in memory, and tokens are not signed.
  *
  *   npx tsx scripts/fake-supabase.ts --port 54329
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { randomInt } from 'node:crypto';
 import {
   RestError,
   createSupabaseDb,
@@ -33,11 +33,8 @@ const migrations = readdirSync(dir)
   .map((file) => readFileSync(resolve(dir, file), 'utf8'));
 const pg = await createSupabaseDb(migrations);
 
-/** Signing in with this address fails the way a refusing SMTP server does. */
-const BROKEN_SMTP_ADDRESS = 'smtp-broken@example.com';
-
-/** The last code "emailed" to each address. */
-const codes = new Map<string, string>();
+/** Accounts and their passwords, as Authentication → Users → Add user makes them. */
+const passwords = new Map<string, string>();
 /** Access and refresh tokens to the account they belong to. */
 const sessions = new Map<string, { id: string; email: string }>();
 
@@ -123,34 +120,22 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
   const path = url.pathname;
 
   // ---- What a test reads instead of an inbox and a dashboard ----
-  if (path === '/__test/code') {
-    return send(response, 200, { code: codes.get(url.searchParams.get('email') ?? '') ?? null });
+  if (path === '/__test/users' && request.method === 'POST') {
+    const { email, password } = (await readBody(request)) as { email: string; password: string };
+    passwords.set(email, password);
+    return send(response, 201, { id: await ensureUser(pg, email) });
   }
   if (path === '/__test/rows') {
     return send(response, 200, await serverRows(pg, url.searchParams.get('table') ?? ''));
   }
 
   // ---- Auth ----
-  if (path === '/auth/v1/otp' && request.method === 'POST') {
-    const { email } = (await readBody(request)) as { email: string };
-    // A mail server that refuses, as a custom SMTP login does once its provider
-    // stops accepting a plain password. The body is what Supabase Auth sends.
-    if (email === BROKEN_SMTP_ADDRESS) {
-      return send(response, 500, {
-        code: 500,
-        error_code: 'unexpected_failure',
-        msg: 'Error sending confirmation email',
-      });
+  if (path === '/auth/v1/token' && url.searchParams.get('grant_type') === 'password') {
+    const { email, password } = (await readBody(request)) as { email: string; password: string };
+    // One answer for an unknown account and a wrong password, as Supabase gives.
+    if (!passwords.has(email) || passwords.get(email) !== password) {
+      return send(response, 400, { code: 400, error_code: 'invalid_credentials', msg: 'Invalid login credentials' });
     }
-    codes.set(email, String(randomInt(100000, 1000000)));
-    return send(response, 200, {});
-  }
-  if (path === '/auth/v1/verify' && request.method === 'POST') {
-    const { email, token } = (await readBody(request)) as { email: string; token: string };
-    if (!token || codes.get(email) !== token) {
-      return send(response, 403, { code: 403, error_code: 'otp_expired', msg: 'Token has expired or is invalid' });
-    }
-    codes.delete(email);
     return send(response, 200, issueSession({ id: await ensureUser(pg, email), email }));
   }
   if (path === '/auth/v1/token' && url.searchParams.get('grant_type') === 'refresh_token') {

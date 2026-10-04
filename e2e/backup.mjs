@@ -5,9 +5,9 @@
  * Self-contained. It starts a stand-in Supabase (scripts/fake-supabase.ts —
  * real Postgres with the real migrations, row level security and all), builds
  * a copy of the app pointed at it, serves that, and drives the real supabase-js
- * client in a real browser: sign in with an emailed code, see a workout logged
- * before signing in reach the server, then a brand-new phone — a fresh browser
- * context, storage and all — sign in and get it back.
+ * client in a real browser: sign in with an email and password, see a workout
+ * logged before signing in reach the server, then a brand-new phone — a fresh
+ * browser context, storage and all — sign in and get it back.
  *
  * A live project still has to be checked by hand once (supabase/README.md);
  * this is everything short of that.
@@ -24,6 +24,7 @@ const APP_PORT = Number(process.env.APP_PORT ?? 5191);
 const SUPABASE = `http://127.0.0.1:${SUPABASE_PORT}`;
 const BASE = `http://127.0.0.1:${APP_PORT}/`;
 const EMAIL = 'lifter@example.com';
+const PASSWORD = 'correct horse battery staple';
 
 const children = [];
 const outDir = mkdtempSync(join(tmpdir(), 'gymgo-backup-'));
@@ -73,6 +74,15 @@ await step('start a stand-in Supabase on real Postgres', async () => {
   await start(bin('tsx'), ['scripts/fake-supabase.ts', '--port', String(SUPABASE_PORT)], {}, /listening/);
 });
 
+await step('make the account, as Authentication → Users → Add user does', async () => {
+  const response = await fetch(`${SUPABASE}/__test/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
+  });
+  if (!response.ok) throw new Error(`could not make the account: ${response.status}`);
+});
+
 await step('build the app pointed at it, and serve it', async () => {
   await run(bin('vite'), ['build', '--outDir', outDir, '--emptyOutDir'], {
     VITE_SUPABASE_URL: SUPABASE,
@@ -106,21 +116,19 @@ async function newPhone() {
 
 const backupSection = (page) => page.getByRole('region', { name: 'Backup' });
 
-/** Settings → email → code (read from the stand-in, as from an inbox) → signed in. */
-async function signIn(page, screenshot = null) {
+/** Settings → email and password → signed in. */
+async function signIn(page, { password = PASSWORD, screenshot = null } = {}) {
   await page.goto(BASE + '#/settings', { waitUntil: 'networkidle' });
   const section = backupSection(page);
   await section.getByLabel('Email address').fill(EMAIL);
-  await section.getByRole('button', { name: 'Email me a code' }).click();
-  await section.getByLabel('Sign-in code').waitFor({ timeout: 15000 });
+  await section.getByLabel('Password').fill(password);
   if (screenshot) {
-    await section.scrollIntoViewIfNeeded();
+    await section.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     await page.screenshot({ path: screenshot });
   }
-  const { code } = await server(`/__test/code?email=${encodeURIComponent(EMAIL)}`);
-  if (!code) throw new Error('the stand-in never received a sign-in request');
-  await section.getByLabel('Sign-in code').fill(code);
-  await section.getByRole('button', { name: 'Sign in', exact: true }).click();
+  // Return, not a tap: the form submits, as it must for the phone to offer to
+  // keep the password.
+  await section.getByLabel('Password').press('Enter');
 }
 
 /** Waits for the round to finish with nothing left to send. */
@@ -180,35 +188,25 @@ await step('Settings offers a sign-in, not a setup message', async () => {
 });
 
 /**
- * The owner's first real sign-in failed with Supabase's bare "Error sending
- * confirmation email": a custom SMTP server had refused. The app has to say
- * where to look, not repeat the failure.
+ * Supabase answers a wrong password and an account nobody made with the same
+ * "Invalid login credentials". On a first sign-in the account is the likelier
+ * gap, so the app says how to make one.
  */
-await step('a refused email says where to look', async () => {
+await step('a refused sign-in says how to make the account', async () => {
+  await signIn(page, { password: 'not the password' });
   const section = backupSection(page);
-  await section.getByLabel('Email address').fill('smtp-broken@example.com');
-  await section.getByRole('button', { name: 'Email me a code' }).click();
-  const note = section.getByText(/Supabase could not send the email/);
+  const note = section.getByText(/Wrong email or password/);
   await note.waitFor({ timeout: 15000 });
   const text = await note.textContent();
-  if (!/SMTP Settings/.test(text) || !/Logs → Auth/.test(text)) throw new Error(`unhelpful explanation: ${text}`);
-  if (await section.getByLabel('Sign-in code').count()) throw new Error('a refused email must not move on to the code');
+  if (!/Authentication → Users → Add user/.test(text) || !/Auto Confirm User/.test(text)) {
+    throw new Error(`unhelpful explanation: ${text}`);
+  }
   await section.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await page.screenshot({ path: 'e2e/shot-backup-refused.png' });
 });
 
-await step('"I already have a code" goes straight to the code', async () => {
-  const section = backupSection(page);
-  await section.getByLabel('Email address').fill(EMAIL);
-  await section.getByRole('button', { name: 'I already have a code' }).click();
-  await section.getByLabel('Sign-in code').waitFor({ timeout: 5000 });
-  if (await section.getByText(/Supabase could not send/).count()) throw new Error('the old error should be cleared');
-  await section.getByRole('button', { name: 'Use another email' }).click();
-  await section.getByLabel('Email address').waitFor({ timeout: 5000 });
-});
-
-await step('sign in with the emailed code', async () => {
-  await signIn(page, 'e2e/shot-backup-code.png');
+await step('sign in with email and password', async () => {
+  await signIn(page);
   await waitUntilBackedUp(page);
 });
 await page.screenshot({ path: 'e2e/shot-backup-signed-in.png' });
@@ -251,7 +249,7 @@ await step('a new phone starts empty', async () => {
 });
 
 await step('signing in restores everything', async () => {
-  await signIn(fresh.page);
+  await signIn(fresh.page, { screenshot: 'e2e/shot-backup-sign-in.png' });
   await backupSection(fresh.page).getByText(/Restored 1 workout from your backup/).waitFor({ timeout: 30000 });
   await waitUntilBackedUp(fresh.page);
   const sets = await localSets(fresh.page);

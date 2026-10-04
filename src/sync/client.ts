@@ -26,9 +26,9 @@ export function getClient(): SupabaseClient | null {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      // The magic link comes back as a URL fragment, which is also where the
-      // app's own router lives, so the session is picked up explicitly instead.
-      detectSessionInUrl: true,
+      // Nothing comes back in a URL: sign-in is a password typed into the app,
+      // and the fragment belongs to the app's own router.
+      detectSessionInUrl: false,
     },
   });
   return client;

@@ -35,36 +35,30 @@ replace policies and triggers; that is expected.
 With the Supabase CLI instead: `supabase link --project-ref <ref>` then
 `supabase db push`.
 
-## 3. Turn on sign-in by code
+## 3. Create your account
 
-GymGo signs in with a six-digit code from an email. Not a password, and not
-only a link: on an iPhone a link opens Safari, which keeps its storage apart
-from the home-screen app, so tapping it would sign Safari in and leave the app
-signed out.
+GymGo signs in with an email address and a password, and you make the account
+yourself, once, here. Signing in sends no email, so the email templates, SMTP
+Settings and URL Configuration play no part in it.
 
-1. **Authentication → Emails → Templates**. In both **Magic Link** and
-   **Confirm signup**, add the code to the message body, for example:
+1. **Authentication → Users → Add user → Create new user**.
+2. Enter your email address and a long password (the phone will remember it
+   for you). Tick **Auto Confirm User**, then **Create user**. Any address
+   works: nothing is ever sent to it.
+3. Recommended: **Authentication → Sign In / Providers**, switch **Allow new
+   users to sign up** off, and save. Your account already exists, and this
+   stops anyone else making one on your project. Signing in still works.
 
-   ```html
-   <h2>Your GymGo code</h2>
-   <p>Type this into the app: <strong>{{ .Token }}</strong></p>
-   <p>Or, in a browser, <a href="{{ .ConfirmationURL }}">sign in with this link</a>.</p>
-   ```
+**Never delete this user.** Every backed-up row belongs to it, and deleting it
+deletes the whole backup with it. A forgotten password is a reset instead:
+[Setting the password directly](#setting-the-password-directly).
 
-   The first email you ever get uses Confirm signup, and every one after that
-   uses Magic Link, so both need it.
-2. **Authentication → URL Configuration**. Set **Site URL** to your app's
-   address (for example `https://gymgo.vercel.app`) and add the same address
-   under **Redirect URLs**. That is where the link in the email goes.
-3. Sign in with **the same email address as your Supabase account**. The
-   built-in email service only delivers to members of the project's team, and
-   only a few emails an hour. For one person that is all you need.
-4. **Leave SMTP Settings alone.** The dashboard nudges you towards setting up
-   your own email server, but for one person the built-in email is enough. An
-   Outlook, Hotmail, Live or Gmail account will not work as the server: those
-   providers no longer let another service send through them with just your
-   password. They refuse, and sign-in fails with "Supabase could not send the
-   email". If you have already switched custom SMTP on, switch it off.
+If **Add user** says the address is already registered, an earlier attempt at
+signing in by email left an unfinished account behind. Give that one a
+password the same way.
+
+If you switched on custom SMTP for an emailed sign-in, switch it off again
+under **Authentication → Emails → SMTP Settings**. Nothing uses it now.
 
 ## 4. Give the app the project's address and public key
 
@@ -94,8 +88,8 @@ development, put the same two lines in `.env.local` (gitignored).
 1. Open GymGo. Close it fully and open it again if Settings still says
    "Not connected yet": the phone keeps the previous version until a fresh
    launch.
-2. **Settings → Backup**: enter your email, tap **Email me a code**, and type
-   the code from the email into the app.
+2. **Settings → Backup**: enter the email and password from step 3 and tap
+   **Sign in**. Let the phone save the password when it offers.
 3. The first backup sends everything on the phone: every workout you have
    logged, including anything you imported from an export. Leave the app open
    on Wi-Fi until Backup says **Backed up**.
@@ -108,10 +102,10 @@ Editor → workouts** in Supabase.
 ## Getting everything back
 
 On a new phone, or after removing and re-adding the home-screen app: install
-GymGo, open **Settings → Backup**, sign in with a code, and everything comes
-back. It says how many workouts it restored. Your settings, gyms and exercise
-notes come back too, and the new install's blank defaults do not overwrite
-them.
+GymGo, open **Settings → Backup**, sign in with the same email and password,
+and everything comes back. It says how many workouts it restored. Your
+settings, gyms and exercise notes come back too, and the new install's blank
+defaults do not overwrite them.
 
 ## If signing in goes wrong
 
@@ -120,17 +114,32 @@ Supabase's **Logs → Auth** has each request and what went wrong with it.
 
 | The app says | Why | What to do |
 | --- | --- | --- |
-| Supabase could not send the email… SMTP Settings | The email server refused. Usually it is a custom SMTP server Supabase cannot log in to, such as an Outlook, Hotmail, Live or Gmail account. | **Authentication → Emails → SMTP Settings**: switch custom SMTP off. If it still fails, reset both email templates to their defaults and add `{{ .Token }}` again, exactly as written. A typo there breaks sending too. |
-| …only sends to members of your Supabase team | The built-in email only goes to people on your Supabase team. | Use the email you log in to Supabase with, or invite this address to the team. |
-| …only sends a few emails an hour | The built-in email's hourly limit. | Wait a few minutes. A code you already have still works: **I already have a code**. |
-| That code did not work | A wrong or old code. Each is good for an hour, and a new email replaces the last. | Use the newest email's code, or send another. |
-| Email sign-in is switched off / set not to create new accounts | A setting under **Authentication → Sign In / Providers**. | Turn **Email** on, and **Allow new users to sign up** for the first sign-in. |
+| Wrong email or password | Supabase gives the same answer for a mistyped password and an account that was never made. | Check that **Authentication → Users** lists your address. If it does not, make the account (step 3). If it does, set a new password (below). |
+| That account has not been confirmed | It was made without **Auto Confirm User** ticked. | Run the SQL below. It confirms the account as well. |
+| Email sign-in is switched off | **Authentication → Sign In / Providers → Email** is off. | Turn it on. **Allow new users to sign up** can stay off. |
+| Supabase has blocked this account | The user is banned. | **Authentication → Users**, open it, and unban it. |
+| Supabase is limiting sign-in attempts | Too many tries close together. | Wait a few minutes. |
 | Could not reach Supabase | No signal, or a wrong project URL. | Try again with signal. If it persists, check `VITE_SUPABASE_URL` in Vercel and redeploy. |
 | Supabase is not answering properly | The project is paused or having a bad moment. | Open the Supabase dashboard; a paused project offers **Restore**. |
 
-No email at all? Look in **Junk**: Outlook often files the built-in sender
-(`noreply@mail.app.supabase.io`) there. Mark it as not junk once and later ones
-arrive normally.
+### Setting the password directly
+
+For a forgotten password, an account that was never confirmed, or one left
+behind by an earlier attempt at signing in by email. A reset email would carry
+a link, and a link does not reach the home-screen app, so set it here: **SQL
+Editor → New query**, put in your email and the new password, and **Run**:
+
+```sql
+update auth.users
+set encrypted_password = extensions.crypt('your new password', extensions.gen_salt('bf')),
+    email_confirmed_at = coalesce(email_confirmed_at, now())
+where email = 'you@example.com'
+returning email;
+```
+
+It should answer with one row: your email. It confirms the account if it never
+was, and leaves the backup untouched. Delete the query afterwards, so the
+password does not stay in the editor.
 
 ## 6. Keep the project awake (recommended)
 
@@ -181,9 +190,10 @@ Supabase cannot run there. What runs instead:
   and that an older upload never replaces a newer row. `sync.test.ts` runs the
   whole backup round against it, including the wipe-and-restore.
 - `npm run test:backup` serves the same stand-in over HTTP and drives the real
-  supabase-js client in a browser. It logs a workout, signs in with a code and
-  backs up. Then a brand-new phone signs in and gets everything back.
+  supabase-js client in a browser. It logs a workout, is refused a wrong
+  password, signs in with the right one and backs up. Then a brand-new phone
+  signs in and gets everything back.
 
-The one thing these cannot check is your own project's dashboard settings:
-email templates, URLs and keys. Signing in once on the phone and seeing
-**Backed up** is that check.
+The one thing these cannot check is your own project: the account you made
+and the keys. Signing in once on the phone and seeing **Backed up** is that
+check.

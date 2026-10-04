@@ -149,21 +149,31 @@ fails the build if that slips:
 Signing in is the one deliberate, user-initiated wait in the app. Everything else
 observes a status store and carries on.
 
-**Sign-in is by a six-digit code from the email, typed into the app**
-(`verifySignInCode`). On an iPhone a link in Mail opens Safari, which keeps its
-storage apart from the home-screen app, so a link-only sign-in signed Safari in
-and left the app signed out. The link still works in a browser. The Supabase
-email templates have to include `{{ .Token }}`; `supabase/README.md` has the
-setup steps.
+**Sign-in is by email and password, typed into the app** (`signInWithPassword`
+in `src/sync/auth.ts`). The one account is made once in the Supabase dashboard
+(Authentication → Users → Add user, with Auto Confirm User), so signing in
+sends no email, and no template, SMTP or URL setting can break it. This departs
+from the brief's magic link on purpose, after two emailed sign-ins failed:
+
+- On an iPhone a link in Mail opens Safari, which keeps its storage apart from
+  the home-screen app. The link signed Safari in and left the app signed out.
+- A six-digit code typed into the app gets round that, but the code has to be
+  in the email, and Supabase's built-in email will not let its templates be
+  edited. Only a custom SMTP server unlocks them, which is another service,
+  and the owner's Outlook one refused to send.
+
+Do not bring an emailed sign-in back without answering both. The sign-in is a
+real form, so Return submits and the phone offers to keep the password.
 
 **A refused sign-in says what to do, not what failed.** `explainSignInError` in
-`src/sync/signInErrors.ts` turns Supabase's codes and statuses into the setting
-to change. The owner's first sign-in showed only "Error sending confirmation
-email": a custom SMTP server, on an Outlook account, had refused, and the fix
-was a switch in the dashboard. Supabase's raw wording is passed through only
-for codes the function does not recognise. The guide says to leave SMTP alone,
-since the built-in email reaches the project's own team, which for one person
-is all it needs.
+`src/sync/signInErrors.ts` turns Supabase's codes and statuses into the step or
+the setting, and where it is in the dashboard. Supabase answers a wrong
+password and an account nobody made with the same "Invalid login credentials",
+and on a first sign-in the second is likelier, so the answer says how to make
+one. Nothing it says may suggest deleting the account: every backed-up row
+references `auth.users` `on delete cascade`, so that would delete the backup.
+The guide sets a forgotten password from the SQL Editor instead. Supabase's raw
+wording is passed through only for codes the function does not recognise.
 
 **The outbox alone does not make a backup.** `syncNow` in `src/sync/engine.ts`
 runs one round in this order:
@@ -193,8 +203,8 @@ accounts, the trigger, and that every row the app writes is accepted field for
 field. `sync.test.ts` runs whole rounds against it, including wipe-and-restore.
 `npm run test:backup` serves it over HTTP (`scripts/fake-supabase.ts`) and drives
 the real supabase-js client in a browser, through a backup and then a restore
-onto a brand-new phone. A live project's own dashboard settings (templates,
-URLs, keys) can only be checked by signing in on the phone.
+onto a brand-new phone. A live project's own account and keys can only be
+checked by signing in on the phone.
 
 ## Writes go through one place
 
@@ -635,8 +645,7 @@ screen looks identical. These in particular are load-bearing:
   `Just <session>` and `Whole plan`
 - the `Calendar` region, its list (`This week`, `Next week`, `Week of …`),
   and `Previous week` / `Next week`
-- the `Backup` region in Settings: `Email address`, `Email me a code`,
-  `I already have a code`, `Sign-in code`, `Sign in`, `Use another email`,
+- the `Backup` region in Settings: `Email address`, `Password`, `Sign in`,
   `Back up now`, and its `status`, which reads `Backed up` once nothing is
   waiting
 - `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
