@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useBlockOverview, useProgramme, type ProgrammeRoutine } from '@/db/queries';
-import { completePlan, createRoutine, startNextBlock } from '@/db/mutations';
+import { completePlan, createRoutine } from '@/db/mutations';
 import { Button, Screen, ScreenHeader, SectionLabel, Sheet } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import { useToday } from '@/hooks/useToday';
@@ -9,6 +9,7 @@ import { formatDayLabel } from '@/lib/dates';
 import { weekModifier } from '@/domain/programmes/block';
 import type { ScheduledSession } from '@/domain/schedule';
 import BlockOverview from './BlockOverview';
+import NextBlockPanel from './NextBlockPanel';
 import { describeBlockProgress, movedLabel } from './blockCopy';
 
 /**
@@ -48,12 +49,6 @@ export default function PlanScreen() {
     setName('');
     setNaming(false);
     void navigate(`/routines/${routineId}`);
-  };
-
-  const handleNextBlock = async () => {
-    if (!plan) return;
-    await startNextBlock(plan.id);
-    void navigate('/');
   };
 
   const handleClose = async () => {
@@ -125,13 +120,10 @@ export default function PlanScreen() {
             {view.complete ? (
               <div className="stack-sm rounded-md bg-surface p-4">
                 <p className="t-h2">This block is finished.</p>
-                <p className="t-meta">
-                  The next one runs the same sessions for another {plan.block_weeks} weeks. Your
-                  weights carry over — suggestions pick up where this block left off.
-                </p>
-                <Button variant="primary" block onClick={() => void handleNextBlock()}>
-                  Start the next block
-                </Button>
+                <Link to={`/progress/blocks/${plan.id}`} className="btn btn-secondary btn-block">
+                  See the block report
+                </Link>
+                <NextBlockPanel planId={plan.id} blockWeeks={plan.block_weeks} />
                 <button type="button" className="btn-text" onClick={() => void handleClose()}>
                   Just close it — I'll pick a new plan
                 </button>

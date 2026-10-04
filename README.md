@@ -63,8 +63,12 @@ Plus:
       first backup, a daily catch-up and restore onto a new phone (needs your
       project; the setup steps are in `supabase/README.md`)
 
-Still to come: Pro mode and the advanced set techniques (drop sets,
-rest-pause, supersets), and accessory rotation between blocks.
+- [x] Pro mode and the advanced set techniques — drop sets, rest-pause, myo-reps
+      and supersets
+- [x] Accessory rotation between blocks, and a report at the end of each block
+
+Still to come: a body weight log, a percentage table from your estimated max,
+and progress photos.
 
 ## Exercise data
 

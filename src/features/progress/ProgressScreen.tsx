@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import {
   useLiftSummaries,
+  usePastBlocks,
   usePlanSchedule,
   useProgressOverview,
   useSessionList,
@@ -10,6 +11,8 @@ import { EmptyState, Screen, ScreenHeader, SectionLabel } from '@/components/ui'
 import { Icon } from '@/components/icons';
 import SessionListRow from '@/components/SessionListRow';
 import { describeBlockProgress } from '@/features/plan/blockCopy';
+import { formatShortDate } from '@/lib/dates';
+import { localIsoDate } from '@/domain/schedule';
 import { MuscleBars, Sparkline } from './charts';
 
 /**
@@ -55,6 +58,7 @@ export default function ProgressScreen() {
 function Sessions({ weekly }: { weekly: Array<{ muscle: string; sets: number }> }) {
   const rows = useSessionList(60);
   const planned = usePlanSchedule();
+  const pastBlocks = usePastBlocks();
   const lastWeek = rows?.filter((row) => Date.parse(row.workout.started_at) >= Date.now() - 7 * 86_400_000) ?? [];
 
   return (
@@ -80,6 +84,33 @@ function Sessions({ weekly }: { weekly: Array<{ muscle: string; sets: number }> 
             Week {planned.week.week} of {planned.week.totalWeeks} · {planned.week.label} ·{' '}
             {describeBlockProgress(planned.progress)}
           </p>
+          <Link to={`/progress/blocks/${planned.plan.id}`} className="btn-text hot mt-1 inline-block">
+            See the block so far
+          </Link>
+        </section>
+      ) : null}
+
+      {pastBlocks && pastBlocks.length > 0 ? (
+        <section aria-labelledby="past-blocks">
+          <SectionLabel id="past-blocks">Past blocks</SectionLabel>
+          <ul className="list">
+            {pastBlocks.map((block) => (
+              <li key={block.id}>
+                <Link to={`/progress/blocks/${block.id}`} className="list-row">
+                  <span className="list-main">
+                    <strong>
+                      {block.split} · block {block.number}
+                    </strong>
+                    <span className="t-meta">
+                      {block.sessions} {block.sessions === 1 ? 'session' : 'sessions'} · ended{' '}
+                      {formatShortDate(localIsoDate(new Date(block.completedAt)))}
+                    </span>
+                  </span>
+                  <Icon name="chev" />
+                </Link>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 

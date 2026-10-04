@@ -38,6 +38,16 @@ const TABLE: Record<Goal, Record<Role, Prescription>> = {
 };
 
 /**
+ * Working sets per muscle per week, as the brief sets them: 10 to 20 to build
+ * muscle, 8 to 12 for strength — on the main lifts — and for general fitness.
+ */
+export const WEEKLY_SET_TARGET: Record<Goal, { low: number; high: number }> = {
+  hypertrophy: { low: 10, high: 20 },
+  strength: { low: 8, high: 12 },
+  general: { low: 8, high: 12 },
+};
+
+/**
  * Which role a routine row was written for, read back off its prescription.
  *
  * No column records it: a generated row carries the role only as the numbers

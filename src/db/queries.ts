@@ -7,7 +7,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { scheduleDay, useToday } from '@/hooks/useToday';
 import { db } from './db';
-import { defaultGym } from './blocks';
+import { baseBlockName, blockNumber, defaultGym, nextBlockRotation } from './blocks';
 import { SETTINGS_ID, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
 import { planSwapTargets } from '@/domain/search';
@@ -30,6 +30,8 @@ import { estimateOpeningWeight } from '@/domain/coldStart';
 import { loadableWeight, loadingProfileFor, type LoadingProfile } from '@/domain/plates';
 import { bestEstimated1RM, setsPerMuscle, totalTonnage, totalWorkingSets } from '@/domain/volume';
 import { isTopWorkingSet } from '@/domain/sets';
+import { buildBlockReport, type BlockReport, type ReportSession } from '@/domain/blockReport';
+import { roleForPrescription } from '@/domain/programmes/prescribe';
 
 const live = <T extends { deleted_at: string | null }>(rows: T[]) =>
   rows.filter((row) => row.deleted_at === null);
@@ -693,6 +695,161 @@ export function useBlockOverview(): BlockWeekView[] | undefined | null {
       }, 0),
     }));
   }, [today]);
+}
+
+/** "Build muscle · Upper / Lower (block 2)" → its goal, split and number. */
+function describePlanName(plan: Plan): { goal: string; split: string; number: number } {
+  const [goal = '', ...rest] = baseBlockName(plan.name).split(' · ');
+  return { goal, split: rest.join(' · ') || goal, number: blockNumber(plan) };
+}
+
+export interface BlockReportView {
+  plan: Plan;
+  report: BlockReport;
+  goal: string;
+  split: string;
+  number: number;
+  /** The block being trained now. */
+  running: boolean;
+  /** Every session trained: the next block can start. */
+  complete: boolean;
+}
+
+/**
+ * Everything the block report shows, for any block, running or long closed.
+ *
+ * The numbers come from the workout tables. The routines only say which lifts
+ * the block was built around: rows prescribed as primaries, which rotation
+ * never touches.
+ */
+export function useBlockReport(planId: string | undefined): BlockReportView | null | undefined {
+  const today = useToday();
+  return useLiveQuery(async () => {
+    if (!planId) return null;
+    const plan = await db.plans.get(planId);
+    if (!plan || plan.deleted_at !== null) return null;
+
+    const routines = await db.routines.bulkGet(plan.routine_ids);
+    const routineNames = new Map(
+      routines.filter(Boolean).map((routine) => [routine!.id, sessionLabel(routine!)]),
+    );
+    const planWorkouts = live(await db.workouts.where({ plan_id: plan.id }).toArray());
+    const schedule = buildSchedule({ plan, routineNames, workouts: planWorkouts, today: scheduleDay(today) });
+    const progress = blockProgress(schedule);
+
+    // Every finished session up to the block's last: records need what came before.
+    const end = Math.max(
+      ...planWorkouts.filter((workout) => workout.finished_at !== null).map((workout) => Date.parse(workout.started_at)),
+    );
+    const workouts = live(await db.workouts.toArray())
+      .filter((workout) => workout.finished_at !== null && Date.parse(workout.started_at) <= end)
+      .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at));
+    const workoutExercises = live(
+      await db.workout_exercises.where('workout_id').anyOf(workouts.map((workout) => workout.id)).toArray(),
+    );
+    const sets = live(
+      await db.sets.where('workout_exercise_id').anyOf(workoutExercises.map((we) => we.id)).toArray(),
+    );
+    const exercises = await db.exercises.bulkGet([...new Set(workoutExercises.map((we) => we.exercise_id))]);
+    const exerciseById = new Map(exercises.filter(Boolean).map((exercise) => [exercise!.id, exercise!]));
+
+    const setsByWe = new Map<string, WorkoutSet[]>();
+    for (const set of sets) {
+      const bucket = setsByWe.get(set.workout_exercise_id);
+      if (bucket) bucket.push(set);
+      else setsByWe.set(set.workout_exercise_id, [set]);
+    }
+    const history: ReportSession[] = workouts.map((workout) => ({
+      workout,
+      exercises: workoutExercises
+        .filter((we) => we.workout_id === workout.id)
+        .sort((a, b) => a.position - b.position)
+        .flatMap((we) => {
+          const exercise = exerciseById.get(we.exercise_id);
+          return exercise ? [{ exercise, sets: setsByWe.get(we.id) ?? [] }] : [];
+        }),
+    }));
+
+    const rows = live(await db.routine_exercises.where('routine_id').anyOf(plan.routine_ids).toArray());
+    const order = (routineId: string) => plan.routine_ids.indexOf(routineId);
+    const mainLiftIds = rows
+      .filter((row) => roleForPrescription(plan.goal, row) === 'primary')
+      .sort((a, b) => order(a.routine_id) - order(b.routine_id) || a.position - b.position)
+      .map((row) => row.exercise_id);
+
+    return {
+      plan,
+      report: buildBlockReport({
+        plan,
+        sessionsPlanned: progress.total,
+        sessionsDone: progress.done,
+        history,
+        mainLiftIds,
+      }),
+      ...describePlanName(plan),
+      running: runningPlan(await db.plans.toArray())?.id === plan.id,
+      complete: isBlockComplete(schedule),
+    };
+  }, [planId, today]);
+}
+
+export interface NextBlockChange {
+  rowId: string;
+  /** The session it is in: "Upper A". */
+  session: string;
+  from: string;
+  to: string;
+}
+
+/** What starting the next block would rotate, session by session. */
+export function useNextBlockRotation(planId: string | undefined): NextBlockChange[] | undefined {
+  return useLiveQuery(async () => {
+    const plan = planId ? await db.plans.get(planId) : undefined;
+    if (!plan) return [];
+    const routineIds = [...new Set(plan.routine_ids)];
+    const routines = await db.routines.bulkGet(routineIds);
+    return (await nextBlockRotation(plan)).map((rotation) => {
+      const routine = routines[rotation.sessionIndex];
+      return {
+        rowId: rotation.rowId,
+        session: routine ? sessionLabel(routine) : `Day ${rotation.sessionIndex + 1}`,
+        from: rotation.from.name,
+        to: rotation.to.name,
+      };
+    });
+  }, [planId]);
+}
+
+export interface PastBlock {
+  id: string;
+  goal: string;
+  split: string;
+  number: number;
+  startedAt: string;
+  completedAt: string;
+  sessions: number;
+}
+
+/** Closed blocks with something trained in them, newest first. */
+export function usePastBlocks(): PastBlock[] | undefined {
+  return useLiveQuery(async () => {
+    const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at !== null);
+    const blocks: PastBlock[] = [];
+    for (const plan of plans) {
+      const sessions = live(await db.workouts.where({ plan_id: plan.id }).toArray()).filter(
+        (workout) => workout.finished_at !== null,
+      ).length;
+      if (sessions === 0) continue;
+      blocks.push({
+        id: plan.id,
+        ...describePlanName(plan),
+        startedAt: plan.started_at,
+        completedAt: plan.completed_at!,
+        sessions,
+      });
+    }
+    return blocks.sort((a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt));
+  }, []);
 }
 
 /**

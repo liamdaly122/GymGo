@@ -138,9 +138,14 @@ export default function HomeScreen() {
               <p className="kicker">Block finished</p>
               <h2 className="hero-title">Done</h2>
             </div>
-            <p className="t-meta">Every session of this block is trained. Start the next one from Plan.</p>
-            <Button variant="primary" size="lg" block onClick={() => void navigate('/plan')}>
-              Go to Plan
+            <p className="t-meta">Every session of this block is trained. See how it went, then start the next one.</p>
+            <Button
+              variant="primary"
+              size="lg"
+              block
+              onClick={() => void navigate(`/progress/blocks/${planned.plan.id}`)}
+            >
+              See the block report
             </Button>
           </section>
         ) : (

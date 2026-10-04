@@ -28,6 +28,7 @@
     "test:session": "node e2e/session.mjs",
     "test:rollover": "node e2e/rollover.mjs",
     "test:planswap": "node e2e/planswap.mjs",
+    "test:report": "node e2e/report.mjs",
     "test:backup": "node e2e/backup.mjs"
   },
   "dependencies": {

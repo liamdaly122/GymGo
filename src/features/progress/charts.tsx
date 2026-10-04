@@ -23,18 +23,24 @@ export const CHART_INK = '#f3f1ea';
 export const CHART_INK_MUTED = '#a29f96';
 
 /**
- * Sets per muscle as horizontal bars, with marks at 10 and 20 — the usual
- * weekly range — so "enough" reads without a second series. Each bar carries
- * its value at the tip and a tooltip on hover or focus.
+ * Sets per muscle as horizontal bars, with marks at the ends of the weekly
+ * target — 10 and 20 unless a goal says otherwise — so "enough" reads without
+ * a second series. Each bar carries its value at the tip and a tooltip on
+ * hover or focus.
  */
 export function MuscleBars({
   data,
   idPrefix,
+  target = { low: 10, high: 20 },
+  targetName = 'the usual weekly target',
 }: {
   data: Array<{ muscle: string; sets: number }>;
   idPrefix: string;
+  target?: { low: number; high: number };
+  /** What the lines are, for the legend: "the usual weekly target". */
+  targetName?: string;
 }) {
-  const max = Math.max(20, ...data.map((entry) => entry.sets));
+  const max = Math.max(target.high, ...data.map((entry) => entry.sets));
   return (
     <>
       <div className="bars">
@@ -47,17 +53,17 @@ export function MuscleBars({
               id={`${idPrefix}-${entry.muscle.replace(/\s+/g, '-')}`}
               className="bar-row"
               tabIndex={0}
-              aria-label={`${label}: ${value} sets. Target 10 to 20.`}
+              aria-label={`${label}: ${value} sets. Target ${target.low} to ${target.high}.`}
             >
               <span className="bar-lbl">{label}</span>
               <span className="bar-track">
                 <span className="bar-fill" style={{ width: `${(entry.sets / max) * 100}%` }} />
-                <span className="bar-mark" style={{ left: `${(10 / max) * 100}%` }} />
-                <span className="bar-mark" style={{ left: `${(20 / max) * 100}%` }} />
+                <span className="bar-mark" style={{ left: `${(target.low / max) * 100}%` }} />
+                <span className="bar-mark" style={{ left: `${(target.high / max) * 100}%` }} />
               </span>
               <span className="bar-val">{value}</span>
               <span className="bar-tip" aria-hidden="true">
-                <strong>{value} sets</strong> · target 10–20
+                <strong>{value} sets</strong> · target {target.low}–{target.high}
               </span>
             </div>
           );
@@ -66,7 +72,7 @@ export function MuscleBars({
       <p className="chart-legend mt-3">
         <i />
         <i />
-        Lines at 10 and 20 sets: the usual weekly target
+        Lines at {target.low} and {target.high} sets: {targetName}
       </p>
     </>
   );

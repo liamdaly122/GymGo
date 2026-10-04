@@ -15,6 +15,7 @@ import GymsScreen from './features/gyms/GymsScreen';
 import GymEditorScreen from './features/gyms/GymEditorScreen';
 import PlansScreen from './features/plans/PlansScreen';
 import ProgressScreen from './features/progress/ProgressScreen';
+import BlockReportScreen from './features/progress/BlockReportScreen';
 import SplitPickerScreen from './features/plans/SplitPickerScreen';
 import PlanPreviewScreen from './features/plans/PlanPreviewScreen';
 
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="/routines/:routineId" element={<RoutineEditorScreen />} />
           <Route path="/progress" element={<ProgressScreen />} />
           <Route path="/progress/lifts" element={<ProgressScreen />} />
+          <Route path="/progress/blocks/:planId" element={<BlockReportScreen />} />
           <Route path="/history/:workoutId" element={<WorkoutDetailScreen />} />
           {/* The A-Z browse still exists, reached from Progress → Lifts. */}
           <Route path="/exercises" element={<ExerciseLibraryScreen />} />

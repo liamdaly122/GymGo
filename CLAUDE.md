@@ -326,6 +326,45 @@ per plan. Regenerating the routines would hand back new exercise ids and throw
 that history away. Choosing a different split is what "Build a new plan", on
 Plan, is for.
 
+**The main lifts stay and the accessories rotate.** That is the brief's rule for
+a block's end, and it lives in `rotateAccessories`
+(`src/domain/programmes/rotation.ts`). No column says which rows are
+accessories, and none should be added for it: a new column is a migration the
+owner has to run by hand in Supabase, or backups fail on it. Instead
+`roleForPrescription` reads the role back off a row's prescription — within a
+goal each role has its own rep range, and only accessories aim for RIR 1 — so a
+row added by hand (RIR null) or re-prescribed matches nothing and never rotates.
+
+A replacement is another version of the same lift (`liftFamily`), ranked as a
+swap is. The dataset files rear, side and front delt raises all under
+shoulders, and a hip adduction under quadriceps, so rotating by muscle turned a
+rear delt fly into a front raise and leg extensions into hip adductions. Only a
+lift with no family, and core work, may become a different exercise; a lift with
+nothing to rotate to stays. Last block's accessories, and anything already
+rotated in that week, are kept out where the gym allows, so the week genuinely
+changes, and the block after brings most of them back with their history.
+Rotation repoints rows in place and queues them, as a swap does, so it cannot
+reach a finished workout. The preview on the finished card and in the report
+runs the same function over the same rows (`nextBlockRotation` in
+`src/db/blocks.ts`), so it lists exactly what starting will do. The switch
+beside it keeps the accessories as they are.
+
+**The block report** (`/progress/blocks/:planId`, `buildBlockReport` in
+`src/domain/blockReport.ts`) is what a block did: sessions trained of planned,
+each main lift's estimated max from its first session to its last, the records
+it set, and the weekly sets each muscle got against the goal's target
+(`WEEKLY_SET_TARGET`). Every number comes from the workout tables through the
+usual gates. The routines only say which lifts are main: rows prescribed as
+primaries, which rotation never touches. The deload week is left out of the
+lift changes, the sparkline and the weekly average — it is lighter on purpose,
+and counting it made every lift look as if it dropped at the end. A record has
+to beat every earlier session, this block's included. A lift's first session
+ever is a first, not a record, and a freestyle session mid-block is history
+but not the block's record. Today's finished hero opens the report, Plan's
+finished card and the report both carry the next-block panel, and Progress
+lists past blocks that had something trained in them, and the running block
+"so far".
+
 ## The logging screen shows one station, and one set
 
 The unit on screen is a **station**: a solo exercise, or a whole superset group.
@@ -615,7 +654,7 @@ Three layers, each earning its place:
 The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
 `test:plans`, `test:swap`, `test:gyms`, `test:pro`, `test:block`,
 `test:programme`, `test:toolkit`, `test:smart`, `test:session`,
-`test:rollover` and `test:planswap`. They expect a
+`test:rollover`, `test:planswap` and `test:report`. They expect a
 preview server on `127.0.0.1:5185` — `test:offline` runs its own on 5190. Each
 takes a `BASE_URL` override. `test:backup` is self-contained: it starts the
 stand-in Supabase on 54329, builds a copy of the app pointed at it, and serves
@@ -645,6 +684,10 @@ screen looks identical. These in particular are load-bearing:
   `Just <session>` and `Whole plan`
 - the `Calendar` region, its list (`This week`, `Next week`, `Week of …`),
   and `Previous week` / `Next week`
+- `See the block report` on Today's finished hero and Plan's finished card;
+  the report's `Main lifts`, `Records` and `Next block` regions; `Rotate
+  accessories` (a switch), `See what changes` and `Start the next block`; and
+  `Past blocks` and `See the block so far` on Progress
 - the `Backup` region in Settings: `Email address`, `Password`, `Sign in`,
   `Back up now`, and its `status`, which reads `Backed up` once nothing is
   waiting
