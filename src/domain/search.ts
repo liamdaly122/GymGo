@@ -124,3 +124,182 @@ export function swapSuggestions(
 
   return { direct: rank(direct), alternative: rank(alternative) };
 }
+
+/**
+ * Which lift a name is a version of: "deadlift" for a Sumo Deadlift, "chest
+ * press" for an Incline Dumbbell Press.
+ *
+ * Most specific first, so a leg curl is not filed with biceps curls and a rear
+ * delt fly not with chest flyes. Null for a name that is no recognisable
+ * family, which simply means it has no variations to offer.
+ */
+const LIFT_FAMILIES: Array<[RegExp, string]> = [
+  [/\bleg press\b/, 'leg press'],
+  [/\bleg curls?\b/, 'leg curl'],
+  [/\bleg extensions?\b/, 'leg extension'],
+  [/\bleg raises?\b/, 'leg raise'],
+  [/\bcalf raises?\b/, 'calf raise'],
+  [/\brear delt|\breverse fl(y|ye|yes|ies)\b/, 'rear delt fly'],
+  [/\bface pulls?\b/, 'face pull'],
+  [/\bupright rows?\b/, 'upright row'],
+  [/\bhip thrusts?\b|\b(glute|hip) bridges?\b/, 'hip thrust'],
+  [/\bgood mornings?\b/, 'good morning'],
+  [/\bstep ups?\b/, 'step up'],
+  [/\bdeadlifts?\b/, 'deadlift'],
+  [/\bsquats?\b/, 'squat'],
+  [/\bclean|\bsnatch|\bjerk\b/, 'olympic'],
+  [/\blunges?\b/, 'lunge'],
+  [/\bpull ?downs?\b/, 'pulldown'],
+  [/\bpull ?ups?\b|\bchin ?ups?\b/, 'pull up'],
+  [/\bpush ?downs?\b/, 'pushdown'],
+  [/\bpush ?ups?\b/, 'push up'],
+  [/\bpull ?overs?\b/, 'pullover'],
+  [/\bdips?\b/, 'dip'],
+  [/\b(bench|chest|floor|incline|decline)( \w+)? press\b/, 'chest press'],
+  [/\b(military|overhead|shoulder|arnold|push)( \w+)? press\b/, 'overhead press'],
+  [/\b(lateral|side) raises?\b|\bside laterals?\b|\blaterals?\b/, 'lateral raise'],
+  [/\bfront\b.*\braises?\b/, 'front raise'],
+  [/\bfl(y|ye|yes|ies)\b|\bcrossovers?\b/, 'chest fly'],
+  [/\brows?\b/, 'row'],
+  [/\bskull ?crushers?\b|\b(triceps?|overhead) extensions?\b|\blying triceps press\b/, 'triceps extension'],
+  [/\bhyper ?extensions?\b|\bback extensions?\b/, 'back extension'],
+  [/\bcurls?\b/, 'curl'],
+  [/\bshrugs?\b/, 'shrug'],
+  [/\bcrunch(es)?\b|\bsit ?ups?\b/, 'crunch'],
+  [/\bplanks?\b/, 'plank'],
+  [/\bswings?\b/, 'swing'],
+];
+
+export function liftFamily(name: string): string | null {
+  const text = name.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  for (const [pattern, family] of LIFT_FAMILIES) {
+    if (pattern.test(text)) return family;
+  }
+  return null;
+}
+
+/** Primary muscle in full, each secondary at a half — how volume is counted too. */
+function muscleProfile(exercise: Exercise): Map<string, number> {
+  const profile = new Map<string, number>();
+  for (const muscle of exercise.secondary_muscles) profile.set(muscle, 0.5);
+  profile.set(exercise.primary_muscle, 1);
+  return profile;
+}
+
+/**
+ * How much two exercises train the same muscles, from 0 to 1: the shared
+ * weight over the combined weight. A lift with a long list of secondaries does
+ * not get to look like everything.
+ */
+export function muscleOverlap(a: Exercise, b: Exercise): number {
+  const left = muscleProfile(a);
+  const right = muscleProfile(b);
+  let shared = 0;
+  let combined = 0;
+  for (const muscle of new Set([...left.keys(), ...right.keys()])) {
+    const x = left.get(muscle) ?? 0;
+    const y = right.get(muscle) ?? 0;
+    shared += Math.min(x, y);
+    combined += Math.max(x, y);
+  }
+  return combined === 0 ? 0 : shared / combined;
+}
+
+export interface ExerciseAlternatives {
+  /** Trains what the original trains, through a different exercise. */
+  different: Exercise[];
+  /** The same lift another way: another bar, stance, grip or angle. */
+  variations: Exercise[];
+}
+
+/**
+ * What to do instead of an exercise, in two groups, because "swap this" has two
+ * meanings.
+ *
+ * Someone who does not want to deadlift wants something else that trains the
+ * hamstrings, glutes and lower back — a hip thrust, a good morning, a swing —
+ * not a deadlift with chains. Someone whose rack is taken wants the same lift
+ * on other kit. So exercises that are a version of the same lift (by name:
+ * every deadlift is a deadlift) are split from the ones that are not, and each
+ * group is ranked on its own.
+ *
+ * The pool is the same as `swapSuggestions` — same movement or same primary
+ * muscle — and so is the base scoring: staples first, then a matching role and
+ * kit. On top of that, how much the muscles overlap, and Olympic lifts sink
+ * unless the original is one: a power clean is a hinge, and a poor answer to
+ * "not deadlifts".
+ *
+ * `excludeIds` keeps out exercises that would land twice in one session.
+ */
+export function exerciseAlternatives(
+  exercise: Exercise,
+  candidates: Exercise[],
+  options: {
+    availableEquipment?: Equipment[] | null;
+    excludeIds?: ReadonlySet<string>;
+    limit?: number;
+  } = {},
+): ExerciseAlternatives {
+  const available = options.availableEquipment ?? null;
+  const restrict = Array.isArray(available) && available.length > 0;
+  const limit = options.limit ?? 8;
+  const family = liftFamily(exercise.name);
+
+  type Ranked = { candidate: Exercise; score: number; family: string | null };
+  const different: Ranked[] = [];
+  const variations: Ranked[] = [];
+
+  for (const candidate of candidates) {
+    if (candidate.id === exercise.id || candidate.deleted_at !== null) continue;
+    if (options.excludeIds?.has(candidate.id)) continue;
+    if (restrict && !available.includes(candidate.equipment)) continue;
+
+    const samePattern = candidate.movement_pattern === exercise.movement_pattern;
+    const sameMuscle = candidate.primary_muscle === exercise.primary_muscle;
+    const overlap = muscleOverlap(candidate, exercise);
+    // "Isolation" and "core" are catch-alls, not movements: a curl and a calf
+    // raise share the label and nothing else. Elsewhere the movement counts,
+    // but only with muscles in common — the dataset files a glute-ham raise
+    // under rows.
+    const movementCounts =
+      samePattern && !LOOSE_PATTERNS.has(exercise.movement_pattern) && overlap >= MIN_OVERLAP;
+    if (!sameMuscle && !movementCounts) continue;
+
+    const candidateFamily = liftFamily(candidate.name);
+    let score = swapScore(candidate, exercise);
+    if (samePattern) score += 8;
+    if (sameMuscle) score += 6;
+    score += Math.round(overlap * 12);
+    if (candidateFamily === 'olympic' && family !== 'olympic') score -= 40;
+    // "Other" kit is kegs, sleds and ropes: fine if you have them, a strange
+    // first answer to "something instead of squats".
+    if (candidate.equipment === 'other' && exercise.equipment !== 'other') score -= 10;
+
+    const entry = { candidate, score, family: candidateFamily };
+    if (family !== null && candidateFamily === family) variations.push(entry);
+    else different.push(entry);
+  }
+
+  const byScore = (a: { candidate: Exercise; score: number }, b: { candidate: Exercise; score: number }) =>
+    b.score - a.score || a.candidate.name.localeCompare(b.candidate.name, 'en');
+
+  // One of each kind of exercise: three good mornings is one idea, not three.
+  const seenFamilies = new Set<string>();
+  const varied = different.sort(byScore).filter((entry) => {
+    if (entry.family === null) return true;
+    if (seenFamilies.has(entry.family)) return false;
+    seenFamilies.add(entry.family);
+    return true;
+  });
+
+  return {
+    different: varied.slice(0, limit).map((entry) => entry.candidate),
+    variations: variations.sort(byScore).slice(0, limit).map((entry) => entry.candidate),
+  };
+}
+
+/** Pattern labels that group exercises without describing a movement. */
+const LOOSE_PATTERNS = new Set<string>(['isolation', 'core']);
+
+/** The least muscle overlap at which a shared movement makes a fair swap. */
+const MIN_OVERLAP = 0.15;

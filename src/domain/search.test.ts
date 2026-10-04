@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { filterExercises, swapSuggestions } from './search';
+import { exerciseAlternatives, filterExercises, liftFamily, muscleOverlap, swapSuggestions } from './search';
 import { makeExercise } from './testFactories';
+import type { Exercise } from '@/db/schema';
+import type { Muscle } from './types';
 
 // Secondary muscles are set explicitly: the factory's defaults would otherwise
 // make every fixture match a search for "hamstrings".
@@ -121,5 +123,126 @@ describe('swap suggestions', () => {
       lift({ name: `Press ${index}`, primary_muscle: 'chest', movement_pattern: 'horizontal_push' }),
     );
     expect(swapSuggestions(benchPress, many, { limit: 6 }).direct).toHaveLength(6);
+  });
+});
+
+describe('alternatives: same muscles, different exercise', () => {
+  // Shaped like the seed data: a deadlift is filed under lower back, with a
+  // long list of secondaries.
+  const hinge = (name: string, primary: Muscle, extra: Partial<Exercise> = {}) =>
+    lift({
+      name,
+      primary_muscle: primary,
+      movement_pattern: 'hinge',
+      equipment: 'barbell',
+      is_compound: true,
+      source_id: null,
+      ...extra,
+    });
+
+  const deadlift = hinge('Barbell Deadlift', 'lower back', {
+    secondary_muscles: ['glutes', 'hamstrings', 'quadriceps', 'traps', 'forearms'],
+  });
+  const rdl = hinge('Romanian Deadlift', 'hamstrings', { secondary_muscles: ['glutes', 'lower back'] });
+  const sumo = hinge('Sumo Deadlift', 'hamstrings', { secondary_muscles: ['glutes', 'quadriceps'] });
+  const hipThrust = hinge('Barbell Hip Thrust', 'glutes', { secondary_muscles: ['hamstrings'] });
+  const goodMorning = hinge('Good Morning', 'hamstrings', { secondary_muscles: ['glutes', 'lower back'] });
+  const seatedGoodMorning = hinge('Seated Good Mornings', 'lower back', { secondary_muscles: ['glutes', 'hamstrings'] });
+  const powerClean = hinge('Power Clean', 'hamstrings', { secondary_muscles: ['glutes', 'lower back', 'quadriceps', 'traps'] });
+  const backSquat = lift({ name: 'Barbell Squat', primary_muscle: 'quadriceps', movement_pattern: 'squat', source_id: null });
+  const pool = [deadlift, rdl, sumo, hipThrust, goodMorning, seatedGoodMorning, powerClean, backSquat];
+
+  const families = (list: Exercise[]) => list.map((exercise) => liftFamily(exercise.name));
+
+  it('keeps other deadlifts apart from different exercises', () => {
+    // Not wanting to deadlift is not answered by a sumo deadlift.
+    const { different, variations } = exerciseAlternatives(deadlift, pool);
+    expect(families(different)).toEqual(expect.arrayContaining(['hip thrust', 'good morning']));
+    expect(families(different)).not.toContain('deadlift');
+    expect(variations).toEqual(expect.arrayContaining([rdl, sumo]));
+  });
+
+  it('offers one of each kind of exercise, not two good mornings', () => {
+    // The seated one wins the slot: it shares the deadlift's lower-back focus.
+    const { different } = exerciseAlternatives(deadlift, pool);
+    expect(different).toContain(seatedGoodMorning);
+    expect(different).not.toContain(goodMorning);
+  });
+
+  it('sinks Olympic lifts below real alternatives', () => {
+    const { different } = exerciseAlternatives(deadlift, pool);
+    expect(different.at(-1)).toBe(powerClean);
+  });
+
+  it('never offers something that trains other muscles', () => {
+    expect(exerciseAlternatives(deadlift, pool).different).not.toContain(backSquat);
+  });
+
+  it('does not match isolation work on the label alone', () => {
+    // A curl and a lateral raise are both "isolation" in the data.
+    const lateralRaise = lift({ name: 'Side Lateral Raise', primary_muscle: 'shoulders', movement_pattern: 'isolation', equipment: 'dumbbell', source_id: null });
+    const frontRaise = lift({ name: 'Front Dumbbell Raise', primary_muscle: 'shoulders', movement_pattern: 'isolation', equipment: 'dumbbell', source_id: null });
+    const curl = lift({ name: 'Dumbbell Bicep Curl', primary_muscle: 'biceps', movement_pattern: 'isolation', equipment: 'dumbbell', source_id: null });
+    const { different } = exerciseAlternatives(lateralRaise, [lateralRaise, frontRaise, curl]);
+    expect(different).toEqual([frontRaise]);
+  });
+
+  it('needs shared muscles before a shared movement counts', () => {
+    // The data files a glute-ham raise under rows.
+    const row = lift({ name: 'Bent Over Barbell Row', primary_muscle: 'middle back', secondary_muscles: ['lats', 'biceps'], movement_pattern: 'horizontal_pull', source_id: null });
+    const gluteHam = lift({ name: 'Glute Ham Raise', primary_muscle: 'hamstrings', secondary_muscles: ['glutes'], movement_pattern: 'horizontal_pull', source_id: null });
+    const pulldown = lift({ name: 'Wide-Grip Lat Pulldown', primary_muscle: 'lats', secondary_muscles: ['middle back', 'biceps'], movement_pattern: 'vertical_pull', source_id: null });
+    const seatedRow = lift({ name: 'Seated Cable Rows', primary_muscle: 'middle back', secondary_muscles: ['lats', 'biceps'], movement_pattern: 'horizontal_pull', equipment: 'cable', source_id: null });
+    const { different, variations } = exerciseAlternatives(row, [row, gluteHam, pulldown, seatedRow]);
+    expect(different).not.toContain(gluteHam);
+    expect(variations).toEqual([seatedRow]);
+  });
+
+  it('respects the gym and keeps out exercises already in the session', () => {
+    const dumbbellOnly = exerciseAlternatives(deadlift, pool, { availableEquipment: ['dumbbell'] });
+    expect([...dumbbellOnly.different, ...dumbbellOnly.variations]).toEqual([]);
+
+    const without = exerciseAlternatives(deadlift, pool, { excludeIds: new Set([hipThrust.id]) });
+    expect(without.different).not.toContain(hipThrust);
+  });
+});
+
+describe('lift families', () => {
+  it('reads the lift a name is a version of', () => {
+    expect(liftFamily('Sumo Deadlift')).toBe('deadlift');
+    expect(liftFamily('Incline Dumbbell Press')).toBe('chest press');
+    expect(liftFamily('Arnold Dumbbell Press')).toBe('overhead press');
+    expect(liftFamily('Chin-Up')).toBe('pull up');
+    expect(liftFamily('Plank')).toBe('plank');
+  });
+
+  it('tries the specific family before the general one', () => {
+    expect(liftFamily('Lying Leg Curls')).toBe('leg curl');
+    expect(liftFamily('Barbell Curl')).toBe('curl');
+    expect(liftFamily('Cable Rear Delt Fly')).toBe('rear delt fly');
+    expect(liftFamily('Cable Crossover')).toBe('chest fly');
+    expect(liftFamily('Front Squat (Clean Grip)')).toBe('squat');
+    expect(liftFamily('Hang Clean')).toBe('olympic');
+  });
+
+  it('has no family for a name it does not recognise', () => {
+    expect(liftFamily('Farmer Walk')).toBeNull();
+  });
+});
+
+describe('muscle overlap', () => {
+  const a = lift({ primary_muscle: 'chest', secondary_muscles: ['triceps', 'shoulders'] });
+  const b = lift({ primary_muscle: 'triceps', secondary_muscles: ['chest'] });
+  const c = lift({ primary_muscle: 'calves', secondary_muscles: [] });
+
+  it('is 1 for the same muscles and 0 for none in common', () => {
+    expect(muscleOverlap(a, a)).toBe(1);
+    expect(muscleOverlap(a, c)).toBe(0);
+  });
+
+  it('is the same both ways round', () => {
+    expect(muscleOverlap(a, b)).toBeCloseTo(muscleOverlap(b, a));
+    expect(muscleOverlap(a, b)).toBeGreaterThan(0);
+    expect(muscleOverlap(a, b)).toBeLessThan(1);
   });
 });
