@@ -15,7 +15,7 @@ p.on('console', m => { if (m.type()==='error' && !/Failed to load resource/i.tes
 const step = async (l, fn) => { try { await fn(); console.log('  ok   '+l); } catch(e) { console.log('  FAIL '+l+': '+e.message); throw e; } };
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
-await step('app loads', async () => { await p.getByRole('heading', {name:'Train'}).waitFor({timeout:40000}); });
+await step('app loads', async () => { await p.getByRole('heading', {name:'Today'}).waitFor({timeout:40000}); });
 
 await step('beginner mode shows no RIR', async () => {
   await p.getByRole('button', { name: 'Start empty workout' }).click();
@@ -121,8 +121,8 @@ await step('finishing leaves the 100kg record intact', async () => {
 await p.screenshot({ path: 'e2e/shot-pro-summary.png', fullPage: true });
 
 await step('a routine can prescribe rest and tempo in Pro mode', async () => {
-  await p.goto(BASE + '#/routines', { waitUntil: 'networkidle' });
-  await p.getByRole('button', { name: /New|Add/i }).first().click();
+  await p.goto(BASE + '#/plan', { waitUntil: 'networkidle' });
+  await p.getByRole('button', { name: 'New routine' }).click();
   await p.getByPlaceholder(/Lower A, Push/).fill('Strength A');
   await p.getByRole('button', { name: 'Create' }).click();
   await p.waitForTimeout(900);

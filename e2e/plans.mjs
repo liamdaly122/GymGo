@@ -13,22 +13,26 @@ p.on('console', m => { if (m.type()==='error' && !/Failed to load resource/i.tes
 const step = async (l, fn) => { try { await fn(); console.log('  ok   '+l); } catch(e) { console.log('  FAIL '+l+': '+e.message); throw e; } };
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
-await step('app loads', async () => { await p.getByRole('heading', {name:'Train'}).waitFor({timeout:40000}); });
+await step('app loads', async () => { await p.getByRole('heading', {name:'Today'}).waitFor({timeout:40000}); });
 
-await step('Plans is a bottom tab', async () => {
-  await p.getByRole('link', { name: 'Plans', exact: true }).click();
-  await p.getByRole('heading', { name: 'Plans' }).waitFor();
+await step('the plan builder hangs off the Plan tab', async () => {
+  await p.getByRole('link', { name: 'Plan', exact: true }).click();
+  await p.getByRole('heading', { name: 'Plan', exact: true }).waitFor();
+  await p.getByRole('button', { name: 'Build a new plan' }).click();
+  await p.getByRole('heading', { name: 'What are you training for?' }).waitFor();
 });
 
 await step('six goals offered', async () => {
-  const n = await p.locator('a[href*="#/plans/"]').count();
+  const n = await p.locator('a[href*="#/plan/new/"]').count();
   if (n !== 6) throw new Error('expected 6 goal cards, got ' + n);
 });
 await p.screenshot({ path: 'e2e/shot-plans.png' });
 
 await step('pick Build muscle', async () => {
   await p.getByRole('link', { name: /Build muscle/ }).click();
-  await p.getByRole('heading', { name: 'Build muscle' }).waitFor();
+  await p.getByRole('heading', { name: 'How many days a week?' }).waitFor();
+  // The goal rides above the question as a label; .t-label upper-cases it.
+  if (!/build muscle/i.test(await p.locator('header').innerText())) throw new Error('goal not named on the split picker');
 });
 
 await step('day picker offers 2 to 6', async () => {
@@ -39,15 +43,16 @@ await step('choosing 6 days offers only push/pull/legs', async () => {
   await p.getByRole('button', { name: '6', exact: true }).click();
   await p.waitForTimeout(700);
   const body = await p.locator('body').innerText();
-  if (!/Push \/ Pull \/ Legs/.test(body)) throw new Error('expected PPL at 6 days');
-  if (/Bro split/.test(body)) throw new Error('bro split should not be offered at 6 days');
+  // Split names are display type, upper-cased by CSS: innerText sees the capitals.
+  if (!/Push \/ Pull \/ Legs/i.test(body)) throw new Error('expected PPL at 6 days');
+  if (/Bro split/i.test(body)) throw new Error('bro split should not be offered at 6 days');
 });
 
 await step('choosing 5 days offers the bro split', async () => {
   await p.getByRole('button', { name: '5', exact: true }).click();
   await p.waitForTimeout(700);
   const body = await p.locator('body').innerText();
-  if (!/Bro split/.test(body)) throw new Error('expected the bro split at 5 days');
+  if (!/Bro split/i.test(body)) throw new Error('expected the bro split at 5 days');
   if (!/6 to 8 hard/.test(body)) throw new Error('expected the bro split trade-off to be stated');
 });
 await p.screenshot({ path: 'e2e/shot-splits.png' });
@@ -62,8 +67,9 @@ await step('open the 6-day push/pull/legs preview', async () => {
 
 await step('preview shows six days with real staple lifts', async () => {
   const body = await p.locator('body').innerText();
-  for (const d of ['Day 1','Day 2','Day 3','Day 4','Day 5','Day 6']) if (!body.includes(d)) throw new Error('missing '+d);
-  if (!/Push A/.test(body) || !/Push B/.test(body)) throw new Error('repeated sessions not labelled A/B');
+  // Day headings are display type, upper-cased by CSS, so match without case.
+  for (const d of ['Day 1','Day 2','Day 3','Day 4','Day 5','Day 6']) if (!new RegExp(d, 'i').test(body)) throw new Error('missing '+d);
+  if (!/Push A/i.test(body) || !/Push B/i.test(body)) throw new Error('repeated sessions not labelled A/B');
   if (!/(Bench Press|Squat|Deadlift|Pulldown|Pullups)/.test(body)) throw new Error('no staple lifts in the preview');
   if (/guillotine|frankenstein/i.test(body)) throw new Error('specialist variant leaked into the plan');
 });
@@ -85,7 +91,7 @@ await step('count routines before', async () => {
 
 await step('"Use this plan" builds six routines', async () => {
   await p.getByRole('button', { name: /Use this plan/ }).click();
-  await p.getByRole('heading', { name: 'Routines' }).waitFor({ timeout: 20000 });
+  await p.getByRole('heading', { name: 'Plan', exact: true }).waitFor({ timeout: 20000 });
   await p.waitForTimeout(1200);
   const after = await p.evaluate(async () => {
     const open = indexedDB.open('gymgo');

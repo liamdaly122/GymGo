@@ -1,83 +1,74 @@
 import { localIsoDate, weekStrip, type ScheduledSession } from '@/domain/schedule';
 
 const DAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /**
- * The week at a glance: which days you train and which you have done. A
- * session not trained rolls forward, so there is no "missed" day to show.
+ * The week at a glance: which days you train and which you have done.
  *
- * Status comes from the schedule rather than from dates alone, so a session
- * trained a day late still shows as done on the day it was planned.
+ * Status comes from the schedule, so a session that rolled forward shows on
+ * the day it now sits on. Every day with a session goes somewhere — a done day
+ * opens what you logged, any other opens its session — and a rest day is not
+ * a button with a press state and no destination.
  */
 export default function WeekStrip({
   schedule,
   today = new Date(),
   weekStartsOn = 1,
   onSelect,
-  selectedDate,
 }: {
   schedule: ScheduledSession[];
   today?: Date;
   weekStartsOn?: number;
   onSelect?: (session: ScheduledSession) => void;
-  selectedDate?: string;
 }) {
   const days = weekStrip(today, weekStartsOn);
-  const byDate = new Map(schedule.map((session) => [session.date, session]));
   const todayIso = localIsoDate(today);
 
+  // One session a day is the rule, but a double is possible on a day already
+  // trained; the one still to do is the one worth showing.
+  const byDate = new Map<string, ScheduledSession>();
+  for (const session of schedule) {
+    const existing = byDate.get(session.date);
+    if (!existing || (existing.status === 'done' && session.status !== 'done')) {
+      byDate.set(session.date, session);
+    }
+  }
+
   return (
-    <ul className="flex gap-1">
+    <ol className="week" aria-label="This week">
       {days.map((day) => {
         const iso = localIsoDate(day);
         const session = byDate.get(iso);
         const isToday = iso === todayIso;
-        const isSelected = selectedDate === iso;
+        const status = session
+          ? session.status === 'done'
+            ? 'done'
+            : session.status === 'today'
+              ? 'today'
+              : 'planned'
+          : null;
+        const label = session
+          ? `${WEEKDAYS[day.getDay()]} ${day.getDate()}, ${session.name}, ${status}${session.movedFrom ? ', moved' : ''}`
+          : `${WEEKDAYS[day.getDay()]} ${day.getDate()}, rest day`;
 
         return (
-          <li key={iso} className="flex-1">
+          <li key={iso}>
             <button
-              // Only a trained day goes anywhere. Enabling the rest would give
-              // every day a press state and no destination, which is what the
-              // strip did before it was wired up at all.
-              disabled={!session || !onSelect || !session.workoutId}
+              type="button"
+              className={`day ${isToday ? 'today' : ''} ${session ? 'has' : ''} ${status === 'done' ? 'done' : ''}`}
+              disabled={!session || !onSelect}
               onClick={() => session && onSelect?.(session)}
-              aria-label={
-                session
-                  ? `${session.name} on ${iso}, ${session.status}`
-                  : `${iso}, rest day`
-              }
+              aria-label={label}
               aria-current={isToday ? 'date' : undefined}
-              className={`flex w-full flex-col items-center gap-1.5 rounded-xl py-2 transition-colors ${
-                isSelected ? 'bg-raised' : ''
-              } ${session?.workoutId && onSelect ? 'active:bg-raised' : 'cursor-default'}`}
             >
-              <span className={`text-[10px] ${isToday ? 'text-accent' : 'text-muted'}`}>
-                {DAY_INITIALS[day.getDay()]}
-              </span>
-              <span
-                className={`text-sm tabular-nums ${
-                  isToday ? 'font-semibold text-white' : 'text-muted'
-                }`}
-              >
-                {day.getDate()}
-              </span>
-              <span
-                aria-hidden="true"
-                className={`h-1.5 w-1.5 rounded-full ${
-                  !session
-                    ? 'bg-transparent'
-                    : session.status === 'done'
-                      ? 'bg-accent'
-                      : session.status === 'today'
-                        ? 'bg-white'
-                        : 'bg-line'
-                }`}
-              />
+              <span className="d1">{DAY_INITIALS[day.getDay()]}</span>
+              <span className="d2">{day.getDate()}</span>
+              <span className="dot" aria-hidden="true" />
             </button>
           </li>
         );
       })}
-    </ul>
+    </ol>
   );
 }

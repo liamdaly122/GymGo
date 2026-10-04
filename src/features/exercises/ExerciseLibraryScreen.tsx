@@ -32,7 +32,7 @@ export default function ExerciseLibraryScreen() {
 
   return (
     <Screen>
-      <Link to="/plans" className="mb-3 inline-block text-xs text-muted">
+      <Link to="/progress/lifts" className="mb-3 inline-block text-xs text-muted">
         ← Plans
       </Link>
       <ScreenTitle

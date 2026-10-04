@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeDropSet, makeExercise, makeSet } from './testFactories';
-import { personalRecords, prsHitInSession, recordEligibleSets } from './prs';
+import { personalRecords, prsHitInSession, recordEligibleSets, recordsBrokenPerSession } from './prs';
 import { bestEstimated1RM, setsPerMuscle, totalTonnage, totalWorkingSets } from './volume';
 import { previousPerformance } from './previousPerformance';
 import { estimate1RM } from './epley';
@@ -279,5 +279,43 @@ describe('numbering the sets on a card', () => {
   it('counts a back-off set as a set of its own', () => {
     const ordinals = setOrdinals([set('a', 'working'), set('b', 'back_off')]);
     expect(ordinals.get('b')).toBe(1);
+  });
+});
+
+describe('records broken per session, for a list', () => {
+  const session = (id: string, exerciseId: string, sets: WorkoutSet[]) => ({ id, exercises: [{ exerciseId, sets }] });
+
+  it('does not count a first ever session as a record', () => {
+    const counts = recordsBrokenPerSession([session('a', 'bench', [makeSet({ weight_kg: 100, reps: 5 })])]);
+    expect(counts.get('a')).toBe(0);
+  });
+
+  it('counts a heavier top set, and a better estimated max at the same weight', () => {
+    const counts = recordsBrokenPerSession([
+      session('a', 'bench', [makeSet({ weight_kg: 100, reps: 5 })]),
+      session('b', 'bench', [makeSet({ weight_kg: 102.5, reps: 5 })]),
+      session('c', 'bench', [makeSet({ weight_kg: 102.5, reps: 7 })]),
+      session('d', 'bench', [makeSet({ weight_kg: 100, reps: 5 })]),
+    ]);
+    expect([...counts.values()]).toEqual([0, 1, 1, 0]);
+  });
+
+  it('never lets a drop set score', () => {
+    // A heavier drop set than the previous top set must not count: child sets
+    // are barred from records.
+    const { parent, children } = makeDropSet({ weight_kg: 50, reps: 10 }, [70]);
+    const counts = recordsBrokenPerSession([
+      session('a', 'bench', [makeSet({ weight_kg: 60, reps: 10 })]),
+      session('b', 'bench', [parent, ...children]),
+    ]);
+    expect(counts.get('b')).toBe(0);
+  });
+
+  it('counts each exercise once', () => {
+    const counts = recordsBrokenPerSession([
+      { id: 'a', exercises: [{ exerciseId: 'bench', sets: [makeSet({ weight_kg: 100 })] }, { exerciseId: 'row', sets: [makeSet({ weight_kg: 60 })] }] },
+      { id: 'b', exercises: [{ exerciseId: 'bench', sets: [makeSet({ weight_kg: 105 }), makeSet({ weight_kg: 110 })] }, { exerciseId: 'row', sets: [makeSet({ weight_kg: 65 })] }] },
+    ]);
+    expect(counts.get('b')).toBe(2);
   });
 });

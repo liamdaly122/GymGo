@@ -14,50 +14,58 @@ p.on('console', m => { if (m.type()==='error' && !/Failed to load resource/i.tes
 const step = async (l, fn) => { try { await fn(); console.log('  ok   '+l); } catch(e) { console.log('  FAIL '+l+': '+e.message); throw e; } };
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
-await step('app loads', async () => { await p.getByRole('heading', {name:'Train'}).waitFor({timeout:40000}); });
+await step('app loads', async () => { await p.getByRole('heading', {name:'Today'}).waitFor({timeout:40000}); });
 
 await step('build a 3-day plan', async () => {
-  await p.getByRole('link', { name: 'Plans', exact: true }).click();
+  await p.getByRole('link', { name: 'Plan', exact: true }).click();
+  await p.getByRole('button', { name: 'Build a new plan' }).click();
   await p.getByRole('link', { name: /Build muscle/ }).click();
   await p.getByRole('button', { name: '3', exact: true }).click();
   await p.waitForTimeout(600);
   await p.getByRole('link', { name: /Push \/ Pull \/ Legs/ }).click();
   await p.getByRole('button', { name: /Use this plan/ }).waitFor({ timeout: 20000 });
   await p.getByRole('button', { name: /Use this plan/ }).click();
-  await p.getByRole('heading', { name: 'Routines' }).waitFor({ timeout: 20000 });
+  await p.getByRole('heading', { name: 'Plan', exact: true }).waitFor({ timeout: 20000 });
   await p.waitForTimeout(800);
 });
 
-await step('the block appears on the Train calendar', async () => {
-  await p.getByRole('link', { name: 'Train', exact: true }).click();
-  await p.getByRole('heading', { name: 'Train' }).waitFor();
+const strip = 'ol[aria-label="This week"] li button';
+
+await step('the block appears on Today', async () => {
+  await p.getByRole('link', { name: 'Today', exact: true }).click();
+  await p.getByRole('heading', { name: 'Today' }).waitFor();
   await p.waitForTimeout(1000);
+  // The kicker is display type, upper-cased by CSS.
   const body = await p.locator('body').innerText();
-  if (!/Week 1\/5 — Foundations/.test(body)) throw new Error(`expected the week label, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
-  if (!/exercises/.test(body)) throw new Error('expected the session stat strip');
-  if (!/~\d+ min/.test(body)) throw new Error('expected a duration estimate');
+  if (!/week 1 \/ 5 · Foundations/i.test(body)) throw new Error(`expected the week label, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
+  if (!/\d+ exercises/.test(body)) throw new Error('expected the session contents');
+  if (!/about \d+ min/.test(body)) throw new Error('expected a duration estimate');
 });
 
 await step('the week strip shows a full week with training days marked', async () => {
-  const dots = await p.locator('ul li button[aria-label]').count();
+  const dots = await p.locator(strip).count();
   if (dots !== 7) throw new Error(`expected a 7 day strip, got ${dots}`);
-  // A scheduled day is labelled "<session> on <date>, <status>"; everything
-  // else is a rest day.
+  // A scheduled day is labelled "<weekday> <date>, <session>, <status>";
+  // everything else is a rest day.
   // At most the plan's three days. It can be none: a plan created on a Sunday
   // starts on Monday, and a Monday-to-Sunday strip has nothing left in it.
-  const rest = await p.locator('ul li button[aria-label*="rest day"]').count();
+  const rest = await p.locator(`${strip}[aria-label*="rest day"]`).count();
   if (7 - rest > 3) throw new Error(`expected at most 3 training days this week, got ${7 - rest}`);
-  // Nothing is logged yet, so no day has anywhere to go. The strip used to
-  // enable every scheduled day and navigate nowhere.
-  const live = await p.locator('ul li button[aria-label]:not([disabled])').count();
-  if (live !== 0) throw new Error(`no session is logged, so no day should be tappable — ${live} were`);
+  // Every training day goes somewhere — a planned day opens its session — and
+  // a rest day is not a button with nowhere to go.
+  const live = await p.locator(`${strip}:not([disabled])`).count();
+  if (live !== 7 - rest) throw new Error(`expected each of the ${7 - rest} training days to be tappable, ${live} were`);
+  const deadRest = await p.locator(`${strip}[aria-label*="rest day"]:not([disabled])`).count();
+  if (deadRest !== 0) throw new Error(`${deadRest} rest day(s) were tappable`);
 });
 
-await step('a plan created today shows nothing already missed', async () => {
-  const missed = await p.locator('button[aria-label*="missed"]').count();
-  if (missed !== 0) throw new Error(`a brand new plan showed ${missed} missed session(s)`);
+await step('a plan created today has nothing moved', async () => {
+  // Nothing can be missed any more — a skipped session rolls forward — so on
+  // day one nothing has rolled yet.
+  const moved = await p.locator(`${strip}[aria-label*="moved"]`).count();
+  if (moved !== 0) throw new Error(`a brand new plan showed ${moved} moved session(s)`);
   const body = await p.locator('body').innerText();
-  if (/\d+ missed/.test(body)) throw new Error(`block progress reported missed sessions on day one: ${body.match(/\d+ of \d+ sessions done[^\n]*/)?.[0]}`);
+  if (/Moved from/i.test(body)) throw new Error('a brand new plan said a session had moved');
 });
 await p.screenshot({ path: 'e2e/shot-train.png' });
 
@@ -65,7 +73,8 @@ await p.screenshot({ path: 'e2e/shot-train.png' });
 // session — the Routines list is alphabetical and would hand back a different one.
 let plannedRoutineHref = '';
 await step('start the planned session and log it', async () => {
-  await p.getByRole('button', { name: 'Start workout', exact: true }).click();
+  // "Start Push A", or "Start early: Push A" when the block starts tomorrow.
+  await p.getByRole('region', { name: 'Next session' }).getByRole('button', { name: /^Start/ }).click();
   await p.getByLabel('Set 1 weight in kilograms').first().waitFor({ timeout: 20000 });
   // Log every set of the first exercise at the top of the rep range.
   const weights = await p.getByLabel(/Set \d+ weight in kilograms/).all();
@@ -95,22 +104,24 @@ await step('start the planned session and log it', async () => {
 await step('the calendar marks that session done', async () => {
   await p.goto(BASE, { waitUntil: 'networkidle' });
   await p.waitForTimeout(1200);
-  const done = await p.locator('button[aria-label*="done"]').count();
-  if (done < 1) throw new Error('expected at least one session marked done in the strip');
+  const done = p.locator(`${strip}[aria-label*=", done"]`);
+  if (await done.count() !== 1) throw new Error(`expected the trained day marked done in the strip, got ${await done.count()}`);
   const body = await p.locator('body').innerText();
-  // Total depends on which weekday the block was created; only the count of
-  // completed sessions is fixed.
-  if (!/1 of \d+ sessions done/.test(body)) throw new Error(`expected block progress, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
+  if (!/done today/i.test(body)) throw new Error(`expected today's session at the top of Today, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
   if (/-\d+ days ago/.test(body)) throw new Error('a future session rendered as a negative day count');
 
-  // The day you trained is now the one live button in the strip, and it opens
-  // what you logged.
-  const live = p.locator('ul li button[aria-label]:not([disabled])');
-  if (await live.count() !== 1) throw new Error(`expected exactly the trained day to be tappable, got ${await live.count()}`);
-  await live.first().click();
+  // The day you trained opens what you logged.
+  await done.first().click();
   await p.waitForURL(/#\/history\//, { timeout: 15000 });
   await p.goBack();
   await p.waitForTimeout(800);
+
+  // Block progress lives on Plan. Total depends on which weekday the block was
+  // created; only the count of completed sessions is fixed.
+  await p.goto(`${BASE}#/plan`, { waitUntil: 'networkidle' });
+  await p.waitForTimeout(800);
+  const plan = await p.locator('body').innerText();
+  if (!/1 of \d+ sessions done/.test(plan)) throw new Error(`expected block progress, saw: ${plan.replace(/\n/g,' | ').slice(0,300)}`);
 });
 
 await step('the progression engine suggests the next jump', async () => {

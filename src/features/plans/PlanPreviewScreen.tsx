@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useDefaultGym, useExercises, useSettings } from '@/db/queries';
 import { createRoutinesFromPlan } from '@/db/mutations';
-import { Button, Card, Pill, Screen, ScreenTitle } from '@/components/ui';
+import { BackLink, Button, Pill, Screen, ScreenHeader, SectionLabel } from '@/components/ui';
 import { findGoal } from '@/domain/programmes/goals';
 import { assessPlan, buildPlan, weeklySetsPerMuscle } from '@/domain/programmes/plan';
 import type { SplitId } from '@/domain/programmes/splits';
 import type { TrainingGoalId } from '@/domain/programmes/goals';
+import BuilderSteps from './BuilderSteps';
 
 /**
  * The whole week, before you commit to it.
@@ -45,7 +46,7 @@ export default function PlanPreviewScreen() {
   if (exercises === undefined) {
     return (
       <Screen>
-        <p className="text-sm text-muted">Loading…</p>
+        <p className="t-meta pt-6">Loading…</p>
       </Screen>
     );
   }
@@ -53,9 +54,9 @@ export default function PlanPreviewScreen() {
   if (!goal || !built) {
     return (
       <Screen>
-        <ScreenTitle>Not available</ScreenTitle>
-        <p className="mb-4 text-sm text-muted">That combination does not divide into a week.</p>
-        <Button onClick={() => void navigate('/plans')}>Back to plans</Button>
+        <ScreenHeader title="Not available" />
+        <p className="t-meta mb-4">That combination does not divide into a week.</p>
+        <Button onClick={() => void navigate('/plan/new')}>Back to plans</Button>
       </Screen>
     );
   }
@@ -68,7 +69,7 @@ export default function PlanPreviewScreen() {
     setSaving(true);
     try {
       await createRoutinesFromPlan(plan);
-      void navigate('/routines');
+      void navigate('/plan');
     } finally {
       setSaving(false);
     }
@@ -76,103 +77,86 @@ export default function PlanPreviewScreen() {
 
   return (
     <Screen>
-      <Link to={`/plans/${goal.id}`} className="mb-3 inline-block text-xs text-muted">
-        ← {goal.label}
-      </Link>
-      <ScreenTitle>{plan.split.label}</ScreenTitle>
+      <BackLink to={`/plan/new/${goal.id}`}>{goal.label}</BackLink>
+      <BuilderSteps step={3} />
+      <ScreenHeader title={plan.split.label} label={`${goal.label} · ${plan.days} days`} />
 
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        <Pill tone="accent">{plan.days} days a week</Pill>
-        <Pill>{goal.label}</Pill>
-        {gym ? <Pill>{gym.name}</Pill> : null}
-      </div>
+      <div className="stack">
+        <div className="flex flex-wrap gap-1.5">
+          <Pill tone="accent">{plan.days} days a week</Pill>
+          {gym ? <Pill>{gym.name}</Pill> : null}
+        </div>
 
-      {!viability.viable && viability.reason ? (
-        <Card className="mb-4 border-amber-500/40 bg-amber-500/5 p-4">
-          <p className="text-xs text-amber-400">{viability.reason}</p>
-        </Card>
-      ) : null}
+        {!viability.viable && viability.reason ? (
+          <p className="rounded-md bg-surface p-4 text-sm text-warn">{viability.reason}</p>
+        ) : null}
 
-      {plan.unfilledCount > 0 && viability.viable ? (
-        <Card className="mb-4 p-4">
-          <p className="text-xs text-muted">
-            {plan.unfilledCount} slot{plan.unfilledCount === 1 ? '' : 's'} left empty — your gym has
-            no equipment for {plan.unfilledCount === 1 ? 'it' : 'them'}. The rest of the plan is
+        {plan.unfilledCount > 0 && viability.viable ? (
+          <p className="t-meta">
+            {plan.unfilledCount} slot{plan.unfilledCount === 1 ? '' : 's'} left empty — your gym
+            has no equipment for {plan.unfilledCount === 1 ? 'it' : 'them'}. The rest of the plan is
             unaffected.
           </p>
-        </Card>
-      ) : null}
+        ) : null}
 
-      <Card className="mb-4 p-4">
-        <h2 className="mb-2 text-xs uppercase tracking-wide text-muted">Weekly sets per muscle</h2>
-        <ul className="flex flex-wrap gap-1.5">
-          {topMuscles.map(([muscle, sets]) => (
-            <li key={muscle}>
-              <Pill>
-                <span className="first-letter:uppercase">{muscle}</span>
-                <span className="ml-1.5 tabular-nums text-white">{sets}</span>
-              </Pill>
-            </li>
-          ))}
-        </ul>
-        <p className="mt-2 text-[11px] text-muted">
-          {goal.profile === 'hypertrophy'
-            ? 'Muscle growth wants 10 to 20 hard sets a week per muscle.'
-            : goal.profile === 'strength'
-              ? 'Strength work sits lower, around 8 to 12 sets on the main lifts.'
-              : 'General fitness sits around 8 to 12 sets a week per muscle.'}
-        </p>
-      </Card>
+        <section aria-labelledby="weekly-sets">
+          <SectionLabel id="weekly-sets">Weekly sets per muscle</SectionLabel>
+          <ul className="flex flex-wrap gap-1.5">
+            {topMuscles.map(([muscle, sets]) => (
+              <li key={muscle}>
+                <Pill>
+                  <span className="first-letter:uppercase">{muscle}</span>
+                  <span className="ml-1.5 tabular-nums text-chalk">{sets}</span>
+                </Pill>
+              </li>
+            ))}
+          </ul>
+          <p className="t-meta mt-2">
+            {goal.profile === 'hypertrophy'
+              ? 'Muscle growth wants 10 to 20 hard sets a week per muscle.'
+              : goal.profile === 'strength'
+                ? 'Strength work sits lower, around 8 to 12 sets on the main lifts.'
+                : 'General fitness sits around 8 to 12 sets a week per muscle.'}
+          </p>
+        </section>
 
-      <ul className="space-y-3">
         {plan.sessions.map((session) => (
-          <li key={`${session.templateId}-${session.dayIndex}`}>
-            <Card className="p-4">
-              <div className="mb-2 flex items-baseline justify-between gap-2">
-                <h2 className="text-sm font-medium text-white">
-                  Day {session.dayIndex + 1} · {session.name}
-                </h2>
-                <span className="shrink-0 text-xs text-muted">
-                  {session.exercises.length} exercises
-                </span>
-              </div>
-              <ul className="space-y-1.5">
-                {session.exercises.map((entry) => (
-                  <li key={entry.exercise.id} className="flex items-baseline justify-between gap-3">
-                    <span className="min-w-0 truncate text-sm text-white">
-                      {entry.exercise.name}
-                    </span>
-                    <span className="shrink-0 text-xs tabular-nums text-muted">
-                      {entry.prescription.sets} × {entry.prescription.repLow}–
-                      {entry.prescription.repHigh}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          </li>
+          <section key={`${session.templateId}-${session.dayIndex}`} className="card" aria-label={`Day ${session.dayIndex + 1}`}>
+            <div className="card-head">
+              <h2 className="t-h2">
+                Day {session.dayIndex + 1} · {session.name}
+              </h2>
+              <span className="t-meta shrink-0">{session.exercises.length} exercises</span>
+            </div>
+            <ul className="list ex-list">
+              {session.exercises.map((entry) => (
+                <li key={entry.exercise.id}>
+                  <span className="ex-name">
+                    <span>{entry.exercise.name}</span>
+                  </span>
+                  <span className="ex-pres">
+                    {entry.prescription.sets} × {entry.prescription.repLow}–{entry.prescription.repHigh}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
         ))}
-      </ul>
 
-      <div className="mt-5 grid gap-2">
-        <Button
-          variant="primary"
-          className="h-14 text-base"
-          disabled={saving}
-          onClick={() => void handleUse()}
-        >
-          {saving ? 'Building routines…' : `Use this plan (${plan.days} routines)`}
-        </Button>
-        <Button onClick={() => setSeed((current) => current + 1)}>
-          Shuffle the exercises
-        </Button>
+        <div className="stack-sm">
+          <Button variant="primary" size="lg" block disabled={saving} onClick={() => void handleUse()}>
+            {saving ? 'Building routines…' : `Use this plan (${plan.days} routines)`}
+          </Button>
+          <Button block onClick={() => setSeed((current) => current + 1)}>
+            Shuffle the exercises
+          </Button>
+          <p className="t-meta">
+            This saves {plan.days} ordinary routines you can edit like any other. Weights are left
+            for you to set on the first session
+            {settings?.mode === 'beginner' ? ', and the app suggests them from then on' : ''}.
+          </p>
+        </div>
       </div>
-
-      <p className="mt-3 text-[11px] text-muted">
-        This saves {plan.days} ordinary routines you can edit like any other. Weights are left for
-        you to set on the first session
-        {settings?.mode === 'beginner' ? ', and the app suggests them from then on' : ''}.
-      </p>
     </Screen>
   );
 }

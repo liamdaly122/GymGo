@@ -1,183 +1,172 @@
-import type { ReactNode } from 'react';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
 /**
- * Chart furniture, kept in one place so every chart in the app is built from the
- * same parts.
+ * Chart furniture, in one place so every chart is built from the same parts.
  *
- * Two rules do most of the work here. Marks carry the colour and text never
- * does — a light hue is illegible as body text, so labels and axes wear the
- * muted ink token and identity comes from the mark beside them. And values are
- * labelled selectively: a number on every point is chaos and goes unread, so the
- * axis and the tooltip carry the rest.
+ * Marks carry the colour and text never does: labels and axes wear the muted
+ * ink, identity comes from the mark beside them. Values are labelled
+ * selectively — the end of a line, the tip of a bar — and the tooltip and the
+ * table carry the rest. One hue, the design's blue, for every magnitude.
  */
+export const CHART_ACCENT = '#5b84ff';
+export const CHART_SURFACE = '#0c0c0b';
+export const CHART_GRID = '#232320';
+export const CHART_INK = '#f3f1ea';
+export const CHART_INK_MUTED = '#a29f96';
 
-/** One hue for magnitude. Nominal bars all take it — colouring them by value
- *  would spend the identity channel re-encoding what bar length already shows. */
-export const CHART_ACCENT = '#4ade80';
 /**
- * Context marks in an emphasis chart, where one series is the point and the
- * rest are background. Chosen for 3.16:1 against the card surface — the line
- * token is only 1.35:1, well under the 3:1 floor a mark needs, and bars drawn
- * in it are guesswork rather than data.
+ * Sets per muscle as horizontal bars, with marks at 10 and 20 — the usual
+ * weekly range — so "enough" reads without a second series. Each bar carries
+ * its value at the tip and a tooltip on hover or focus.
  */
-export const CHART_DIM = '#5a6f86';
-export const CHART_SURFACE = '#17202d';
-export const CHART_GRID = '#2a3746';
-export const CHART_INK_MUTED = '#8b9aad';
-
-export function ChartCard({
-  title,
-  subtitle,
-  action,
-  children,
+export function MuscleBars({
+  data,
+  idPrefix,
 }: {
-  title: string;
-  subtitle?: string;
-  action?: ReactNode;
-  children: ReactNode;
+  data: Array<{ muscle: string; sets: number }>;
+  idPrefix: string;
 }) {
+  const max = Math.max(20, ...data.map((entry) => entry.sets));
   return (
-    <section className="rounded-2xl border border-line bg-surface p-4">
-      <header className="mb-3 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-medium text-white">{title}</h2>
-          {subtitle ? <p className="mt-0.5 text-xs text-muted">{subtitle}</p> : null}
-        </div>
-        {action}
-      </header>
-      {children}
-    </section>
+    <>
+      <div className="bars">
+        {data.map((entry) => {
+          const label = entry.muscle.charAt(0).toUpperCase() + entry.muscle.slice(1);
+          const value = Math.round(entry.sets * 10) / 10;
+          return (
+            <div
+              key={entry.muscle}
+              id={`${idPrefix}-${entry.muscle.replace(/\s+/g, '-')}`}
+              className="bar-row"
+              tabIndex={0}
+              aria-label={`${label}: ${value} sets. Target 10 to 20.`}
+            >
+              <span className="bar-lbl">{label}</span>
+              <span className="bar-track">
+                <span className="bar-fill" style={{ width: `${(entry.sets / max) * 100}%` }} />
+                <span className="bar-mark" style={{ left: `${(10 / max) * 100}%` }} />
+                <span className="bar-mark" style={{ left: `${(20 / max) * 100}%` }} />
+              </span>
+              <span className="bar-val">{value}</span>
+              <span className="bar-tip" aria-hidden="true">
+                <strong>{value} sets</strong> · target 10–20
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="chart-legend mt-3">
+        <i />
+        <i />
+        Lines at 10 and 20 sets: the usual weekly target
+      </p>
+    </>
   );
 }
 
-/**
- * A headline number. Proportional figures, not tabular: tabular-nums gives every
- * digit the width of a zero, which reads loose at display sizes. Tabular is for
- * columns that must align.
- */
-export function StatTile({
-  label,
-  value,
-  hint,
-}: {
+/** The shape of a lift over time, de-emphasised, with the latest point lit. */
+export function Sparkline({ values }: { values: number[] }) {
+  if (values.length < 2) return null;
+  const width = 72;
+  const height = 28;
+  const pad = 4;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const x = (index: number) => pad + (index * (width - 2 * pad)) / (values.length - 1);
+  const y = (value: number) => (hi === lo ? height / 2 : height - pad - ((value - lo) / (hi - lo)) * (height - 2 * pad));
+  const points = values.map((value, index) => `${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
+  return (
+    <svg className="spark" viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+      <polyline className="sl" points={points} />
+      <circle className="sd" cx={x(values.length - 1)} cy={y(values.at(-1)!)} r="4" />
+    </svg>
+  );
+}
+
+export interface LiftPoint {
+  date: string;
   label: string;
-  value: string;
-  hint?: string;
-}) {
-  return (
-    <div className="px-3 py-3 text-center">
-      <p className="eyebrow">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-white">{value}</p>
-      {hint ? <p className="mt-0.5 text-[11px] text-muted">{hint}</p> : null}
-    </div>
-  );
-}
-
-/**
- * A single ratio against a limit — a meter, not a pie of two slices.
- * The unfilled track is a lighter step of the same ramp so state reads across
- * the whole bar.
- */
-export function Meter({
-  value,
-  label,
-  caption,
-}: {
-  /** 0 to 1. */
   value: number;
-  label: string;
-  caption?: string;
-}) {
-  const percent = Math.round(Math.min(1, Math.max(0, value)) * 100);
+  detail: string;
+}
+
+/**
+ * One lift over time: a 2px line over a faint wash, a crosshair tooltip, and
+ * the latest value labelled at the end of the line. A single series, so no
+ * legend — the heading above says what is plotted.
+ */
+export function LiftChart({ points, unit }: { points: LiftPoint[]; unit: string }) {
+  const last = points.length - 1;
   return (
-    <div>
-      <div className="mb-1.5 flex items-baseline justify-between gap-3">
-        <span className="text-xs text-muted">{label}</span>
-        <span className="text-sm font-semibold text-white">{percent}%</span>
-      </div>
-      <div
-        className="h-2 w-full overflow-hidden rounded-full"
-        style={{ background: `${CHART_ACCENT}22` }}
-        role="meter"
-        aria-valuenow={percent}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-label={label}
-      >
-        <div
-          className="h-full rounded-full transition-[width] duration-300"
-          style={{ width: `${percent}%`, background: CHART_ACCENT }}
+    <ResponsiveContainer width="100%" height={200}>
+      <AreaChart data={points} margin={{ top: 12, right: 40, bottom: 0, left: 0 }}>
+        <CartesianGrid vertical={false} stroke={CHART_GRID} strokeWidth={1} />
+        <XAxis
+          dataKey="label"
+          tickLine={false}
+          axisLine={false}
+          tick={{ fill: CHART_INK_MUTED, fontSize: 11 }}
+          interval="preserveStartEnd"
+          minTickGap={60}
         />
-      </div>
-      {caption ? <p className="mt-1.5 text-[11px] text-muted">{caption}</p> : null}
-    </div>
-  );
-}
-
-/** Shared tooltip. Values in ink, identity from the swatch beside them. */
-export function ChartTooltip({
-  active,
-  label,
-  rows,
-}: {
-  active?: boolean;
-  label?: string;
-  rows: Array<{ name: string; value: string }>;
-}) {
-  if (!active || rows.length === 0) return null;
-  return (
-    <div className="rounded-lg border border-line bg-raised px-3 py-2 shadow-lg">
-      {label ? <p className="mb-1 text-[11px] text-muted">{label}</p> : null}
-      {rows.map((row) => (
-        <p key={row.name} className="flex items-center gap-2 text-xs text-white">
-          <span
-            aria-hidden="true"
-            className="h-2 w-2 shrink-0 rounded-full"
-            style={{ background: CHART_ACCENT }}
-          />
-          <span className="text-muted">{row.name}</span>
-          <span className="ml-auto font-medium tabular-nums">{row.value}</span>
-        </p>
-      ))}
-    </div>
-  );
-}
-
-/** Every chart ships a table view, so nothing is gated behind colour. */
-export function TableView({
-  columns,
-  rows,
-}: {
-  columns: string[];
-  rows: Array<Array<string | number>>;
-}) {
-  return (
-    <div className="mt-3 overflow-x-auto">
-      <table className="w-full text-left text-xs">
-        <thead>
-          <tr className="border-b border-line">
-            {columns.map((column) => (
-              <th key={column} className="py-1.5 pr-3 font-normal text-muted">
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index} className="border-b border-line/50 last:border-0">
-              {row.map((cell, cellIndex) => (
-                <td
-                  key={cellIndex}
-                  className={`py-1.5 pr-3 ${cellIndex === 0 ? 'text-white' : 'tabular-nums text-muted'}`}
-                >
-                  {cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        <YAxis
+          tickLine={false}
+          axisLine={false}
+          tick={{ fill: CHART_INK_MUTED, fontSize: 11 }}
+          width={40}
+          domain={['dataMin - 5', 'dataMax + 5']}
+          allowDecimals={false}
+          tickFormatter={(value: number) => String(Math.round(value))}
+        />
+        <Tooltip
+          cursor={{ stroke: CHART_INK_MUTED, strokeWidth: 1 }}
+          content={({ active, payload }) => {
+            const point = payload?.[0]?.payload as LiftPoint | undefined;
+            if (!active || !point) return null;
+            return (
+              <div className="rounded-md bg-chalk px-2.5 py-1.5 text-xs text-ink">
+                <strong className="block text-sm">
+                  {point.value}
+                  {unit}
+                </strong>
+                <span>{point.detail}</span>
+              </div>
+            );
+          }}
+        />
+        <Area
+          type="linear"
+          dataKey="value"
+          stroke={CHART_ACCENT}
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill={CHART_ACCENT}
+          fillOpacity={0.1}
+          isAnimationActive={false}
+          dot={(props: { cx?: number; cy?: number; index?: number }) =>
+            props.index === last && props.cx !== undefined && props.cy !== undefined ? (
+              <g key="end">
+                <circle cx={props.cx} cy={props.cy} r={5} fill={CHART_ACCENT} stroke={CHART_SURFACE} strokeWidth={2} />
+                <text x={props.cx + 9} y={props.cy + 4} fill={CHART_INK} fontSize={12} fontWeight={600}>
+                  {points[last]!.value}
+                </text>
+              </g>
+            ) : (
+              <g key={`dot-${props.index}`} />
+            )
+          }
+          activeDot={{ r: 5, fill: CHART_ACCENT, stroke: CHART_SURFACE, strokeWidth: 2 }}
+        />
+      </AreaChart>
+    </ResponsiveContainer>
   );
 }

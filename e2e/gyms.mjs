@@ -20,7 +20,7 @@ const openMore = async (page, name) => {
 };
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
-await step('app loads', async () => { await p.getByRole('heading', {name:'Train'}).waitFor({timeout:40000}); });
+await step('app loads', async () => { await p.getByRole('heading', {name:'Today'}).waitFor({timeout:40000}); });
 
 await step('settings links through to gyms', async () => {
   await p.getByRole('link', { name: 'Settings' }).click();
@@ -102,8 +102,8 @@ await step('strip back to dumbbells only and train here', async () => {
 });
 
 await step('the split picker names the gym and reports what it cannot fill', async () => {
-  await p.goto(BASE + '#/plans/build_muscle', { waitUntil: 'networkidle' });
-  await p.getByRole('heading', { name: /Build muscle/i }).waitFor({ timeout: 15000 });
+  await p.goto(BASE + '#/plan/new/build_muscle', { waitUntil: 'networkidle' });
+  await p.getByRole('heading', { name: 'How many days a week?' }).waitFor({ timeout: 15000 });
   await p.waitForTimeout(700);
   const body = await p.locator('body').innerText();
   if (!/Home garage/.test(body)) throw new Error('the split picker should name the gym in use');
@@ -115,7 +115,7 @@ await step('the split picker names the gym and reports what it cannot fill', asy
 await step('the generated plan contains no barbell, cable or machine work', async () => {
   // Collect every href before navigating: the locators go stale the moment we
   // leave the picker.
-  const hrefs = await p.locator('a[href*="/plans/build_muscle/"]')
+  const hrefs = await p.locator('a[href*="/plan/new/build_muscle/"]')
     .evaluateAll(els => [...new Set(els.map(e => e.getAttribute('href')))]);
   if (!hrefs.length) throw new Error('a dumbbell gym should still leave at least one workable split');
 
@@ -140,7 +140,7 @@ await step('the generated plan contains no barbell, cable or machine work', asyn
 });
 
 await step('swap suggestions at a dumbbell gym stay dumbbell', async () => {
-  await p.getByRole('link', { name: 'Train' }).click();
+  await p.getByRole('link', { name: 'Today', exact: true }).click();
   await p.getByRole('button', { name: 'Start empty workout' }).click();
   await p.getByRole('button', { name: 'Add exercise' }).click();
   await p.getByPlaceholder('Add exercise').fill('dumbbell bench press');

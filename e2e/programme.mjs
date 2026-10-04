@@ -1,6 +1,9 @@
 /**
- * The Programme tab: the plan as the primary object, and a block that can
+ * The Plan tab: the plan as the primary object, and a block that can
  * actually end.
+ *
+ * Headings and list titles are display type, upper-cased by CSS, and
+ * innerText sees the capitals — text checks here match without case.
  */
 import { chromium } from 'playwright';
 
@@ -14,36 +17,36 @@ p.on('console', m => { if (m.type()==='error' && !/Failed to load resource/i.tes
 const step = async (l, fn) => { try { await fn(); console.log('  ok   '+l); } catch(e) { console.log('  FAIL '+l+': '+e.message); throw e; } };
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
-await step('app loads', async () => { await p.getByRole('heading', {name:'Train'}).waitFor({timeout:40000}); });
+await step('app loads', async () => { await p.getByRole('heading', {name:'Today'}).waitFor({timeout:40000}); });
 
-await step('the tab is Programme, not Routines', async () => {
-  const nav = await p.locator('nav').innerText();
-  if (!/Programme/i.test(nav)) throw new Error(`expected a Programme tab, saw: ${nav.replace(/\n/g,' | ')}`);
-  if (/Routines/i.test(nav)) throw new Error('the Routines tab should be gone');
+await step('three tabs: Today, Plan, Progress', async () => {
+  // textContent, not innerText: the tab labels are upper-cased by CSS.
+  const tabs = (await p.locator('nav a').allTextContents()).map(t => t.trim());
+  if (tabs.join('|') !== 'Today|Plan|Progress') throw new Error(`expected Today, Plan, Progress, saw: ${tabs.join(' | ')}`);
 });
 
-await step('with no plan it says so and points at Plans', async () => {
-  await p.getByRole('link', { name: 'Programme' }).click();
-  await p.getByRole('heading', { name: 'Programme' }).waitFor({ timeout: 15000 });
+await step('with no plan it says so and points at the builder', async () => {
+  await p.getByRole('link', { name: 'Plan', exact: true }).click();
+  await p.getByRole('heading', { name: 'Plan', exact: true }).waitFor({ timeout: 15000 });
   const body = await p.locator('body').innerText();
   if (!/No plan running/i.test(body)) throw new Error('expected the empty state');
   if (!/Pick a plan/i.test(body)) throw new Error('expected a route into Plans');
 });
 
 await step('build a plan', async () => {
-  await p.goto(BASE + '#/plans/build_muscle', { waitUntil: 'networkidle' });
+  await p.goto(BASE + '#/plan/new/build_muscle', { waitUntil: 'networkidle' });
   await p.waitForTimeout(700);
-  const href = await p.locator('a[href*="/plans/build_muscle/"]').first().getAttribute('href');
+  const href = await p.locator('a[href*="/plan/new/build_muscle/"]').first().getAttribute('href');
   await p.goto(BASE + href.replace(/^#?\/?/, '#/').replace('##', '#'), { waitUntil: 'networkidle' });
   await p.getByRole('button', { name: /Use this plan/i }).click();
   await p.waitForTimeout(1500);
 });
 
 await step('the plan is now the subject of the screen', async () => {
-  await p.goto(BASE + '#/routines', { waitUntil: 'networkidle' });
+  await p.goto(BASE + '#/plan', { waitUntil: 'networkidle' });
   await p.waitForTimeout(900);
   const body = await p.locator('body').innerText();
-  if (!/Week 1\/5/i.test(body)) throw new Error('expected the block header');
+  if (!/Week 1 of 5/i.test(body)) throw new Error('expected the block header');
   if (!/sessions done/i.test(body)) throw new Error('expected adherence');
   if (!/SESSIONS IN THIS PLAN/i.test(body)) throw new Error('expected the plan sessions section');
   if (!/YOUR OWN ROUTINES/i.test(body)) throw new Error('expected standalone routines to be separated');
@@ -51,7 +54,7 @@ await step('the plan is now the subject of the screen', async () => {
 
 await step('each session says what it contains', async () => {
   const body = await p.locator('body').innerText();
-  if (!/\d+ exercises · ~\d+ min/.test(body)) {
+  if (!/\d+ exercises · about \d+ min/.test(body)) {
     throw new Error(`sessions should state contents, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
   }
 });
@@ -62,14 +65,14 @@ await step('a hand-made routine lands under "your own", not in the plan', async 
   await p.getByPlaceholder(/Lower A, Push/).fill('My own thing');
   await p.getByRole('button', { name: 'Create' }).click();
   await p.waitForTimeout(900);
-  await p.goto(BASE + '#/routines', { waitUntil: 'networkidle' });
+  await p.goto(BASE + '#/plan', { waitUntil: 'networkidle' });
   await p.waitForTimeout(900);
 
   const sections = await p.locator('section').evaluateAll(els => els.map(e => e.innerText));
   const own = sections.find(t => /YOUR OWN ROUTINES/i.test(t)) ?? '';
   const inPlan = sections.find(t => /SESSIONS IN THIS PLAN/i.test(t)) ?? '';
-  if (!/My own thing/.test(own)) throw new Error('the new routine should be under "your own"');
-  if (/My own thing/.test(inPlan)) throw new Error('it must not appear as a plan session');
+  if (!/My own thing/i.test(own)) throw new Error('the new routine should be under "your own"');
+  if (/My own thing/i.test(inPlan)) throw new Error('it must not appear as a plan session');
 });
 
 await step('an old block with nothing trained waits for you', async () => {
@@ -89,7 +92,7 @@ await step('an old block with nothing trained waits for you', async () => {
 
   const body = await p.locator('body').innerText();
   if (/This block is finished/i.test(body)) throw new Error('a block with nothing trained must not finish on the calendar');
-  if (!/Week 1\/5/i.test(body)) throw new Error(`the block should still be on week 1, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
+  if (!/Week 1 of 5/i.test(body)) throw new Error(`the block should still be on week 1, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
 });
 
 await step('a finished block offers the next one', async () => {
@@ -129,11 +132,11 @@ await step('starting the next block reuses the same sessions', async () => {
   await p.getByRole('button', { name: 'Start the next block' }).click();
   await p.waitForTimeout(1200);
 
-  await p.goto(BASE + '#/routines', { waitUntil: 'networkidle' });
+  await p.goto(BASE + '#/plan', { waitUntil: 'networkidle' });
   await p.waitForTimeout(900);
   const body = await p.locator('body').innerText();
   if (!/\(block 2\)/i.test(body)) throw new Error(`expected the new block to be numbered, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
-  if (!/Week 1\/5/i.test(body)) throw new Error('the new block should start at week 1');
+  if (!/Week 1 of 5/i.test(body)) throw new Error('the new block should start at week 1');
 
   const after = await p.locator('section').evaluateAll(els =>
     (els.map(e => e.innerText).find(t => /SESSIONS IN THIS PLAN/i.test(t)) ?? ''));
@@ -152,18 +155,19 @@ await step('ending the block early stops it being the active plan', async () => 
     throw new Error(`the block should be closed, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
   }
 
-  // Train must stop advertising a block that is over.
+  // Today must stop advertising a block that is over.
   await p.goto(BASE + '#/', { waitUntil: 'networkidle' });
   await p.waitForTimeout(900);
-  const train = await p.locator('body').innerText();
-  if (/Week 1\/5/i.test(train)) throw new Error('Train still shows the closed block');
+  const today = await p.locator('body').innerText();
+  if (/week \d+ \/ \d+/i.test(today)) throw new Error('Today still shows the closed block');
+  if (!/No plan yet/i.test(today)) throw new Error('Today should offer to build a plan');
 });
 
 await step('the routines survive the block being closed', async () => {
-  await p.goto(BASE + '#/routines', { waitUntil: 'networkidle' });
+  await p.goto(BASE + '#/plan', { waitUntil: 'networkidle' });
   await p.waitForTimeout(900);
   const body = await p.locator('body').innerText();
-  if (!/My own thing/.test(body)) throw new Error('a hand-made routine must not vanish with the plan');
+  if (!/My own thing/i.test(body)) throw new Error('a hand-made routine must not vanish with the plan');
 });
 
 console.log(errs.length ? '\nBrowser errors:\n' + errs.join('\n') : '\nNo browser errors.');

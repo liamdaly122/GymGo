@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import { describeSyncStatus } from '@/sync/status';
 import { currentAccount, sendMagicLink, signOut, type SyncAccount } from '@/sync/auth';
@@ -26,15 +26,15 @@ export default function SyncSection() {
 
   if (!isSyncConfigured()) {
     return (
-      <Card className="mb-4 p-4">
-        <h2 className="eyebrow mb-1">Backup and sync</h2>
-        <p className="text-sm text-white">Not set up yet.</p>
+      <section aria-labelledby="sync" className="stack-sm">
+        <h2 className="t-section" id="sync">Backup and sync</h2>
+        <p className="text-sm">Not set up yet.</p>
         <p className="mt-1 text-[11px] text-muted">
           Everything works without it — this is about keeping a second copy off this phone. Add a
           Supabase project and set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Until then, Export
           is your backup.
         </p>
-      </Card>
+      </section>
     );
   }
 
@@ -54,12 +54,12 @@ export default function SyncSection() {
   };
 
   return (
-    <Card className="mb-4 p-4">
-      <div className="mb-2 flex items-baseline justify-between gap-3">
-        <h2 className="eyebrow">Backup and sync</h2>
+    <section aria-labelledby="sync" className="stack-sm">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="t-section" id="sync">Backup and sync</h2>
         <span
           className={`text-[11px] ${
-            status.state === 'error' ? 'text-warn' : status.state === 'idle' ? 'text-accent' : 'text-muted'
+            status.state === 'error' ? 'text-warn' : status.state === 'idle' ? 'text-hot' : 'text-muted'
           }`}
         >
           {describeSyncStatus(status)}
@@ -68,7 +68,7 @@ export default function SyncSection() {
 
       {account ? (
         <>
-          <p className="text-sm text-white">{account.email ?? 'Signed in'}</p>
+          <p className="text-sm">{account.email ?? 'Signed in'}</p>
           <p className="mt-0.5 text-[11px] text-muted">
             {status.lastSyncedAt
               ? `Last backed up ${formatDayLabel(status.lastSyncedAt).toLowerCase()}`
@@ -76,7 +76,7 @@ export default function SyncSection() {
             {status.pending > 0 ? ` · ${status.pending} waiting` : ''}
           </p>
 
-          <div className="mt-3 grid gap-2">
+          <div className="grid gap-2">
             <Button onClick={() => void syncNow()} disabled={status.state === 'syncing'}>
               {status.state === 'syncing' ? 'Backing up…' : 'Back up now'}
             </Button>
@@ -92,7 +92,7 @@ export default function SyncSection() {
         </>
       ) : (
         <>
-          <p className="text-sm text-white">Sign in to keep a copy off this phone.</p>
+          <p className="text-sm">Sign in to keep a copy off this phone.</p>
           <p className="mt-1 mb-3 text-[11px] text-muted">
             No password. You get a link by email, tap it once on this phone, and stay signed in.
           </p>
@@ -104,11 +104,11 @@ export default function SyncSection() {
             onChange={(event) => setEmail(event.target.value)}
             placeholder="you@example.com"
             aria-label="Email address for the sign-in link"
-            className="h-11 w-full rounded-xl border border-line bg-raised px-4 text-base text-white placeholder:text-muted focus:border-accent focus:outline-none"
+            className="field"
           />
           <Button
             variant="primary"
-            className="mt-2 w-full"
+            block
             disabled={sending || email.trim() === ''}
             onClick={() => void handleSend()}
           >
@@ -119,7 +119,7 @@ export default function SyncSection() {
 
       {note ? (
         <p
-          className={`mt-3 text-[11px] ${note.tone === 'ok' ? 'text-accent' : 'text-warn'}`}
+          className={`mt-3 text-[11px] ${note.tone === 'ok' ? 'text-hot' : 'text-warn'}`}
           role="status"
         >
           {note.text}
@@ -131,6 +131,6 @@ export default function SyncSection() {
           Last attempt failed: {status.message}. It will retry on its own.
         </p>
       ) : null}
-    </Card>
+    </section>
   );
 }

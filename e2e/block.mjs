@@ -1,5 +1,9 @@
 /**
- * The expanded block view on Train: what is coming up in later weeks.
+ * The expanded block view on Plan: what is coming up in later weeks.
+ *
+ * Week headings are display type, upper-cased by CSS, and innerText sees the
+ * capitals — so every week check here matches without case. A case-sensitive
+ * /Week 4/ would pass against "WEEK 4" whether or not the block collapsed.
  */
 import { chromium } from 'playwright';
 
@@ -13,23 +17,25 @@ p.on('console', m => { if (m.type()==='error' && !/Failed to load resource/i.tes
 const step = async (l, fn) => { try { await fn(); console.log('  ok   '+l); } catch(e) { console.log('  FAIL '+l+': '+e.message); throw e; } };
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
-await step('app loads', async () => { await p.getByRole('heading', {name:'Train'}).waitFor({timeout:40000}); });
+await step('app loads', async () => { await p.getByRole('heading', {name:'Today'}).waitFor({timeout:40000}); });
 
 await step('build a plan so there is a block to look at', async () => {
-  await p.goto(BASE + '#/plans/build_muscle', { waitUntil: 'networkidle' });
+  await p.goto(BASE + '#/plan/new/build_muscle', { waitUntil: 'networkidle' });
   await p.waitForTimeout(700);
-  const href = await p.locator('a[href*="/plans/build_muscle/"]').first().getAttribute('href');
+  const href = await p.locator('a[href*="/plan/new/build_muscle/"]').first().getAttribute('href');
   await p.goto(BASE + href.replace(/^#?\/?/, '#/').replace('##', '#'), { waitUntil: 'networkidle' });
   await p.getByRole('button', { name: /Use this plan/i }).click();
   await p.waitForTimeout(1500);
 });
 
-await step('Train shows this week collapsed, not the whole block', async () => {
-  await p.goto(BASE + '#/', { waitUntil: 'networkidle' });
+await step('Plan shows this week collapsed, not the whole block', async () => {
+  await p.goto(BASE + '#/plan', { waitUntil: 'networkidle' });
   await p.waitForTimeout(900);
   const body = await p.locator('body').innerText();
-  if (!/Week 1\/5/i.test(body)) throw new Error(`expected the week label, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
-  if (/Week 4/.test(body)) throw new Error('later weeks should be hidden until expanded');
+  if (!/Week 1 of 5/i.test(body)) throw new Error(`expected the week label, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
+  if (/Week 4/i.test(body)) throw new Error('later weeks should be hidden until expanded');
+  const expanded = await p.getByRole('button', { name: /See the whole 5-week block/i }).getAttribute('aria-expanded');
+  if (expanded !== 'false') throw new Error(`the track should start collapsed, aria-expanded=${expanded}`);
 });
 await p.screenshot({ path: 'e2e/shot-block-collapsed.png', fullPage: true });
 
@@ -38,7 +44,7 @@ await step('expanding reveals every week of the block', async () => {
   await p.waitForTimeout(700);
   const body = await p.locator('body').innerText();
   for (const week of ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5']) {
-    if (!body.includes(week)) throw new Error(`${week} missing from the expanded view`);
+    if (!new RegExp(week, 'i').test(body)) throw new Error(`${week} missing from the expanded view`);
   }
   if (!/Deload/i.test(body)) throw new Error('the deload week should be named');
   if (!/sets/i.test(body)) throw new Error('each week should state its volume');
@@ -47,9 +53,9 @@ await p.screenshot({ path: 'e2e/shot-block-expanded.png', fullPage: true });
 
 await step('the deload really is lighter than the peak', async () => {
   const sets = await p.locator('li').evaluateAll(els =>
-    els.map(e => e.innerText).filter(t => /^Week \d/.test(t))
+    els.map(e => e.innerText).filter(t => /^Week \d/i.test(t))
        .map(t => {
-         const week = Number(t.match(/Week (\d)/)[1]);
+         const week = Number(t.match(/Week (\d)/i)[1]);
          const s = Number(t.match(/(\d+) sets/)[1]);
          return { week, sets: s };
        }));
@@ -65,10 +71,11 @@ await step('the deload really is lighter than the peak', async () => {
 });
 
 await step('collapsing hides it again', async () => {
-  await p.getByRole('button', { name: /Week 1\/5/ }).click();
+  // The track is a toggle: the same control opens and closes the weeks.
+  await p.getByRole('button', { name: /See the whole 5-week block/i }).click();
   await p.waitForTimeout(600);
   const body = await p.locator('body').innerText();
-  if (/Week 4/.test(body)) throw new Error('the block should collapse');
+  if (/Week 4/i.test(body)) throw new Error('the block should collapse');
 });
 
 console.log(errs.length ? '\nBrowser errors:\n' + errs.join('\n') : '\nNo browser errors.');

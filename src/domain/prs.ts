@@ -93,3 +93,51 @@ export function prsHitInSession(sessionSets: WorkoutSet[], priorSets: WorkoutSet
 
   return hits;
 }
+
+export interface SessionForRecords {
+  id: string;
+  /** Each exercise in the session with the sets performed on it. */
+  exercises: Array<{ exerciseId: string; sets: WorkoutSet[] }>;
+}
+
+/**
+ * How many records each session broke, for a list of sessions.
+ *
+ * Sessions must arrive oldest first. A record only counts when there was one
+ * to beat: an exercise's first ever session is a first, not a record, or every
+ * new lift in a list would read as a PR. Within that, it is the same test as
+ * `prsHitInSession` — heaviest top set, then best estimated 1RM — counted once
+ * per exercise, and through the same gate, so a drop set never scores.
+ *
+ * Kept as running bests rather than calling `prsHitInSession` per row, which
+ * would re-read the whole history for every session in the list.
+ */
+export function recordsBrokenPerSession(sessions: SessionForRecords[]): Map<string, number> {
+  const best = new Map<string, { weight: number; e1rm: number }>();
+  const counts = new Map<string, number>();
+
+  for (const session of sessions) {
+    let broken = 0;
+    const updates: Array<[string, { weight: number; e1rm: number }]> = [];
+
+    for (const { exerciseId, sets } of session.exercises) {
+      const during = personalRecords(sets);
+      if (!during.heaviest || !during.bestE1rm) continue;
+      const weight = during.heaviest.weight_kg;
+      const e1rm = during.bestE1rm.value;
+      const before = best.get(exerciseId);
+      if (before && (weight > before.weight || e1rm > before.e1rm)) broken += 1;
+      updates.push([
+        exerciseId,
+        { weight: Math.max(weight, before?.weight ?? 0), e1rm: Math.max(e1rm, before?.e1rm ?? 0) },
+      ]);
+    }
+
+    // Applied after the session, so two entries of one lift in a session
+    // cannot beat each other.
+    for (const [exerciseId, value] of updates) best.set(exerciseId, value);
+    counts.set(session.id, broken);
+  }
+
+  return counts;
+}

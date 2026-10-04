@@ -1,187 +1,161 @@
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useSessionSummary } from '@/db/queries';
-import { Button, Card, Pill, Screen, ScreenTitle } from '@/components/ui';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useSessionSummary, useSettings, useWorkoutName } from '@/db/queries';
+import { BackLink, Button, Screen, ScreenHeader, SectionLabel, Stat } from '@/components/ui';
 import { formatDayLabel, formatDuration } from '@/lib/dates';
 import { estimate1RMRounded } from '@/domain/epley';
 import { isChildSet } from '@/domain/sets';
+import { MuscleBars } from '@/features/progress/charts';
 
+/**
+ * One finished session — and, straight after Finish, the summary.
+ *
+ * The same screen either way, so the summary you see in the gym is the record
+ * you find later. It reads "Done." only on the way out of a workout.
+ */
 export default function WorkoutDetailScreen() {
   const { workoutId } = useParams<{ workoutId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const fresh = Boolean((location.state as { fresh?: boolean } | null)?.fresh);
   const data = useSessionSummary(workoutId);
+  const name = useWorkoutName(workoutId);
+  const settings = useSettings();
+  const pro = settings?.mode === 'pro';
 
   if (data === undefined) {
     return (
       <Screen>
-        <p className="text-sm text-muted">Loading…</p>
+        <p className="t-meta pt-6">Loading…</p>
       </Screen>
     );
   }
   if (data === null) {
     return (
       <Screen>
-        <ScreenTitle>Not found</ScreenTitle>
-        <Button onClick={() => void navigate('/history')}>Back to history</Button>
+        <ScreenHeader title="Not found" />
+        <Button onClick={() => void navigate('/progress')}>Back to history</Button>
       </Screen>
     );
   }
 
   const { view, summary } = data;
   const inProgress = view.workout.finished_at === null;
+  const when = formatDayLabel(view.workout.started_at);
 
   return (
     <Screen>
-      <Link to="/history" className="mb-3 inline-block text-xs text-muted">
-        ← History
-      </Link>
-      <ScreenTitle>{formatDayLabel(view.workout.started_at)}</ScreenTitle>
+      {fresh ? null : <BackLink to="/progress">Sessions</BackLink>}
+      <ScreenHeader title={fresh ? 'Done.' : (name ?? 'Workout')} label={`${when} · ${name ?? 'Workout'}`} />
 
-      {inProgress ? (
-        <Card className="mb-4 border-accent/40 bg-accent/5 p-4">
-          <p className="text-sm text-white">This session is still in progress.</p>
-          <Button
-            variant="primary"
-            className="mt-3 w-full"
-            onClick={() => void navigate(`/workout/${view.workout.id}`)}
-          >
-            Resume
-          </Button>
-        </Card>
-      ) : null}
+      <div className="stack">
+        {inProgress ? (
+          <div className="stack-sm">
+            <p className="t-meta">This session is still in progress.</p>
+            <Button variant="primary" block onClick={() => void navigate(`/workout/${view.workout.id}`)}>
+              Resume
+            </Button>
+          </div>
+        ) : null}
 
-      <Card className="mb-4 grid grid-cols-3 divide-x divide-line p-0">
-        <Stat label="Duration" value={summary.duration_ms === null ? '—' : formatDuration(summary.duration_ms)} />
-        <Stat label="Volume" value={`${Math.round(summary.tonnage_kg).toLocaleString('en-GB')} kg`} />
-        <Stat label="Sets" value={String(summary.set_count)} />
-      </Card>
+        <div className="stats">
+          <Stat label="Duration" value={summary.duration_ms === null ? '—' : formatDuration(summary.duration_ms)} />
+          <Stat label="Volume" value={Math.round(summary.tonnage_kg).toLocaleString('en-GB')} unit="kg" />
+          <Stat label="Sets" value={summary.set_count} />
+        </div>
 
-      {summary.prs.length > 0 ? (
-        <Card className="mb-4 border-accent/40 bg-accent/5 p-4">
-          <h2 className="mb-2 text-xs uppercase tracking-wide text-accent">
-            {summary.prs.length === 1 ? 'Personal record' : 'Personal records'}
-          </h2>
-          <ul className="space-y-1.5">
-            {summary.prs.map((pr, index) => (
-              <li key={`${pr.set.id}-${pr.kind}-${index}`} className="text-sm">
-                <span className="text-white">{pr.exercise_name}</span>
-                <span className="text-muted">
-                  {' — '}
-                  {pr.kind === 'weight'
-                    ? `${pr.value}kg × ${pr.set.reps}`
-                    : `${estimate1RMRounded(pr.set.weight_kg, pr.set.reps)}kg estimated 1RM`}
-                  {pr.previous !== null
-                    ? ` (was ${pr.kind === 'weight' ? pr.previous : Math.round(pr.previous * 10) / 10}kg)`
-                    : ' (first time)'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      ) : null}
-
-      {summary.comparison ? (
-        <Card className="mb-4 p-4">
-          <h2 className="mb-1 text-xs uppercase tracking-wide text-muted">
-            Against the last run of this routine
-          </h2>
-          <p className="text-sm text-white">
-            {summary.comparison.tonnage_delta_kg === 0
-              ? 'Same volume'
-              : `${summary.comparison.tonnage_delta_kg > 0 ? '+' : ''}${Math.round(
-                  summary.comparison.tonnage_delta_kg,
-                ).toLocaleString('en-GB')} kg`}
+        {summary.comparison ? (
+          <p className="compare">
+            Against the last run of this routine ({formatDayLabel(summary.comparison.performed_at).toLowerCase()}):{' '}
+            <strong>
+              {summary.comparison.tonnage_delta_kg === 0
+                ? 'same volume'
+                : `${summary.comparison.tonnage_delta_kg > 0 ? '+' : ''}${Math.round(
+                    summary.comparison.tonnage_delta_kg,
+                  ).toLocaleString('en-GB')} kg`}
+            </strong>
             {summary.comparison.set_delta !== 0
               ? `, ${summary.comparison.set_delta > 0 ? '+' : ''}${summary.comparison.set_delta} sets`
               : ''}
+            .
           </p>
-          <p className="mt-0.5 text-xs text-muted">
-            vs {formatDayLabel(summary.comparison.performed_at)}
-          </p>
-        </Card>
-      ) : null}
+        ) : null}
 
-      {summary.sets_per_muscle.length > 0 ? (
-        <Card className="mb-4 p-4">
-          <h2 className="mb-2 text-xs uppercase tracking-wide text-muted">Sets per muscle group</h2>
-          <ul className="flex flex-wrap gap-1.5">
-            {summary.sets_per_muscle.map((entry) => (
-              <li key={entry.muscle}>
-                <Pill>
-                  <span className="first-letter:uppercase">{entry.muscle}</span>
-                  <span className="ml-1.5 tabular-nums text-white">{entry.sets}</span>
-                </Pill>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-[11px] text-muted">
-            A set credits its primary muscle in full and each secondary at a half.
-          </p>
-        </Card>
-      ) : null}
+        {summary.prs.length > 0 ? (
+          <section aria-labelledby="records">
+            <SectionLabel id="records">{summary.prs.length === 1 ? 'Personal record' : 'Personal records'}</SectionLabel>
+            <div>
+              {summary.prs.map((pr, index) => (
+                <div key={`${pr.set.id}-${pr.kind}-${index}`} className="pr-row">
+                  <span className="pr-badge">{pr.previous === null ? 'NEW' : pr.kind === 'weight' ? 'PR' : '1RM'}</span>
+                  <span className="list-main">
+                    <span className="font-semibold">{pr.exercise_name}</span>
+                    <span className="t-meta">
+                      {pr.kind === 'weight'
+                        ? `${pr.value}kg × ${pr.set.reps}`
+                        : `${estimate1RMRounded(pr.set.weight_kg, pr.set.reps)}kg estimated 1RM`}
+                      {pr.previous !== null
+                        ? ` (was ${pr.kind === 'weight' ? pr.previous : Math.round(pr.previous * 10) / 10}kg)`
+                        : ' (first time)'}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
-      <h2 className="mb-2 text-xs uppercase tracking-wide text-muted">Exercises</h2>
-      <ul className="space-y-3">
-        {view.exercises.map((entry) => (
-          <li key={entry.workoutExercise.id}>
-            <Card className="p-4">
-              <div className="mb-2 flex items-baseline justify-between gap-2">
-                {entry.exercise ? (
-                  <Link
-                    to={`/exercises/${entry.exercise.id}`}
-                    className="truncate text-sm font-medium text-white"
-                  >
-                    {entry.exercise.name}
-                  </Link>
-                ) : (
-                  <span className="text-sm text-muted">Unknown exercise</span>
-                )}
-                <span className="shrink-0 text-xs text-muted">
-                  {entry.sets.filter((set) => set.completed).length}
-                  {entry.sets.filter((set) => set.completed).length === 1 ? ' set' : ' sets'}
-                </span>
-              </div>
-              <ul className="space-y-1">
-                {entry.sets
-                  .filter((set) => set.completed)
-                  .map((set, index) => (
-                    <li
-                      key={set.id}
-                      className={`flex items-baseline gap-3 text-sm tabular-nums ${
-                        isChildSet(set) ? 'pl-4 text-muted' : 'text-white'
-                      }`}
-                    >
-                      <span className="w-5 text-xs text-muted">
-                        {isChildSet(set) ? '↳' : index + 1}
-                      </span>
-                      <span>
+        {pro && summary.sets_per_muscle.length > 0 ? (
+          <section className="card" aria-labelledby="per-muscle">
+            <h2 className="t-section" id="per-muscle" style={{ margin: 0 }}>
+              Sets per muscle group
+            </h2>
+            <MuscleBars data={summary.sets_per_muscle} idPrefix="sbar" />
+            <p className="t-meta">A set credits its primary muscle in full and each secondary at a half.</p>
+          </section>
+        ) : null}
+
+        <section aria-labelledby="exercises">
+          <SectionLabel id="exercises">Exercises</SectionLabel>
+          <div>
+            {view.exercises.map((entry) => {
+              const done = entry.sets.filter((set) => set.completed);
+              return (
+                <div key={entry.workoutExercise.id} className="summary-ex">
+                  {entry.exercise ? (
+                    <Link to={`/exercises/${entry.exercise.id}`} className="font-semibold">
+                      {entry.exercise.name}
+                    </Link>
+                  ) : (
+                    <span className="text-muted">Unknown exercise</span>
+                  )}
+                  <ul className="ex-sets">
+                    {done.map((set) => (
+                      <li key={set.id} className={set.type === 'warmup' || isChildSet(set) ? 'text-muted' : ''}>
+                        {set.type === 'warmup' ? 'W ' : isChildSet(set) ? '↳ ' : ''}
                         {set.weight_kg}kg × {set.reps}
-                      </span>
-                      {set.type !== 'working' ? (
-                        <span className="text-[11px] text-muted">{set.type.replace('_', ' ')}</span>
-                      ) : null}
-                    </li>
-                  ))}
-              </ul>
-            </Card>
-          </li>
-        ))}
-      </ul>
+                        {isChildSet(set) ? ` ${set.type.replace('_', '-')}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </section>
 
-      {view.workout.notes ? (
-        <Card className="mt-4 p-4">
-          <h2 className="mb-1 text-xs uppercase tracking-wide text-muted">Notes</h2>
-          <p className="text-sm text-white">{view.workout.notes}</p>
-        </Card>
-      ) : null}
+        {view.workout.notes ? (
+          <section aria-labelledby="notes">
+            <SectionLabel id="notes">Notes</SectionLabel>
+            <p>{view.workout.notes}</p>
+          </section>
+        ) : null}
+
+        {fresh ? (
+          <Button variant="primary" size="lg" block onClick={() => void navigate('/', { replace: true })}>
+            Done
+          </Button>
+        ) : null}
+      </div>
     </Screen>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="px-3 py-4 text-center">
-      <p className="text-[11px] uppercase tracking-wide text-muted">{label}</p>
-      <p className="mt-1 text-base font-semibold tabular-nums text-white">{value}</p>
-    </div>
   );
 }

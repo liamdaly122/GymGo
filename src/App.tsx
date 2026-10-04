@@ -1,4 +1,4 @@
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { HashRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import Layout from './components/Layout';
 import { useAppInit } from './hooks/useAppInit';
 import HomeScreen from './features/home/HomeScreen';
@@ -7,9 +7,8 @@ import SwapExerciseScreen from './features/workout/SwapExerciseScreen';
 import WorkoutShell from './features/workout/WorkoutShell';
 import ExerciseLibraryScreen from './features/exercises/ExerciseLibraryScreen';
 import ExerciseDetailScreen from './features/exercises/ExerciseDetailScreen';
-import HistoryScreen from './features/history/HistoryScreen';
 import WorkoutDetailScreen from './features/history/WorkoutDetailScreen';
-import ProgrammeScreen from '@/features/programme/ProgrammeScreen';
+import PlanScreen from './features/plan/PlanScreen';
 import RoutineEditorScreen from './features/routines/RoutineEditorScreen';
 import SettingsScreen from './features/settings/SettingsScreen';
 import GymsScreen from './features/gyms/GymsScreen';
@@ -51,20 +50,28 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<HomeScreen />} />
-          <Route path="/routines" element={<ProgrammeScreen />} />
+          <Route path="/plan" element={<PlanScreen />} />
+          <Route path="/plan/new" element={<PlansScreen />} />
+          <Route path="/plan/new/:goalId" element={<SplitPickerScreen />} />
+          <Route path="/plan/new/:goalId/:splitId" element={<PlanPreviewScreen />} />
           <Route path="/routines/:routineId" element={<RoutineEditorScreen />} />
-          <Route path="/history" element={<HistoryScreen />} />
-          <Route path="/history/:workoutId" element={<WorkoutDetailScreen />} />
           <Route path="/progress" element={<ProgressScreen />} />
-          <Route path="/plans" element={<PlansScreen />} />
-          <Route path="/plans/:goalId" element={<SplitPickerScreen />} />
-          <Route path="/plans/:goalId/:splitId" element={<PlanPreviewScreen />} />
-          {/* The A-Z browse still exists, just not as a tab of its own. */}
+          <Route path="/progress/lifts" element={<ProgressScreen />} />
+          <Route path="/history/:workoutId" element={<WorkoutDetailScreen />} />
+          {/* The A-Z browse still exists, reached from Progress → Lifts. */}
           <Route path="/exercises" element={<ExerciseLibraryScreen />} />
           <Route path="/exercises/:exerciseId" element={<ExerciseDetailScreen />} />
           <Route path="/gyms" element={<GymsScreen />} />
           <Route path="/gyms/:gymId" element={<GymEditorScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
+
+          {/* Where the five-tab app used to live. Kept so an installed app, a
+              bookmark or a back-stack entry from before the merge still lands. */}
+          <Route path="/routines" element={<Navigate to="/plan" replace />} />
+          <Route path="/history" element={<Navigate to="/progress" replace />} />
+          <Route path="/plans" element={<PlansRedirect />} />
+          <Route path="/plans/:goalId" element={<PlansRedirect />} />
+          <Route path="/plans/:goalId/:splitId" element={<PlansRedirect />} />
         </Route>
         {/* The active workout is full screen: no tab bar competing with set entry.
             Both screens sit under one shell so the rest timer and the wake lock
@@ -77,4 +84,12 @@ export default function App() {
       </Routes>
     </HashRouter>
   );
+}
+
+/** /plans/:goal/:split?days=4 → /plan/new/:goal/:split?days=4 */
+function PlansRedirect() {
+  const { goalId, splitId } = useParams();
+  const { search } = useLocation();
+  const to = ['/plan/new', goalId, splitId].filter(Boolean).join('/');
+  return <Navigate to={`${to}${search}`} replace />;
 }

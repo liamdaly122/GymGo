@@ -1,302 +1,282 @@
-import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import {
-  useActivePlan,
   useActiveWorkout,
-  useBlockOverview,
-  useFinishedWorkouts,
   usePlanSchedule,
   useRepeatCandidate,
   useRoutines,
+  useSessionList,
   useSettings,
+  useWorkoutName,
 } from '@/db/queries';
 import { repeatWorkout, startFreestyleWorkout, startWorkoutFromRoutine } from '@/db/mutations';
-import { Button, Card, Pill, Screen, ScreenTitle } from '@/components/ui';
+import { Button, Screen, ScreenHeader, SectionLabel } from '@/components/ui';
+import { Icon } from '@/components/icons';
 import WeekStrip from '@/components/WeekStrip';
-import BlockOverview from './BlockOverview';
-import ExerciseImage from '@/components/ExerciseImage';
 import { formatDayLabel, formatDuration } from '@/lib/dates';
-import { describeBlockProgress, movedLabel } from './blockCopy';
-import { useElapsed } from '@/hooks/useElapsed';
-import { formatWeekLabel } from '@/domain/programmes/block';
-import { estimateDurationMinutes } from '@/domain/sessionSummary';
+import { useToday, scheduleDay } from '@/hooks/useToday';
 import { setsForWeek } from '@/domain/programmes/block';
+import { estimateDurationMinutes } from '@/domain/sessionSummary';
+import { movedLabel } from '@/features/plan/blockCopy';
+import { localIsoDate } from '@/domain/schedule';
+import type { SessionRow } from '@/db/queries';
+import SessionListRow from '@/components/SessionListRow';
 
+/**
+ * Today: what you are doing, as a poster.
+ *
+ * The session name is the headline, the work is a list of sets × reps, and
+ * there is one button. Everything else — the week, a repeat, an empty
+ * workout, what you did recently — sits underneath and stays quiet.
+ */
 export default function HomeScreen() {
   const navigate = useNavigate();
   const active = useActiveWorkout();
-  const plan = useActivePlan();
+  const activeName = useWorkoutName(active?.id);
   const planned = usePlanSchedule();
   const routines = useRoutines();
   const settings = useSettings();
-  const recent = useFinishedWorkouts(3);
-  const elapsed = useElapsed(active?.started_at);
-  const block = useBlockOverview();
+  const recent = useSessionList(4);
   const repeatable = useRepeatCandidate();
-  // Collapsed by default: the screen's job is "what am I doing today", and the
-  // rest of the block is a question you ask occasionally.
-  const [showBlock, setShowBlock] = useState(false);
+  const repeatName = useWorkoutName(repeatable?.workout.id);
+  const today = useToday();
 
   const next = planned?.current ?? null;
 
-  // What today's session actually contains, so the strip is not guesswork.
+  // What the next session actually contains, shaped by this week of the block.
   const preview = useLiveQuery(async () => {
     if (!next?.routineId) return null;
     const rows = (await db.routine_exercises.where({ routine_id: next.routineId }).toArray())
       .filter((row) => row.deleted_at === null)
       .sort((a, b) => a.position - b.position);
     const exercises = await db.exercises.bulkGet(rows.map((row) => row.exercise_id));
-    const present = exercises.filter(Boolean).map((exercise) => exercise!);
+    const week = planned?.week;
+    const groups = new Map<string, number>();
     return {
-      count: rows.length,
       minutes: estimateDurationMinutes(
         rows.map((row) => ({
-          sets: planned?.week ? setsForWeek(row.target_sets, planned.week) : row.target_sets,
+          sets: week ? setsForWeek(row.target_sets, week) : row.target_sets,
           restSeconds: row.rest_seconds ?? 120,
         })),
       ),
-      first: present.slice(0, 3).map((exercise) => exercise.name),
-      hero: present[0] ?? null,
+      items: rows.map((row, index) => {
+        let badge: string | null = null;
+        if (row.superset_group) {
+          const n = (groups.get(row.superset_group) ?? 0) + 1;
+          groups.set(row.superset_group, n);
+          badge = `A${n}`;
+        }
+        return {
+          id: row.id,
+          name: exercises[index]?.name ?? 'Exercise',
+          sets: week ? setsForWeek(row.target_sets, week) : row.target_sets,
+          reps:
+            row.rep_range_low === row.rep_range_high
+              ? `${row.rep_range_low}`
+              : `${row.rep_range_low}–${row.rep_range_high}`,
+          badge,
+        };
+      }),
     };
   }, [next?.routineId, planned?.week.week]);
 
-  const handleStartFreestyle = async () => {
-    const workoutId = await startFreestyleWorkout();
-    void navigate(`/workout/${workoutId}`);
-  };
-
-  const handleRepeat = async () => {
-    if (!repeatable) return;
-    const workoutId = await repeatWorkout(repeatable.workout.id);
-    void navigate(`/workout/${workoutId}`);
-  };
+  // Anything finished today leads the screen, so the day's work is the first thing you see.
+  const trainedToday = recent?.filter((row) => localIsoDate(new Date(row.workout.started_at)) === today) ?? [];
 
   const handleStartPlanned = async () => {
     if (!next?.routineId) return;
     const workoutId = await startWorkoutFromRoutine(next.routineId);
     void navigate(`/workout/${workoutId}`);
   };
+  const handleStartEmpty = async () => {
+    const workoutId = await startFreestyleWorkout();
+    void navigate(`/workout/${workoutId}`);
+  };
+  const handleRepeat = async () => {
+    if (!repeatable) return;
+    const workoutId = await repeatWorkout(repeatable.workout.id);
+    void navigate(`/workout/${workoutId}`);
+  };
+
+  const when = next
+    ? next.status === 'today'
+      ? 'Up next'
+      : formatDayLabel(`${next.date}T12:00:00`)
+    : null;
+  const moved = next ? movedLabel(next) : null;
 
   return (
     <Screen>
-      <ScreenTitle
+      <ScreenHeader
+        title="Today"
+        hideTitle
+        label={new Date(`${today}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
         action={
-          <Link to="/settings" className="text-xs text-muted" aria-label="Settings">
-            Settings
+          <Link to="/settings" className="icon-btn" aria-label="Settings">
+            <Icon name="gear" />
           </Link>
         }
-      >
-        Train
-      </ScreenTitle>
+      />
 
-      {active ? (
-        <Card className="mb-4 border-accent/40 bg-accent/5 p-4">
-          <p className="text-xs text-accent">Workout in progress</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">{formatDuration(elapsed)}</p>
-          <Button
-            variant="primary"
-            className="mt-3 w-full"
-            onClick={() => void navigate(`/workout/${active.id}`)}
-          >
-            Resume
-          </Button>
-        </Card>
-      ) : null}
+      <div className="stack">
+        {trainedToday.map((row) => (
+          <DoneTodayRow key={row.workout.id} row={row} />
+        ))}
 
-      {planned && plan ? (
-        <Card className="mb-4 p-4">
-          <button
-            onClick={() => setShowBlock((open) => !open)}
-            aria-expanded={showBlock}
-            aria-controls="block-overview"
-            className="mb-3 flex w-full items-baseline justify-between gap-2 text-left"
-          >
-            <p className="min-w-0 truncate text-xs text-muted">{plan.name}</p>
-            <span className="flex shrink-0 items-center gap-1 text-xs text-blue-400">
-              {formatWeekLabel(planned.week)}
-              <svg
-                viewBox="0 0 20 20"
-                aria-hidden="true"
-                className={`h-3.5 w-3.5 transition-transform ${showBlock ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M5 8l5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
-          </button>
+        {planned && next ? (
+          <section className="hero" aria-label="Next session">
+            <div>
+              <p className="kicker">
+                {when} — week {planned.week.week} / {planned.week.totalWeeks} · {planned.week.label}
+              </p>
+              <h2 className="hero-title">{next.name}</h2>
+            </div>
+            <p className="t-meta">
+              {preview ? `${preview.items.length} exercises · about ${preview.minutes} min` : ' '}
+              {moved ? ` · ${moved}` : ''}
+            </p>
+            {preview && preview.items.length > 0 ? (
+              <ul className="hero-list">
+                {preview.items.map((item) => (
+                  <li key={item.id}>
+                    <span>
+                      {item.name}
+                      {item.badge ? <> <span className="ss">{item.badge}</span></> : null}
+                    </span>
+                    <span>
+                      {item.sets} × {item.reps}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {active ? (
+              <Button variant="primary" size="lg" block onClick={() => void navigate(`/workout/${active.id}`)}>
+                Resume {activeName ?? 'workout'}
+              </Button>
+            ) : (
+              <Button variant="primary" size="lg" block disabled={!next.routineId} onClick={() => void handleStartPlanned()}>
+                {next.status === 'upcoming' ? `Start early: ${next.name}` : `Start ${next.name}`}
+              </Button>
+            )}
+          </section>
+        ) : planned ? (
+          <section className="hero" aria-label="Block finished">
+            <div>
+              <p className="kicker">Block finished</p>
+              <h2 className="hero-title">Done</h2>
+            </div>
+            <p className="t-meta">Every session of this block is trained. Start the next one from Plan.</p>
+            <Button variant="primary" size="lg" block onClick={() => void navigate('/plan')}>
+              Go to Plan
+            </Button>
+          </section>
+        ) : (
+          <section className="hero" aria-label="No plan">
+            <div>
+              <p className="kicker">No plan yet</p>
+              <h2 className="hero-title">Train</h2>
+            </div>
+            <p className="t-meta">
+              Pick a goal and GymGo builds a five-week block and puts it on your calendar.
+            </p>
+            <Button variant="primary" size="lg" block onClick={() => void navigate('/plan/new')}>
+              Build a plan
+            </Button>
+          </section>
+        )}
 
-          {/* onSelect matters: without it the seven day buttons rendered with
-              press states and did nothing at all. A day you have trained opens
-              what you logged; one you have not is not a link to anywhere. */}
+        {planned ? (
           <WeekStrip
             schedule={planned.schedule}
+            today={scheduleDay(today)}
             weekStartsOn={settings?.week_starts_on ?? 1}
             onSelect={(session) => {
               if (session.workoutId) void navigate(`/history/${session.workoutId}`);
+              else if (session.routineId) void navigate(`/routines/${session.routineId}`);
             }}
-            {...(next ? { selectedDate: next.date } : {})}
           />
+        ) : null}
 
-          <p className="mt-3 text-[11px] leading-snug text-muted">{planned.week.intent}</p>
-
-          <div id="block-overview">
-            {showBlock && block ? <BlockOverview weeks={block} /> : null}
-          </div>
-
-          {!showBlock ? (
-            <button
-              onClick={() => setShowBlock(true)}
-              className="mt-3 w-full rounded-lg border border-line bg-raised py-2 text-[11px] text-muted active:bg-line"
-            >
-              See the whole {planned.week.totalWeeks}-week block
-            </button>
-          ) : null}
-
-          {next ? (
-            <div className="mt-4 border-t border-line pt-4">
-              <p className="text-[10px] uppercase tracking-wide text-muted">
-                {next.status === 'today'
-                  ? "Today's workout"
-                  : `Next · ${formatDayLabel(`${next.date}T12:00:00`)}`}
-                {movedLabel(next) ? ` · ${movedLabel(next)}` : ''}
-              </p>
-              <h2 className="mt-0.5 text-lg font-semibold text-white">{next.name}</h2>
-
-              {preview ? (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <Pill>{preview.count} exercises</Pill>
-                  <Pill>~{preview.minutes} min</Pill>
-                  {planned.week.isDeload ? <Pill tone="accent">Deload</Pill> : null}
-                </div>
-              ) : null}
-
-              {preview?.hero ? (
-                <div className="mt-3 overflow-hidden rounded-xl">
-                  <ExerciseImage
-                    sourceId={preview.hero.source_id}
-                    muscle={preview.hero.primary_muscle}
-                    name={preview.hero.name}
-                    rounded="rounded-xl"
-                    className="h-36 w-full"
-                  />
-                </div>
-              ) : null}
-
-              {preview && preview.first.length > 0 ? (
-                <p className="mt-2 truncate text-xs text-muted">{preview.first.join(' · ')}</p>
-              ) : null}
-
+        {!active ? (
+          repeatable ? (
+            <div className="row2">
               <Button
-                variant="primary"
-                className="mt-3 h-14 w-full text-base"
-                disabled={!next.routineId || Boolean(active)}
-                onClick={() => void handleStartPlanned()}
+                onClick={() => void handleRepeat()}
+                aria-label={`Repeat ${repeatName && repeatName !== 'Workout' ? repeatName : formatDayLabel(repeatable.workout.started_at)}`}
               >
-                Start workout
+                Repeat {repeatName && repeatName !== 'Workout' ? repeatName : 'last'}
+              </Button>
+              <Button onClick={() => void handleStartEmpty()} aria-label="Start empty workout">
+                Empty workout
               </Button>
             </div>
           ) : (
-            <p className="mt-4 border-t border-line pt-4 text-sm text-muted">
-              Block finished. Start another from Plans.
-            </p>
-          )}
+            <Button block onClick={() => void handleStartEmpty()} aria-label="Start empty workout">
+              Empty workout
+            </Button>
+          )
+        ) : null}
 
-          <p className="mt-3 text-[11px] text-muted">
-            {describeBlockProgress(planned.progress)}
-          </p>
-        </Card>
-      ) : null}
-
-      {!active ? (
-        <Button
-          variant={planned ? 'secondary' : 'primary'}
-          className={`mb-4 w-full ${planned ? '' : 'h-14 text-base'}`}
-          onClick={() => void handleStartFreestyle()}
-        >
-          Start empty workout
-        </Button>
-      ) : null}
-
-      {/* Skips a session with nothing logged: finishWorkout soft-deletes
-          exercises that were never used, so there would be nothing to repeat. */}
-      {!active && repeatable ? (
-        <Button
-          className="mb-4 w-full"
-          onClick={() => void handleRepeat()}
-        >
-          <span className="block">Repeat {formatDayLabel(repeatable.workout.started_at)}</span>
-          <span className="mt-0.5 block text-[11px] font-normal text-muted">
-            {repeatable.names.slice(0, 2).join(', ')}
-            {repeatable.exerciseCount > 2 ? ` +${repeatable.exerciseCount - 2}` : ''} ·{' '}
-            {repeatable.setCount} sets
-          </span>
-        </Button>
-      ) : null}
-
-      {!planned ? (
-        <section className="mb-6">
-          <h2 className="mb-2 text-xs uppercase tracking-wide text-muted">Routines</h2>
-          {routines === undefined ? null : routines.length === 0 ? (
-            <Card className="p-4">
-              <p className="text-sm text-white">No plan yet.</p>
-              <p className="mt-1 text-xs text-muted">
-                Pick a goal and GymGo will build a five-week block and put it on your calendar.
-              </p>
-              <Button variant="primary" className="mt-3 w-full" onClick={() => void navigate('/plans')}>
-                Build a plan
-              </Button>
-            </Card>
-          ) : (
-            <ul className="space-y-2">
+        {!planned && routines && routines.length > 0 ? (
+          <section aria-labelledby="your-routines">
+            <SectionLabel id="your-routines">Your routines</SectionLabel>
+            <ul className="list">
               {routines.slice(0, 4).map((routine) => (
                 <li key={routine.id}>
-                  <Link to={`/routines/${routine.id}`} className="block">
-                    <Card className="flex items-center justify-between p-4 active:bg-raised">
-                      <span className="truncate text-sm text-white">{routine.name}</span>
-                      <span className="shrink-0 text-xs text-muted">Open</span>
-                    </Card>
+                  <Link to={`/routines/${routine.id}`} className="list-row">
+                    <span className="list-main">
+                      <strong>{routine.name.split(' — ').at(-1)}</strong>
+                    </span>
+                    <Icon name="chev" />
                   </Link>
                 </li>
               ))}
             </ul>
+          </section>
+        ) : null}
+
+        <section aria-labelledby="recent">
+          <div className="flex items-baseline justify-between">
+            <SectionLabel id="recent">Recent</SectionLabel>
+            <Link to="/progress" className="btn-text">
+              All history
+            </Link>
+          </div>
+          {recent && recent.length > 0 ? (
+            <ul className="list">
+              {recent.slice(0, 3).map((row) => (
+                <li key={row.workout.id}>
+                  <SessionListRow row={row} />
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="t-meta">Nothing logged yet.</p>
           )}
         </section>
-      ) : null}
-
-      <section>
-        <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-xs uppercase tracking-wide text-muted">Recent</h2>
-          <Link to="/history" className="text-xs text-muted">
-            All history
-          </Link>
-        </div>
-        {recent && recent.length > 0 ? (
-          <ul className="space-y-2">
-            {recent.map((workout) => (
-              <li key={workout.id}>
-                <Link to={`/history/${workout.id}`} className="block">
-                  <Card className="flex items-center justify-between p-4 active:bg-raised">
-                    <span className="text-sm text-white">{formatDayLabel(workout.started_at)}</span>
-                    <span className="text-xs text-muted">
-                      {workout.finished_at
-                        ? formatDuration(
-                            Date.parse(workout.finished_at) - Date.parse(workout.started_at),
-                          )
-                        : ''}
-                    </span>
-                  </Card>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-xs text-muted">Nothing logged yet.</p>
-        )}
-      </section>
+      </div>
     </Screen>
+  );
+}
+
+function DoneTodayRow({ row }: { row: SessionRow }) {
+  return (
+    <ul className="list">
+      <li>
+        <Link to={`/history/${row.workout.id}`} className="list-row">
+          <span className="list-main">
+            <strong>{row.name} done today</strong>
+            <span className="t-meta">
+              {formatDuration(row.durationMs)} · {Math.round(row.tonnage).toLocaleString('en-GB')} kg · {row.sets}{' '}
+              {row.sets === 1 ? 'set' : 'sets'}
+              {row.records ? ` · ${row.records} PR${row.records === 1 ? '' : 's'}` : ''}
+            </span>
+          </span>
+          <Icon name="chev" />
+        </Link>
+      </li>
+    </ul>
   );
 }

@@ -48,7 +48,7 @@ const addExercise = async (query, name) => {
 };
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
-await step('app loads', async () => { await p.getByRole('heading', {name:'Train'}).waitFor({timeout:40000}); });
+await step('app loads', async () => { await p.getByRole('heading', {name:'Today'}).waitFor({timeout:40000}); });
 
 await step('start a barbell session', async () => {
   await p.getByRole('button', { name: 'Start empty workout' }).click();
@@ -188,7 +188,7 @@ await step('a dumbbell lift gets no plate line', async () => {
   if (/bar \+/.test(body)) throw new Error('dumbbells have no plates to load');
 });
 
-await step('finish, then repeat the session from Train', async () => {
+await step('finish, then repeat the session from Today', async () => {
   // Log the row too: finishWorkout drops exercises with nothing against them,
   // so an unlogged one would not be there to repeat.
   await p.getByLabel('Set 1 weight in kilograms').first().fill('30');
@@ -205,7 +205,7 @@ await step('finish, then repeat the session from Train', async () => {
   await p.goto(BASE + '#/', { waitUntil: 'networkidle' });
   await p.waitForTimeout(900);
   const repeat = p.getByRole('button', { name: /Repeat/ }).first();
-  if (!(await repeat.count())) throw new Error('expected a repeat button on Train');
+  if (!(await repeat.count())) throw new Error('expected a repeat button on Today');
   await repeat.click();
   await p.waitForURL(/#\/workout\//, { timeout: 15000 });
   await p.waitForTimeout(900);

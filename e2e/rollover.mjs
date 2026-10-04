@@ -25,12 +25,18 @@ const readDb = () => p.evaluate(async () => {
 });
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
-await step('app loads', async () => { await p.getByRole('heading', { name: 'Train' }).waitFor({ timeout: 40000 }); });
+await step('app loads', async () => { await p.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 40000 }); });
+
+// The poster on Today. Its kicker and title are display type, upper-cased by
+// CSS, so they are read with textContent rather than innerText.
+const hero = () => p.getByRole('region', { name: 'Next session' });
+const kicker = async () => (await hero().locator('.kicker').textContent()).trim();
+const heroTitle = async () => (await hero().locator('h2').textContent()).trim();
 
 await step('build a plan', async () => {
-  await p.goto(BASE + '#/plans/build_muscle', { waitUntil: 'networkidle' });
+  await p.goto(BASE + '#/plan/new/build_muscle', { waitUntil: 'networkidle' });
   await p.waitForTimeout(700);
-  const href = await p.locator('a[href*="/plans/build_muscle/"]').first().getAttribute('href');
+  const href = await p.locator('a[href*="/plan/new/build_muscle/"]').first().getAttribute('href');
   await p.goto(BASE + href.replace(/^#?\/?/, '#/').replace('##', '#'), { waitUntil: 'networkidle' });
   await p.getByRole('button', { name: /Use this plan/i }).click();
   await p.waitForTimeout(1500);
@@ -63,15 +69,16 @@ await step('the first session is offered today and says it moved', async () => {
   const { names } = await readDb();
   firstName = names[0];
   const body = await p.locator('body').innerText();
-  if (!/today's workout/i.test(body)) throw new Error(`expected a session today, saw: ${body.replace(/\n/g, ' | ').slice(0, 400)}`);
-  if (!/moved from/i.test(body)) throw new Error('a rolled session should say where it moved from');
-  const hero = await p.locator('h2').first().innerText();
-  if (hero.trim() !== firstName) throw new Error(`expected week 1's first session (${firstName}) today, got ${hero}`);
+  if (!/^Up next/.test(await kicker())) throw new Error(`expected a session today, saw: ${await kicker()}`);
+  if (!/moved from/i.test(await hero().innerText())) throw new Error('a rolled session should say where it moved from');
+  const title = await heroTitle();
+  if (title !== firstName) throw new Error(`expected week 1's first session (${firstName}) today, got ${title}`);
   if (/missed/i.test(body)) throw new Error('nothing should be reported as missed any more');
 });
+await p.screenshot({ path: 'e2e/shot-rollover.png' });
 
 await step('training it ticks off the slot it rolled from', async () => {
-  await p.getByRole('button', { name: 'Start workout', exact: true }).click();
+  await hero().getByRole('button', { name: `Start ${firstName}`, exact: true }).click();
   await p.waitForURL(/#\/workout\//, { timeout: 15000 });
   await p.getByLabel('Set 1 weight in kilograms').first().fill('40');
   await p.getByLabel('Set 1 repetitions').first().fill('8');
@@ -93,15 +100,17 @@ await step('the next session waits for tomorrow', async () => {
   await p.goto(BASE + '#/', { waitUntil: 'networkidle' });
   await p.waitForTimeout(1000);
   const { names } = await readDb();
-  const body = await p.locator('body').innerText();
-  if (/today's workout/i.test(body)) throw new Error('one session a day: nothing else should be offered today');
-  if (!/Next · Tomorrow/i.test(body)) throw new Error(`the next session should be tomorrow, saw: ${body.replace(/\n/g, ' | ').slice(0, 400)}`);
-  const hero = await p.locator('h2').first().innerText();
-  if (hero.trim() !== names[1]) throw new Error(`expected ${names[1]} next, got ${hero}`);
+  const when = await kicker();
+  if (/^Up next/.test(when)) throw new Error('one session a day: nothing else should be offered today');
+  if (!/^Tomorrow —/.test(when)) throw new Error(`the next session should be tomorrow, saw: ${when}`);
+  const title = await heroTitle();
+  if (title !== names[1]) throw new Error(`expected ${names[1]} next, got ${title}`);
+  // What was trained today leads the screen.
+  if (!/done today/i.test(await p.locator('body').innerText())) throw new Error("today's session should be listed as done");
 });
 
 await step('the week strip shows today as done', async () => {
-  const today = await p.locator('ul li button[aria-current="date"]').getAttribute('aria-label');
+  const today = await p.locator('ol[aria-label="This week"] li button[aria-current="date"]').getAttribute('aria-label');
   if (!/done/.test(today ?? '')) throw new Error(`today's day should read done, got: ${today}`);
 });
 

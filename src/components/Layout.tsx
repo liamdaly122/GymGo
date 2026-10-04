@@ -1,39 +1,82 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useActiveWorkout, useWorkoutName } from '@/db/queries';
+import { useElapsed } from '@/hooks/useElapsed';
+import { formatClock } from '@/lib/dates';
+import { Icon, type IconName } from './icons';
 
-const TABS = [
-  { to: '/', label: 'Train', end: true },
-  { to: '/routines', label: 'Programme', end: false },
-  { to: '/history', label: 'History', end: false },
-  { to: '/progress', label: 'Progress', end: false },
-  { to: '/plans', label: 'Plans', end: false },
+/**
+ * Three tabs where there were five. Programme and Plans were both "what I'll
+ * train", History and Progress both "what I did"; the owner tested the merge
+ * in the drafts and chose it.
+ *
+ * A tab stays lit on the screens beneath it, so a session opened from
+ * Progress still reads as Progress.
+ */
+const TABS: Array<{ to: string; label: string; icon: IconName; owns: (path: string) => boolean }> = [
+  {
+    to: '/',
+    label: 'Today',
+    icon: 'today',
+    owns: (path) => path === '/' || path.startsWith('/settings') || path.startsWith('/gyms'),
+  },
+  {
+    to: '/plan',
+    label: 'Plan',
+    icon: 'plan',
+    owns: (path) => path.startsWith('/plan') || path.startsWith('/routines'),
+  },
+  {
+    to: '/progress',
+    label: 'Progress',
+    icon: 'progress',
+    owns: (path) =>
+      path.startsWith('/progress') || path.startsWith('/history') || path.startsWith('/exercises'),
+  },
 ];
 
 export default function Layout() {
+  const { pathname } = useLocation();
   return (
     <>
       <Outlet />
-      <nav
-        className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface/95 backdrop-blur"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-      >
-        <ul className="mx-auto flex max-w-lg">
-          {TABS.map((tab) => (
-            <li key={tab.to} className="flex-1">
-              <NavLink
+      <ResumeBar />
+      <nav className="tabs" aria-label="Sections">
+        <div className="tabs-inner">
+          {TABS.map((tab) => {
+            const on = tab.owns(pathname);
+            return (
+              <Link
+                key={tab.to}
                 to={tab.to}
-                end={tab.end}
-                className={({ isActive }) =>
-                  `flex min-h-14 items-center justify-center text-xs font-medium transition-colors ${
-                    isActive ? 'text-accent' : 'text-muted'
-                  }`
-                }
+                className={`tab ${on ? 'on' : ''}`}
+                aria-current={on ? 'page' : undefined}
               >
-                {tab.label}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
+                <Icon name={tab.icon} />
+                <span>{tab.label}</span>
+              </Link>
+            );
+          })}
+        </div>
       </nav>
     </>
+  );
+}
+
+/** On every tab while a workout is open, so leaving one never loses it. */
+function ResumeBar() {
+  const active = useActiveWorkout();
+  const name = useWorkoutName(active?.id);
+  const elapsed = useElapsed(active?.started_at);
+  const navigate = useNavigate();
+  if (!active) return null;
+  return (
+    <div className="resume">
+      <p>
+        {name ?? 'Workout'} in progress · <span className="num">{formatClock(elapsed)}</span>
+      </p>
+      <button type="button" className="btn btn-sm" onClick={() => void navigate(`/workout/${active.id}`)}>
+        Resume
+      </button>
+    </div>
   );
 }

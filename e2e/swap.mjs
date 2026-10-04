@@ -19,7 +19,7 @@ const openMore = async (page, name) => {
 };
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
-await step('app loads', async () => { await p.getByRole('heading', {name:'Train'}).waitFor({timeout:40000}); });
+await step('app loads', async () => { await p.getByRole('heading', {name:'Today'}).waitFor({timeout:40000}); });
 
 await step('start a session with bench press', async () => {
   await p.getByRole('button', { name: 'Start empty workout' }).click();

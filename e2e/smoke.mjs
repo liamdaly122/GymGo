@@ -26,7 +26,7 @@ const step = async (label, fn) => {
 
 await page.goto(BASE, { waitUntil: 'networkidle' });
 await step('app loads past seeding', async () => {
-  await page.getByRole('heading', { name: 'Train' }).waitFor({ timeout: 30000 });
+  await page.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 30000 });
 });
 
 await step('start empty workout', async () => {
@@ -120,9 +120,11 @@ await step('workout persisted to IndexedDB', async () => {
 });
 
 await step('session summary shows duration, volume and sets', async () => {
+  // Stat tiles: an upper-cased label over the figure, the unit beneath.
   const text = await page.locator('main, body').first().innerText();
-  if (!/500 kg/.test(text)) throw new Error(`expected 500 kg volume, saw: ${text.replace(/\n/g, ' | ')}`);
-  if (!/sets/i.test(text)) throw new Error('expected a Sets stat');
+  if (!/Volume\s+500\s+kg/i.test(text)) throw new Error(`expected 500 kg volume, saw: ${text.replace(/\n/g, ' | ')}`);
+  if (!/Duration\s+\S+/i.test(text)) throw new Error('expected a Duration stat');
+  if (!/Sets\s+1\b/i.test(text)) throw new Error('expected a Sets stat of 1');
 });
 
 await step('first ever session is reported as a PR', async () => {
@@ -156,10 +158,11 @@ await step('reports the weight PR against the previous session', async () => {
 });
 
 await step('history lists both sessions', async () => {
+  // History is Progress → Sessions now; the old route still lands there.
   await page.goto(`${BASE}#/history`, { waitUntil: 'networkidle' });
-  await page.getByRole('heading', { name: 'History' }).waitFor();
+  await page.getByRole('heading', { name: 'Progress' }).waitFor();
   await page.waitForTimeout(500);
-  // Scoped to history links: a bare `ul li` also matches the four nav tabs.
+  // Scoped to history links: a bare `ul li` also matches the nav tabs.
   const rows = await page.locator('a[href*="#/history/"]').count();
   if (rows !== 2) throw new Error(`expected 2 history rows, got ${rows}`);
 });
@@ -217,8 +220,8 @@ await step('discard that scratch session', async () => {
 // ---------------------------------------------------------------------------
 
 await step('create a routine and add an exercise', async () => {
-  await page.goto(`${BASE}#/routines`, { waitUntil: 'networkidle' });
-  await page.getByRole('button', { name: 'New' }).click();
+  await page.goto(`${BASE}#/plan`, { waitUntil: 'networkidle' });
+  await page.getByRole('button', { name: 'New routine' }).click();
   await page.getByLabel('Routine name').fill('Lower A');
   await page.getByRole('button', { name: 'Create' }).click();
   await page.getByRole('button', { name: 'Start this workout' }).waitFor();
@@ -254,7 +257,7 @@ await step('start a workout from the routine and log it', async () => {
 });
 
 await step('rewrite the routine completely', async () => {
-  await page.goto(`${BASE}#/routines`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}#/plan`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: /Lower A/ }).click();
   await page.getByRole('button', { name: 'Start this workout' }).waitFor();
   // Swap the exercise out for a different one and change every target.
@@ -322,7 +325,7 @@ await step('wipe the local database', async () => {
   await page.getByRole('button', { name: 'Wipe and reseed local database' }).click();
   await page.getByRole('button', { name: 'Wipe and reseed' }).click();
   await page.waitForTimeout(2500);
-  await page.goto(`${BASE}#/history`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}#/progress`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(600);
   const rows = await page.locator('a[href*="#/history/"]').count();
   if (rows !== 0) throw new Error(`expected an empty history after the wipe, got ${rows} rows`);
@@ -339,7 +342,7 @@ await step('restore everything from the backup', async () => {
 });
 
 await step('the restored history is intact', async () => {
-  await page.goto(`${BASE}#/history`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}#/progress`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
   const rows = await page.locator('a[href*="#/history/"]').count();
   if (rows !== 3) throw new Error(`expected 3 restored sessions, got ${rows}`);
@@ -357,7 +360,7 @@ await step('a rejected import leaves the database alone', async () => {
   if (!/not exported by GymGo/i.test(body)) {
     throw new Error(`expected a rejection message, saw: ${body.replace(/\n/g, ' | ').slice(0, 300)}`);
   }
-  await page.goto(`${BASE}#/history`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}#/progress`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(700);
   const rows = await page.locator('a[href*="#/history/"]').count();
   if (rows !== 3) throw new Error(`a rejected import damaged the database: ${rows} sessions left`);

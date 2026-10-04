@@ -24,7 +24,7 @@ const step = async (label, fn) => {
 
 await step('production build loads and seeds', async () => {
   await page.goto(BASE, { waitUntil: 'networkidle' });
-  await page.getByRole('heading', { name: 'Train' }).waitFor({ timeout: 40000 });
+  await page.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 40000 });
 });
 
 await step('service worker takes control', async () => {
@@ -47,7 +47,22 @@ await ctx.setOffline(true);
 
 await step('reloads with no network at all', async () => {
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByRole('heading', { name: 'Train' }).waitFor({ timeout: 30000 });
+  await page.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 30000 });
+});
+
+await step('the bundled fonts load with the network cut', async () => {
+  // The type is bundled, never fetched from a font CDN: a basement with no
+  // signal must not fall back to the system face.
+  const loaded = await page.evaluate(async () => {
+    await document.fonts.ready;
+    return [...document.fonts].filter((f) => f.status === 'loaded').map((f) => `${f.family} ${f.weight}`);
+  });
+  for (const family of ['Big Shoulders Display', 'Barlow']) {
+    if (!loaded.some((f) => f.includes(family))) {
+      throw new Error(`${family} did not load offline; loaded: ${loaded.join(', ') || 'nothing'}`);
+    }
+  }
+  console.log(`       loaded: ${loaded.join(', ')}`);
 });
 
 await step('logs a full workout offline', async () => {
@@ -66,8 +81,8 @@ await step('logs a full workout offline', async () => {
 });
 
 await step('the offline workout is in history after another offline reload', async () => {
-  await page.goto(`${BASE}#/history`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('heading', { name: 'History' }).waitFor({ timeout: 30000 });
+  await page.goto(`${BASE}#/progress`, { waitUntil: 'domcontentloaded' });
+  await page.getByRole('heading', { name: 'Progress' }).waitFor({ timeout: 30000 });
   await page.waitForTimeout(600);
   const rows = await page.locator('a[href*="#/history/"]').count();
   if (rows !== 1) throw new Error(`expected 1 history row offline, got ${rows}`);

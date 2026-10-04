@@ -10,7 +10,7 @@ import { db } from './db';
 import { SETTINGS_ID, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
 import { swapSuggestions, type SwapSuggestions } from '@/domain/search';
-import { personalRecords } from '@/domain/prs';
+import { personalRecords, recordsBrokenPerSession } from '@/domain/prs';
 import { estimateDurationMinutes, summariseSession } from '@/domain/sessionSummary';
 import {
   blockProgress,
@@ -136,6 +136,94 @@ export function useActiveWorkout(): Workout | undefined | null {
     open.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
     return open[0] ?? null;
   }, []);
+}
+
+/**
+ * What a workout is called on screen: its routine's session name ("Push"), or
+ * "Workout" for one started empty.
+ */
+export function useWorkoutName(workoutId: string | undefined): string | undefined {
+  return useLiveQuery(async () => {
+    if (!workoutId) return undefined;
+    const workout = await db.workouts.get(workoutId);
+    if (!workout) return undefined;
+    const routine = workout.routine_id ? await db.routines.get(workout.routine_id) : undefined;
+    return routine ? (routine.name.split(' — ').at(-1) ?? routine.name) : 'Workout';
+  }, [workoutId]);
+}
+
+export interface SessionRow {
+  workout: Workout;
+  /** The routine's session name ("Push"), or "Workout" for one started empty. */
+  name: string;
+  durationMs: number;
+  tonnage: number;
+  /** Working sets, through the same rule as every other volume count. */
+  sets: number;
+  /** Records broken — beating an earlier best, never a first. */
+  records: number;
+}
+
+/**
+ * Finished sessions, newest first, with the numbers a list row shows.
+ *
+ * One pass over the tables rather than a query per row, so a long history does
+ * not fan out into hundreds of reads. Records are counted oldest first, since a
+ * record means beating everything before it.
+ */
+export function useSessionList(limit = 50): SessionRow[] | undefined {
+  return useLiveQuery(async () => {
+    const workouts = live(await db.workouts.toArray())
+      .filter((workout) => workout.finished_at !== null)
+      .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at));
+    const workoutExercises = live(
+      await db.workout_exercises.where('workout_id').anyOf(workouts.map((w) => w.id)).toArray(),
+    );
+    const sets = live(
+      await db.sets.where('workout_exercise_id').anyOf(workoutExercises.map((we) => we.id)).toArray(),
+    );
+    // Deleted routines still name the sessions they produced.
+    const routineNames = new Map(
+      (await db.routines.toArray()).map((routine) => [routine.id, routine.name.split(' — ').at(-1) ?? routine.name]),
+    );
+
+    const setsByExercise = new Map<string, WorkoutSet[]>();
+    for (const set of sets) {
+      const bucket = setsByExercise.get(set.workout_exercise_id);
+      if (bucket) bucket.push(set);
+      else setsByExercise.set(set.workout_exercise_id, [set]);
+    }
+    const exercisesByWorkout = new Map<string, WorkoutExercise[]>();
+    for (const we of workoutExercises) {
+      const bucket = exercisesByWorkout.get(we.workout_id);
+      if (bucket) bucket.push(we);
+      else exercisesByWorkout.set(we.workout_id, [we]);
+    }
+
+    const sessions = workouts.map((workout) => ({
+      id: workout.id,
+      exercises: (exercisesByWorkout.get(workout.id) ?? []).map((we) => ({
+        exerciseId: we.exercise_id,
+        sets: setsByExercise.get(we.id) ?? [],
+      })),
+    }));
+    const records = recordsBrokenPerSession(sessions);
+
+    return workouts
+      .map((workout, index) => {
+        const all = sessions[index]!.exercises.flatMap((entry) => entry.sets);
+        return {
+          workout,
+          name: workout.routine_id ? (routineNames.get(workout.routine_id) ?? 'Workout') : 'Workout',
+          durationMs: Date.parse(workout.finished_at!) - Date.parse(workout.started_at),
+          tonnage: totalTonnage(all),
+          sets: totalWorkingSets(all),
+          records: records.get(workout.id) ?? 0,
+        };
+      })
+      .reverse()
+      .slice(0, limit);
+  }, [limit]);
 }
 
 export function useFinishedWorkouts(limit = 100): Workout[] | undefined {
@@ -737,6 +825,73 @@ export function useProgressOverview(): ProgressOverview | undefined {
         .map(([id, sessions]) => ({ id, name: exerciseById.get(id)?.name ?? 'Unknown', sessions }))
         .sort((a, b) => b.sessions - a.sessions || a.name.localeCompare(b.name, 'en')),
     };
+  }, []);
+}
+
+export interface LiftSummary {
+  id: string;
+  name: string;
+  muscle: string;
+  sessions: number;
+  /** Heaviest top working set per session, oldest first — the sparkline. */
+  series: number[];
+  best: { weight: number; reps: number };
+  bestE1rm: number;
+}
+
+/**
+ * Every lift you have trained, for Progress → Lifts: how many sessions, the
+ * shape of its top set over time, and its records. One pass over the tables,
+ * through the same top-working-set gate as every other record.
+ */
+export function useLiftSummaries(): LiftSummary[] | undefined {
+  return useLiveQuery(async () => {
+    const workouts = live(await db.workouts.toArray()).filter((w) => w.finished_at !== null);
+    const startedAt = new Map(workouts.map((w) => [w.id, Date.parse(w.started_at)]));
+    const workoutExercises = live(
+      await db.workout_exercises.where('workout_id').anyOf(workouts.map((w) => w.id)).toArray(),
+    );
+    const sets = live(
+      await db.sets.where('workout_exercise_id').anyOf(workoutExercises.map((we) => we.id)).toArray(),
+    ).filter(isTopWorkingSet);
+    const exercises = await db.exercises.bulkGet([...new Set(workoutExercises.map((we) => we.exercise_id))]);
+    const exerciseById = new Map(exercises.filter(Boolean).map((exercise) => [exercise!.id, exercise!]));
+
+    const setsByWe = new Map<string, WorkoutSet[]>();
+    for (const set of sets) {
+      const bucket = setsByWe.get(set.workout_exercise_id);
+      if (bucket) bucket.push(set);
+      else setsByWe.set(set.workout_exercise_id, [set]);
+    }
+
+    const byExercise = new Map<string, Array<{ at: number; sets: WorkoutSet[] }>>();
+    for (const we of workoutExercises) {
+      const done = setsByWe.get(we.id);
+      if (!done || done.length === 0) continue;
+      const bucket = byExercise.get(we.exercise_id) ?? [];
+      bucket.push({ at: startedAt.get(we.workout_id) ?? 0, sets: done });
+      byExercise.set(we.exercise_id, bucket);
+    }
+
+    const summaries: LiftSummary[] = [];
+    for (const [id, sessions] of byExercise) {
+      const exercise = exerciseById.get(id);
+      if (!exercise) continue;
+      sessions.sort((a, b) => a.at - b.at);
+      const all = sessions.flatMap((session) => session.sets);
+      const records = personalRecords(all);
+      if (!records.heaviest || !records.bestE1rm) continue;
+      summaries.push({
+        id,
+        name: exercise.name,
+        muscle: exercise.primary_muscle,
+        sessions: sessions.length,
+        series: sessions.slice(-8).map((session) => Math.max(...session.sets.map((set) => set.weight_kg))),
+        best: { weight: records.heaviest.weight_kg, reps: records.heaviest.reps },
+        bestE1rm: Math.round(records.bestE1rm.value * 10) / 10,
+      });
+    }
+    return summaries.sort((a, b) => b.sessions - a.sessions || a.name.localeCompare(b.name, 'en'));
   }, []);
 }
 
