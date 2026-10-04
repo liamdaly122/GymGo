@@ -43,8 +43,10 @@ await step('the week strip shows a full week with training days marked', async (
   if (dots !== 7) throw new Error(`expected a 7 day strip, got ${dots}`);
   // A scheduled day is labelled "<session> on <date>, <status>"; everything
   // else is a rest day.
+  // At most the plan's three days. It can be none: a plan created on a Sunday
+  // starts on Monday, and a Monday-to-Sunday strip has nothing left in it.
   const rest = await p.locator('ul li button[aria-label*="rest day"]').count();
-  if (7 - rest < 1 || 7 - rest > 3) throw new Error(`expected 1-3 training days this week, got ${7 - rest}`);
+  if (7 - rest > 3) throw new Error(`expected at most 3 training days this week, got ${7 - rest}`);
   // Nothing is logged yet, so no day has anywhere to go. The strip used to
   // enable every scheduled day and navigate nowhere.
   const live = await p.locator('ul li button[aria-label]:not([disabled])').count();

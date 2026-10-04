@@ -18,6 +18,7 @@ import WeekStrip from '@/components/WeekStrip';
 import BlockOverview from './BlockOverview';
 import ExerciseImage from '@/components/ExerciseImage';
 import { formatDayLabel, formatDuration } from '@/lib/dates';
+import { describeBlockProgress, movedLabel } from './blockCopy';
 import { useElapsed } from '@/hooks/useElapsed';
 import { formatWeekLabel } from '@/domain/programmes/block';
 import { estimateDurationMinutes } from '@/domain/sessionSummary';
@@ -160,9 +161,8 @@ export default function HomeScreen() {
               <p className="text-[10px] uppercase tracking-wide text-muted">
                 {next.status === 'today'
                   ? "Today's workout"
-                  : next.status === 'missed'
-                    ? 'Missed — pick it up'
-                    : `Next · ${formatDayLabel(`${next.date}T12:00:00`)}`}
+                  : `Next · ${formatDayLabel(`${next.date}T12:00:00`)}`}
+                {movedLabel(next) ? ` · ${movedLabel(next)}` : ''}
               </p>
               <h2 className="mt-0.5 text-lg font-semibold text-white">{next.name}</h2>
 
@@ -206,8 +206,7 @@ export default function HomeScreen() {
           )}
 
           <p className="mt-3 text-[11px] text-muted">
-            {planned.progress.done} of {planned.progress.total} sessions done
-            {planned.progress.missed > 0 ? ` · ${planned.progress.missed} missed` : ''}
+            {describeBlockProgress(planned.progress)}
           </p>
         </Card>
       ) : null}

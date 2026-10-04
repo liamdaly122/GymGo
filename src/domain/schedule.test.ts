@@ -6,6 +6,7 @@ import {
   currentWeek,
   groupByWeek,
   isBlockComplete,
+  slotForRoutine,
   weekStrip,
   type ScheduledSession,
   type SessionStatus,
@@ -107,32 +108,45 @@ describe('plotting a block onto dates', () => {
     expect([...weekdays].sort()).toEqual([1, 4]);
   });
 
-  it('marks today, the past and the future apart', () => {
+  it('rolls a session that was not trained onto today', () => {
     const schedule = build(makePlan(), [], new Date(2026, 7, 6)); // Thursday of week 1
-    const byDate = new Map(schedule.map((session) => [session.date, session.status]));
-    expect(byDate.get('2026-08-06')).toBe('today');
-    expect(byDate.get('2026-08-03')).toBe('missed');
-    expect(byDate.get('2026-08-10')).toBe('upcoming');
+    const monday = schedule.find((session) => session.week === 1 && session.sessionIndex === 0)!;
+    expect(monday.date).toBe('2026-08-06');
+    expect(monday.status).toBe('today');
+    expect(monday.movedFrom).toBe('2026-08-03');
+    expect(monday.plannedDate).toBe('2026-08-03');
+    // Nothing is left behind today, and next week is untouched.
+    expect(schedule.every((session) => session.date >= '2026-08-06')).toBe(true);
+    const nextMonday = schedule.find((session) => session.week === 2 && session.sessionIndex === 0)!;
+    expect(nextMonday.date).toBe('2026-08-10');
+    expect(nextMonday.movedFrom).toBeNull();
   });
 
   /**
    * Completion matches on week and session index, not on the date, so training
-   * Monday's session on Wednesday still ticks Monday off rather than leaving a
-   * hole and inventing an extra workout.
+   * Monday's session on Wednesday ticks off Monday's session rather than leaving
+   * a hole and inventing an extra workout — and it sits on the Wednesday, where
+   * it was actually done.
    */
-  it('ticks off a session trained late', () => {
+  it('puts a session trained late on the day it was trained', () => {
     const workouts = [
       makeWorkout({
         plan_id: 'plan-1',
         plan_week: 1,
         plan_session_index: 0,
-        started_at: '2026-08-05T18:00:00.000Z', // Wednesday, not Monday
+        started_at: '2026-08-05T12:00:00.000Z', // Wednesday, not Monday
       }),
     ];
     const schedule = build(makePlan(), workouts as never, new Date(2026, 7, 6));
-    const monday = schedule.find((session) => session.date === '2026-08-03')!;
+    const monday = schedule.find((session) => session.week === 1 && session.sessionIndex === 0)!;
     expect(monday.status).toBe('done');
+    expect(monday.date).toBe('2026-08-05');
+    expect(monday.plannedDate).toBe('2026-08-03');
     expect(monday.workoutId).toBeDefined();
+    // Thursday's session is still Thursday's.
+    const thursday = schedule.find((session) => session.week === 1 && session.sessionIndex === 1)!;
+    expect(thursday.date).toBe('2026-08-06');
+    expect(thursday.status).toBe('today');
   });
 
   it('ignores workouts from a different plan', () => {
@@ -140,7 +154,9 @@ describe('plotting a block onto dates', () => {
       makeWorkout({ plan_id: 'other-plan', plan_week: 1, plan_session_index: 0 }),
     ];
     const schedule = build(makePlan(), workouts as never, new Date(2026, 7, 6));
-    expect(schedule.find((session) => session.date === '2026-08-03')!.status).toBe('missed');
+    const monday = schedule.find((session) => session.week === 1 && session.sessionIndex === 0)!;
+    expect(monday.status).toBe('today');
+    expect(monday.workoutId).toBeUndefined();
   });
 
   it('carries each week\'s shape onto its sessions', () => {
@@ -167,23 +183,41 @@ describe('where the plan is up to', () => {
   });
 
   it('offers the next one due when today is a rest day', () => {
-    const schedule = build(makePlan(), [], new Date(2026, 7, 5)); // Wednesday
+    // Monday was trained, so Wednesday has nothing rolling onto it.
+    const workouts = [
+      makeWorkout({ plan_id: 'plan-1', plan_week: 1, plan_session_index: 0, started_at: '2026-08-03T12:00:00.000Z' }),
+    ];
+    const schedule = build(makePlan(), workouts as never, new Date(2026, 7, 5)); // Wednesday
     expect(currentSession(schedule)!.date).toBe('2026-08-06');
   });
 
   it('reports which week the block is in', () => {
-    const schedule = build(makePlan(), [], new Date(2026, 7, 17)); // week 3 Monday
+    const trained = [
+      ['2026-08-03', 1, 0], ['2026-08-06', 1, 1], ['2026-08-10', 2, 0], ['2026-08-13', 2, 1],
+    ].map(([day, week, index]) =>
+      makeWorkout({ plan_id: 'plan-1', plan_week: week as number, plan_session_index: index as number, started_at: `${day}T12:00:00.000Z` }),
+    );
+    const schedule = build(makePlan(), trained as never, new Date(2026, 7, 17)); // week 3 Monday
     expect(currentWeek(schedule)).toBe(3);
   });
 
-  it('scores adherence against sessions that have come due, not the whole block', () => {
-    const workouts = [makeWorkout({ plan_id: 'plan-1', plan_week: 1, plan_session_index: 0 })];
+  it('waits on the week you are actually up to, not the calendar', () => {
+    // Two weeks in and nothing trained: the block is still on week 1.
+    const schedule = build(makePlan(), [], new Date(2026, 7, 17));
+    expect(currentWeek(schedule)).toBe(1);
+    expect(currentSession(schedule)!.date).toBe('2026-08-17');
+  });
+
+  it('counts progress through the block', () => {
+    const workouts = [
+      makeWorkout({ plan_id: 'plan-1', plan_week: 1, plan_session_index: 0, started_at: '2026-08-03T12:00:00.000Z' }),
+    ];
     const schedule = build(makePlan(), workouts as never, new Date(2026, 7, 6));
     const progress = blockProgress(schedule);
     expect(progress.done).toBe(1);
     expect(progress.total).toBe(10);
-    // One done, none yet missed — a full block is not counted as 10% adherence.
-    expect(progress.adherence).toBe(1);
+    expect(progress.endsOn).toBe('2026-09-03');
+    expect(progress.daysBehind).toBe(0);
   });
 });
 
@@ -210,7 +244,7 @@ describe('a block started mid-week', () => {
     const plan = makePlan({ started_at: '2026-08-05T09:00:00.000Z' });
     const schedule = build(plan, [], new Date(2026, 7, 5));
     expect(schedule.every((session) => session.date >= '2026-08-05')).toBe(true);
-    expect(schedule.some((session) => session.status === 'missed')).toBe(false);
+    expect(schedule.every((session) => session.movedFrom === null)).toBe(true);
   });
 
   it('still runs the full number of weeks', () => {
@@ -229,22 +263,111 @@ describe('a block started mid-week', () => {
   });
 });
 
-describe('progress vs adherence', () => {
-  /**
-   * A bar across the block and an adherence score answer different questions.
-   * Showing "1 of 14 · 7%" reads as terrible adherence when it is in fact a
-   * perfect first session of a fresh block.
-   */
-  it('separates being early in a block from missing sessions', () => {
-    const workouts = [makeWorkout({ plan_id: 'plan-1', plan_week: 1, plan_session_index: 0 })];
-    const schedule = build(makePlan(), workouts as never, new Date(2026, 7, 3));
-    const progress = blockProgress(schedule);
+describe('rolling a missed session forward', () => {
+  /** Monday, Wednesday and Friday: Push, Pull, Legs — the example the owner chose from. */
+  const ppl = makePlan({
+    training_days: [1, 3, 5],
+    routine_ids: ['push', 'pull', 'legs'],
+    days_per_week: 3,
+  });
+  const pplNames = new Map([
+    ['push', 'Push'],
+    ['pull', 'Pull'],
+    ['legs', 'Legs'],
+  ]);
+  const plot = (workouts: unknown[], today: Date) =>
+    buildSchedule({ plan: ppl, routineNames: pplNames, workouts: workouts as never, today });
+  const trained = (week: number, index: number, day: string) =>
+    makeWorkout({ plan_id: 'plan-1', plan_week: week, plan_session_index: index, started_at: `${day}T12:00:00.000Z` });
+  const firstWeek = (schedule: ReturnType<typeof plot>) =>
+    schedule.filter((session) => session.week === 1).map((session) => `${session.date} ${session.name}`);
 
-    // One of ten done: early in the block.
-    expect(progress.done / progress.total).toBeLessThan(0.2);
-    // But nothing has been missed, so adherence is perfect.
-    expect(progress.adherence).toBe(1);
-    expect(progress.missed).toBe(0);
+  it('moves only the missed session when there is room for it', () => {
+    // Monday missed, and it is Tuesday.
+    const schedule = plot([], new Date(2026, 7, 4));
+    expect(firstWeek(schedule)).toEqual(['2026-08-04 Push', '2026-08-05 Pull', '2026-08-07 Legs']);
+    expect(schedule.find((session) => session.name === 'Push')!.movedFrom).toBe('2026-08-03');
+    expect(schedule.find((session) => session.name === 'Pull')!.movedFrom).toBeNull();
+  });
+
+  it('bumps the next session a day when the missed one lands on it', () => {
+    // Monday and Tuesday both missed; it is Wednesday.
+    const schedule = plot([], new Date(2026, 7, 5));
+    expect(firstWeek(schedule)).toEqual(['2026-08-05 Push', '2026-08-06 Pull', '2026-08-07 Legs']);
+    const pull = schedule.find((session) => session.week === 1 && session.name === 'Pull')!;
+    expect(pull.movedFrom).toBe('2026-08-05');
+    // And the next week is back on Monday, Wednesday and Friday.
+    expect(schedule.filter((session) => session.week === 2).map((session) => session.date)).toEqual([
+      '2026-08-10',
+      '2026-08-12',
+      '2026-08-14',
+    ]);
+  });
+
+  it('keeps coming back until it is trained', () => {
+    for (const day of [4, 5, 8]) {
+      const push = plot([], new Date(2026, 7, day)).find((session) => session.week === 1 && session.sessionIndex === 0)!;
+      expect(push.status).toBe('today');
+      expect(push.date).toBe(`2026-08-0${day}`);
+    }
+  });
+
+  it('never puts two sessions on one day after training', () => {
+    // Monday's Push was finally trained on Wednesday — Wednesday's Pull waits for tomorrow.
+    const schedule = plot([trained(1, 0, '2026-08-05')], new Date(2026, 7, 5));
+    expect(firstWeek(schedule)).toEqual(['2026-08-05 Push', '2026-08-06 Pull', '2026-08-07 Legs']);
+    expect(schedule.find((session) => session.name === 'Push')!.status).toBe('done');
+    expect(currentSession(schedule)!.name).toBe('Pull');
+  });
+
+  it('leaves later sessions on their own days when one is trained early', () => {
+    // Monday trained, then Wednesday's Pull done a day early on Tuesday.
+    const schedule = plot([trained(1, 0, '2026-08-03'), trained(1, 1, '2026-08-04')], new Date(2026, 7, 4));
+    expect(firstWeek(schedule)).toEqual(['2026-08-03 Push', '2026-08-04 Pull', '2026-08-07 Legs']);
+  });
+
+  it('keeps sessions still to do in order and a day apart when trained out of order', () => {
+    // Monday missed; Wednesday's Pull trained early on Tuesday instead.
+    const schedule = plot([trained(1, 1, '2026-08-04')], new Date(2026, 7, 4));
+    const toDo = schedule.filter((session) => session.status !== 'done');
+    const dates = toDo.map((session) => session.date);
+    expect(new Set(dates).size).toBe(dates.length);
+    expect(toDo[0]!.name).toBe('Push');
+    expect(toDo[0]!.date).toBe('2026-08-05');
+  });
+
+  it('does not finish a block until every session is done', () => {
+    // Weeks after the planned end, with nothing trained.
+    const schedule = plot([], new Date(2026, 9, 1));
+    expect(isBlockComplete(schedule)).toBe(false);
+    expect(currentSession(schedule)!.week).toBe(1);
+    expect(currentSession(schedule)!.date).toBe('2026-10-01');
+  });
+
+  it('reports how far past its planned end the block will run', () => {
+    // Everything trained on its day except the very last session, two days late.
+    const workouts = plot([], new Date(2026, 7, 3))
+      .filter((session) => !(session.week === 5 && session.sessionIndex === 2))
+      .map((session) => trained(session.week, session.sessionIndex, session.plannedDate));
+    const schedule = plot(workouts, new Date(2026, 8, 6)); // Sunday after the planned Friday finish
+    const progress = blockProgress(schedule);
+    expect(progress.done).toBe(14);
+    expect(progress.endsOn).toBe('2026-09-06');
+    expect(progress.daysBehind).toBe(2);
+  });
+
+  it('fills the earliest slot still to do for a routine', () => {
+    const fresh = plot([], new Date(2026, 7, 5));
+    expect(slotForRoutine(fresh, 'push')).toMatchObject({ week: 1, sessionIndex: 0 });
+
+    const afterWeekOne = plot([trained(1, 0, '2026-08-03')], new Date(2026, 7, 5));
+    expect(slotForRoutine(afterWeekOne, 'push')).toMatchObject({ week: 2, sessionIndex: 0 });
+
+    const allPush = plot(
+      [1, 2, 3, 4, 5].map((week) => trained(week, 0, `2026-08-0${week}`)),
+      new Date(2026, 7, 6),
+    );
+    expect(slotForRoutine(allPush, 'push')).toBeNull();
   });
 });
 
@@ -318,6 +441,8 @@ describe('knowing when a block is over', () => {
   const scheduleWith = (statuses: SessionStatus[]): ScheduledSession[] =>
     statuses.map((status, index) => ({
       date: `2026-08-${String(index + 1).padStart(2, '0')}`,
+      plannedDate: `2026-08-${String(index + 1).padStart(2, '0')}`,
+      movedFrom: null,
       week: 1,
       sessionIndex: index,
       routineId: 'r1',
@@ -335,9 +460,24 @@ describe('knowing when a block is over', () => {
     expect(isBlockComplete(scheduleWith(['done', 'today']))).toBe(false);
   });
 
-  it('is over even with sessions missed along the way', () => {
-    // A week skipped in February is no reason to keep the block open in March.
-    expect(isBlockComplete(scheduleWith(['done', 'missed', 'done']))).toBe(true);
+  it('is not over while a skipped session is still to do', () => {
+    // A skipped session rolls forward rather than being written off, so it
+    // holds the block open until it is made up — or the block is ended early.
+    const plan = makePlan();
+    const all = build(plan, [], new Date(2026, 7, 3));
+    const workouts = all
+      .filter((session) => !(session.week === 2 && session.sessionIndex === 0))
+      .map((session) =>
+        makeWorkout({
+          plan_id: 'plan-1',
+          plan_week: session.week,
+          plan_session_index: session.sessionIndex,
+          started_at: `${session.plannedDate}T12:00:00.000Z`,
+        }),
+      );
+    const schedule = build(plan, workouts as never, new Date(2026, 8, 20));
+    expect(isBlockComplete(schedule)).toBe(false);
+    expect(currentSession(schedule)).toMatchObject({ week: 2, sessionIndex: 0, date: '2026-09-20' });
   });
 
   it('is not over when there is no schedule at all', () => {

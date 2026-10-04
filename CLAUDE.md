@@ -152,14 +152,36 @@ exercise** — it is what makes both the generator and swap suggestions work.
 
 A plan runs for five weeks and then it has to end. `plan.completed_at` sat in
 the schema unwritten for most of this project's life, so a finished block stayed
-on the Train screen forever showing "Week 5/5" with every session behind it
-marked missed, and there was no way to start another.
+on the Train screen forever, and there was no way to start another.
 
-`isBlockComplete` in `src/domain/schedule.ts` is the rule: nothing is today and
-nothing is upcoming. Missed sessions do **not** hold a block open — a week you
-skipped in February is no reason to keep the block running in March. An empty
-schedule is deliberately not complete, or a plan with no training days would
-declare itself finished the moment it was made.
+**Nothing is ever missed: a session not trained rolls forward.** `buildSchedule`
+in `src/domain/schedule.ts` puts a trained session on the day it was actually
+trained, and walks the sessions still to do in plan order, putting each on the
+latest of its planned day, today (tomorrow if this plan was already trained
+today), and the day after the previous session still to do. So a missed Monday
+becomes today and keeps coming back until it is done; later sessions stay on
+their own days unless the rolled one lands on them, when they are bumped a day
+in order; and once caught up the plan is back on its usual days. That is the
+behaviour the owner chose over shifting the whole plan back. Nothing is stored —
+the dates are derived from the plan, the workouts and the date — which is also
+why sessions missed before the rule existed came back under it. `movedFrom`
+says where a rolled session was meant to be, and the screens say so.
+
+**"Today" has to be live.** A live query only re-runs when the database
+changes, so a phone left open overnight would still show yesterday's plan.
+`useToday` (`src/hooks/useToday.ts`) ticks at local midnight and when the app
+returns to the foreground, and every schedule query takes it as a dependency.
+
+`isBlockComplete` is the rule: nothing is today and nothing is upcoming — which,
+since nothing can be missed, means every session is done. A skipped week holds
+the block open by design; **End this block early** is the deliberate way out.
+An empty schedule is deliberately not complete, or a plan with no training days
+would declare itself finished the moment it was made.
+
+A workout started from a plan routine fills `slotForRoutine`: the earliest
+session still to do for that routine, wherever it has rolled to. Reading the
+week off "where the block is up to" could name a week whose session for that
+routine was already trained, and overwrite it.
 
 `startNextBlock` closes the old plan and opens a new one **on the same
 routines**. Achieved weights carry forward for free, because the progression
@@ -387,7 +409,8 @@ Three layers, each earning its place:
 
 The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
 `test:plans`, `test:swap`, `test:gyms`, `test:pro`, `test:block`,
-`test:programme`, `test:toolkit`, `test:smart` and `test:session`. They expect a
+`test:programme`, `test:toolkit`, `test:smart`, `test:session` and
+`test:rollover`. They expect a
 preview server on `127.0.0.1:5185` — `test:offline` runs its own on 5190. Each
 takes a `BASE_URL` override.
 

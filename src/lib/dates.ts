@@ -38,6 +38,15 @@ export function formatClock(ms: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+/** "Mon 28 Sep" for a date-only ISO string (YYYY-MM-DD), read in local time. */
+export function formatShortDate(isoDate: string): string {
+  // Noon, not midnight: a date-only string parsed at 00:00 can land on the
+  // previous day either side of a clock change.
+  const date = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 /**
  * "Today" / "Tomorrow" / "3 days ago" / "Tue 12 Aug", in local time.
  *

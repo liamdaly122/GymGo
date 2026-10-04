@@ -93,11 +93,11 @@ export default function ProgressScreen() {
             label="Block progress"
             caption={`${planned.progress.done} of ${planned.progress.total} sessions done`}
           />
-          {planned.progress.done + planned.progress.missed > 0 ? (
+          {planned.progress.daysBehind > 0 ? (
             <p className="mt-2 text-[11px] text-muted">
-              {planned.progress.missed === 0
-                ? 'Every session so far has been done.'
-                : `${Math.round(planned.progress.adherence * 100)}% of the sessions due so far, ${planned.progress.missed} missed.`}
+              Skipped sessions moved forward, so the block now finishes{' '}
+              {planned.progress.daysBehind} day{planned.progress.daysBehind === 1 ? '' : 's'} later
+              than planned.
             </p>
           ) : null}
         </Card>

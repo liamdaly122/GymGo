@@ -4,18 +4,31 @@
  * A plan on its own is a week you repeat. This is what turns it into something
  * with a Tuesday: given a start date and which weekdays you train, it lays every
  * session of every week onto the calendar and works out what you have done,
- * what is today, and what you have missed.
+ * what is today, and what is still to come.
+ *
+ * Nothing is ever missed. A session you do not train rolls forward a day at a
+ * time until you do — see `buildSchedule` for the rule.
  *
  * Pure — the query layer supplies the plan, its routines and the workouts.
  */
 import type { Plan, Workout } from '@/db/schema';
 import { weekModifier, type WeekModifier } from './programmes/block';
 
-export type SessionStatus = 'done' | 'today' | 'upcoming' | 'missed';
+export type SessionStatus = 'done' | 'today' | 'upcoming';
 
 export interface ScheduledSession {
-  /** ISO date only, YYYY-MM-DD. */
+  /**
+   * Where the session sits now, ISO date only. For a done session, the day it
+   * was actually trained; for one still to do, the day it has rolled to.
+   */
   date: string;
+  /** Where the plan originally put it. */
+  plannedDate: string;
+  /**
+   * The planned date, when a session still to do has rolled past it — what the
+   * screen says when it explains why Monday's workout is on a Tuesday.
+   */
+  movedFrom: string | null;
   week: number;
   /** Index into the plan's routine_ids — which day of the weekly rotation. */
   sessionIndex: number;
@@ -40,6 +53,20 @@ function addDays(date: Date, days: number): Date {
   next.setDate(next.getDate() + days);
   return next;
 }
+
+/** The ISO date after `iso`. Read at noon so a clock change cannot skip a day. */
+function nextIsoDate(iso: string): string {
+  return localIsoDate(addDays(new Date(`${iso}T12:00:00`), 1));
+}
+
+/** Whole days from one ISO date to another; negative when `to` is earlier. */
+function daysBetween(from: string, to: string): number {
+  return Math.round(
+    (new Date(`${to}T12:00:00`).getTime() - new Date(`${from}T12:00:00`).getTime()) / 86_400_000,
+  );
+}
+
+const latest = (...dates: string[]): string => dates.reduce((a, b) => (b > a ? b : a));
 
 /**
  * The first calendar date on or after `from` that falls on one of `weekdays`.
@@ -68,8 +95,22 @@ export interface BuildScheduleInput {
  * Every session of the block, in date order.
  *
  * Completion is matched on `plan_week` and `plan_session_index` rather than on
- * the date, so training Tuesday's session on Wednesday still ticks Tuesday off
- * instead of leaving a hole and inventing an extra workout.
+ * the date, so training Monday's session on a Wednesday ticks off Monday's
+ * session instead of leaving a hole and inventing an extra workout.
+ *
+ * The rollover rule. A session you have trained sits on the day you trained it.
+ * One still to do, taken in the order the plan runs them, sits on the latest of:
+ *
+ * - the day the plan put it on;
+ * - today — or tomorrow, if a session of this plan was trained today;
+ * - the day after the previous session still to do.
+ *
+ * So a missed Monday becomes today and keeps coming back until it is trained,
+ * later sessions stay on their own days unless the rolled one lands on top of
+ * them — then they are bumped a day, in order — and once you catch up the plan
+ * is back on its usual days. Nothing is stored: the dates are worked out from
+ * the plan, the workouts and the date, which is also why sessions missed before
+ * this rule existed come back under it.
  */
 export function buildSchedule(input: BuildScheduleInput): ScheduledSession[] {
   const { plan, routineNames, workouts } = input;
@@ -87,6 +128,13 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledSession[] {
     done.set(`${workout.plan_week}:${workout.plan_session_index}`, workout);
   }
 
+  // One session a day: once something from this plan has been trained today,
+  // the next one waits for tomorrow rather than asking for a double.
+  const trainedToday = [...done.values()].some(
+    (workout) => localIsoDate(new Date(workout.started_at)) === todayIso,
+  );
+  const floor = trainedToday ? nextIsoDate(todayIso) : todayIso;
+
   const startDate = new Date(plan.started_at);
   const startIso = localIsoDate(startDate);
   const start = firstTrainingDate(startDate, weekdays);
@@ -94,30 +142,41 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledSession[] {
   const weekOneAnchor = addDays(start, -((start.getDay() - weekdays[0]! + 7) % 7));
 
   const sessions: ScheduledSession[] = [];
+  // Slots come out of these loops in the order the plan runs them, which is
+  // also the order of their planned dates — the rollover walk depends on it.
+  let previousToDo: string | null = null;
 
   for (let week = 1; week <= plan.block_weeks; week += 1) {
     const modifier = weekModifier(week, plan.block_weeks);
 
     weekdays.forEach((weekday, sessionIndex) => {
       const offsetFromAnchor = (weekday - weekOneAnchor.getDay() + 7) % 7;
-      const date = addDays(weekOneAnchor, (week - 1) * 7 + offsetFromAnchor);
-      const iso = localIsoDate(date);
+      const plannedDate = localIsoDate(addDays(weekOneAnchor, (week - 1) * 7 + offsetFromAnchor));
+      const workout = done.get(`${week}:${sessionIndex}`);
 
       // A block started on Wednesday has no Monday session. Without this, the
-      // day you create a plan it already shows a missed workout.
-      if (iso < startIso && !done.has(`${week}:${sessionIndex}`)) return;
+      // day you create a plan it already shows a workout to catch up on.
+      if (plannedDate < startIso && !workout) return;
 
-      const workout = done.get(`${week}:${sessionIndex}`);
-      const routineId = plan.routine_ids[sessionIndex];
-
+      let date: string;
       let status: SessionStatus;
-      if (workout) status = 'done';
-      else if (iso === todayIso) status = 'today';
-      else if (iso < todayIso) status = 'missed';
-      else status = 'upcoming';
+      let movedFrom: string | null = null;
 
+      if (workout) {
+        date = localIsoDate(new Date(workout.started_at));
+        status = 'done';
+      } else {
+        date = latest(plannedDate, floor, previousToDo ? nextIsoDate(previousToDo) : plannedDate);
+        previousToDo = date;
+        status = date === todayIso ? 'today' : 'upcoming';
+        if (date > plannedDate) movedFrom = plannedDate;
+      }
+
+      const routineId = plan.routine_ids[sessionIndex];
       sessions.push({
-        date: iso,
+        date,
+        plannedDate,
+        movedFrom,
         week,
         sessionIndex,
         routineId,
@@ -129,15 +188,22 @@ export function buildSchedule(input: BuildScheduleInput): ScheduledSession[] {
     });
   }
 
-  return sessions.sort((a, b) => a.date.localeCompare(b.date));
+  return sessions.sort(
+    (a, b) => a.date.localeCompare(b.date) || a.week - b.week || a.sessionIndex - b.sessionIndex,
+  );
 }
 
-/** The session to offer on the Train screen: today's, else the next one due. */
+/**
+ * The session to offer on the Train screen: today's, else the next one due.
+ *
+ * Nothing is ever behind today — a session not trained has already rolled onto
+ * today — so the first session still to do is always the right answer, and
+ * there is no "pick up the one you missed" case any more.
+ */
 export function currentSession(schedule: ScheduledSession[]): ScheduledSession | null {
   return (
     schedule.find((session) => session.status === 'today') ??
     schedule.find((session) => session.status === 'upcoming') ??
-    schedule.filter((session) => session.status === 'missed').at(-1) ??
     null
   );
 }
@@ -147,23 +213,50 @@ export function currentWeek(schedule: ScheduledSession[]): number {
   return currentSession(schedule)?.week ?? schedule.at(-1)?.week ?? 1;
 }
 
+/**
+ * The slot a workout started from this routine fills: the earliest one still to
+ * do, wherever it has rolled to.
+ *
+ * Reading the week off "where the block is up to" instead could hand back a
+ * week whose session for this routine was already trained, and the new workout
+ * would then overwrite it. Null when every session for the routine is done, so
+ * an extra workout never steals a slot.
+ */
+export function slotForRoutine(
+  schedule: ScheduledSession[],
+  routineId: string,
+): ScheduledSession | null {
+  return (
+    schedule
+      .filter((session) => session.status !== 'done' && session.routineId === routineId)
+      .sort((a, b) => a.week - b.week || a.sessionIndex - b.sessionIndex)[0] ?? null
+  );
+}
+
 export interface BlockProgress {
   done: number;
-  missed: number;
   total: number;
-  /** Completed as a fraction of sessions that have come due. */
-  adherence: number;
+  /** The date of the block's last session, wherever it now sits. */
+  endsOn: string | null;
+  /**
+   * How many days later than planned the block will finish, because sessions
+   * rolled forward. Never negative: finishing early is just finishing.
+   */
+  daysBehind: number;
 }
 
 export function blockProgress(schedule: ScheduledSession[]): BlockProgress {
   const done = schedule.filter((session) => session.status === 'done').length;
-  const missed = schedule.filter((session) => session.status === 'missed').length;
-  const due = done + missed;
+  const last = schedule.at(-1);
+  const plannedEnd = schedule.reduce<string | null>(
+    (end, session) => (end === null || session.plannedDate > end ? session.plannedDate : end),
+    null,
+  );
   return {
     done,
-    missed,
     total: schedule.length,
-    adherence: due === 0 ? 1 : done / due,
+    endsOn: last?.date ?? null,
+    daysBehind: last && plannedEnd ? Math.max(0, daysBetween(plannedEnd, last.date)) : 0,
   };
 }
 
@@ -171,8 +264,10 @@ export function blockProgress(schedule: ScheduledSession[]): BlockProgress {
  * Has the block run its course?
  *
  * True when nothing is left to train: no session is today, and none is still
- * upcoming. Missed sessions do not hold a block open — a week you skipped in
- * week two is not a reason to keep week five running in March.
+ * upcoming. Because a session not trained rolls forward rather than being
+ * missed, that means every session has been done — a skipped week holds the
+ * block open until it is made up. Ending a block early is a deliberate act,
+ * not something the calendar does on your behalf.
  *
  * An empty schedule is not complete. A plan whose training days were cleared
  * would otherwise report itself finished the moment it was made.

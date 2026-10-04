@@ -3,8 +3,8 @@ import { localIsoDate, weekStrip, type ScheduledSession } from '@/domain/schedul
 const DAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 /**
- * The week at a glance: which days you train, which you have done, which you
- * missed.
+ * The week at a glance: which days you train and which you have done. A
+ * session not trained rolls forward, so there is no "missed" day to show.
  *
  * Status comes from the schedule rather than from dates alone, so a session
  * trained a day late still shows as done on the day it was planned.
@@ -69,11 +69,9 @@ export default function WeekStrip({
                     ? 'bg-transparent'
                     : session.status === 'done'
                       ? 'bg-accent'
-                      : session.status === 'missed'
-                        ? 'bg-red-500/60'
-                        : session.status === 'today'
-                          ? 'bg-white'
-                          : 'bg-line'
+                      : session.status === 'today'
+                        ? 'bg-white'
+                        : 'bg-line'
                 }`}
               />
             </button>

@@ -72,8 +72,9 @@ await step('a hand-made routine lands under "your own", not in the plan', async 
   if (/My own thing/.test(inPlan)) throw new Error('it must not appear as a plan session');
 });
 
-await step('a finished block offers the next one', async () => {
-  // Age the plan so every session of all five weeks is behind us.
+await step('an old block with nothing trained waits for you', async () => {
+  // Age the plan so every session of all five weeks is behind us. Nothing was
+  // trained, so nothing is finished: the first session has rolled onto today.
   await p.evaluate(async () => {
     const open = indexedDB.open('gymgo');
     const db = await new Promise((res, rej) => { open.onsuccess = () => res(open.result); open.onerror = () => rej(open.error); });
@@ -87,8 +88,36 @@ await step('a finished block offers the next one', async () => {
   await p.waitForTimeout(1200);
 
   const body = await p.locator('body').innerText();
+  if (/This block is finished/i.test(body)) throw new Error('a block with nothing trained must not finish on the calendar');
+  if (!/Week 1\/5/i.test(body)) throw new Error(`the block should still be on week 1, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
+});
+
+await step('a finished block offers the next one', async () => {
+  // Train every session of the block, then it is finished.
+  await p.evaluate(async () => {
+    const open = indexedDB.open('gymgo');
+    const db = await new Promise((res, rej) => { open.onsuccess = () => res(open.result); open.onerror = () => rej(open.error); });
+    const getAll = (name) => new Promise((res, rej) => { const r = db.transaction(name).objectStore(name).getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    const plan = (await getAll('plans')).find(x => x.completed_at === null);
+    const put = (row) => new Promise((res, rej) => { const r = db.transaction('workouts', 'readwrite').objectStore('workouts').put(row); r.onsuccess = res; r.onerror = () => rej(r.error); });
+    const when = new Date(Date.now() - 864e5).toISOString();
+    for (let week = 1; week <= plan.block_weeks; week += 1) {
+      for (let index = 0; index < plan.training_days.length; index += 1) {
+        await put({
+          id: crypto.randomUUID(), routine_id: plan.routine_ids[index] ?? null, plan_id: plan.id,
+          plan_week: week, plan_session_index: index, gym_id: null,
+          started_at: when, finished_at: when, bodyweight_kg: null, readiness: null, notes: null,
+          user_id: null, created_at: when, updated_at: when, deleted_at: null,
+        });
+      }
+    }
+  });
+  await p.reload({ waitUntil: 'networkidle' });
+  await p.waitForTimeout(1200);
+
+  const body = await p.locator('body').innerText();
   if (!/This block is finished/i.test(body)) {
-    throw new Error(`a block whose sessions are all past should offer the next one, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
+    throw new Error(`a block whose sessions are all trained should offer the next one, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
   }
 });
 await p.screenshot({ path: 'e2e/shot-block-finished.png', fullPage: true });

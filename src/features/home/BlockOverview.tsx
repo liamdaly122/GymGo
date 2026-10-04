@@ -85,13 +85,13 @@ function SessionChip({ session }: { session: BlockWeekView['sessions'][number] }
   const tone =
     session.status === 'done'
       ? 'border-accent/30 bg-accent/10 text-accent'
-      : session.status === 'missed'
-        ? 'border-red-500/30 bg-red-500/5 text-red-300'
-        : session.status === 'today'
-          ? 'border-line bg-raised text-white'
-          : 'border-line bg-raised text-muted';
+      : session.status === 'today'
+        ? 'border-line bg-raised text-white'
+        : 'border-line bg-raised text-muted';
 
-  const label = `${session.name}, ${session.date}, ${session.status}`;
+  const label = `${session.name}, ${session.date}, ${session.status}${
+    session.movedFrom ? `, moved from ${session.movedFrom}` : ''
+  }`;
   const body = (
     <span
       className={`inline-flex max-w-[10.5rem] items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${tone}`}

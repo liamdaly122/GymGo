@@ -29,7 +29,7 @@ import { nowIso } from '@/lib/dates';
 import type { Readiness, SetType, Technique } from '@/domain/types';
 import type { GeneratedPlan } from '@/domain/programmes/plan';
 import { DEFAULT_BLOCK_WEEKS, setsForWeek, weekModifier } from '@/domain/programmes/block';
-import { buildSchedule, currentWeek } from '@/domain/schedule';
+import { buildSchedule, currentWeek, slotForRoutine } from '@/domain/schedule';
 import { loadableWeight, loadingProfileFor, nextLoadableBelow, type LoadingProfile } from '@/domain/plates';
 import { warmupRamp } from '@/domain/warmup';
 
@@ -120,14 +120,22 @@ export async function startFreestyleWorkout(options: {
  * a session already performed. Do not "optimise" this into a join.
  */
 /**
- * Which week of the block the plan is actually in.
+ * Which slot of the block a workout started from this routine fills.
  *
- * Derived from the calendar rather than read from `current_week`, so a counter
- * that was never bumped — a crash, a skipped week, an import — cannot silently
- * hold the whole block at week 1. `current_week` is kept as a cache for display
- * and refreshed here.
+ * The earliest session still to do for the routine, wherever it has rolled to.
+ * Reading the week off "where the block is up to" instead could name a week
+ * whose session for this routine was already trained, and the new workout
+ * would overwrite it. Null when every session for the routine is done, so an
+ * extra workout never steals a slot.
+ *
+ * `current_week` is kept as a cache for display and refreshed here, derived
+ * from what has been trained rather than read from the counter, so one that
+ * was never bumped — a crash, an import — cannot hold the block at week 1.
  */
-async function resolvePlanWeek(plan: Plan): Promise<number> {
+async function resolvePlanSlot(
+  plan: Plan,
+  routineId: string,
+): Promise<{ week: number; sessionIndex: number } | null> {
   const routines = await db.routines.bulkGet(plan.routine_ids);
   const routineNames = new Map(
     routines.filter(Boolean).map((routine) => [routine!.id, routine!.name]),
@@ -146,7 +154,9 @@ async function resolvePlanWeek(plan: Plan): Promise<number> {
       updated_at: nowIso(),
     });
   }
-  return week;
+
+  const slot = slotForRoutine(schedule, routineId);
+  return slot ? { week: slot.week, sessionIndex: slot.sessionIndex } : null;
 }
 
 export async function startWorkoutFromRoutine(
@@ -166,15 +176,15 @@ export async function startWorkoutFromRoutine(
   const plan = routine.generated_from_plan_id
     ? await db.plans.get(routine.generated_from_plan_id)
     : undefined;
-  const sessionIndex = plan ? plan.routine_ids.indexOf(routineId) : -1;
-  const week = plan ? await resolvePlanWeek(plan) : null;
+  const slot = plan ? await resolvePlanSlot(plan, routineId) : null;
+  const week = slot?.week ?? null;
 
   const workout: Workout = {
     id: newId(),
     routine_id: routineId,
     plan_id: plan?.id ?? null,
     plan_week: week,
-    plan_session_index: sessionIndex >= 0 ? sessionIndex : null,
+    plan_session_index: slot?.sessionIndex ?? null,
     gym_id: options.gymId ?? (await defaultGymId()),
     started_at: nowIso(),
     finished_at: null,

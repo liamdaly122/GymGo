@@ -5,6 +5,7 @@
  * Soft-deleted rows are filtered out here so no caller has to remember to.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
+import { scheduleDay, useToday } from '@/hooks/useToday';
 import { db } from './db';
 import { SETTINGS_ID, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
@@ -349,6 +350,8 @@ export interface PlanScheduleView {
 
 /** The active block laid onto the calendar, with today's session picked out. */
 export function usePlanSchedule(): PlanScheduleView | undefined | null {
+  // Live, so a session skipped yesterday rolls onto today without a reload.
+  const today = useToday();
   return useLiveQuery(async () => {
     const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at === null);
     plans.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
@@ -365,7 +368,7 @@ export function usePlanSchedule(): PlanScheduleView | undefined | null {
     );
     const workouts = live(await db.workouts.where({ plan_id: plan.id }).toArray());
 
-    const schedule = buildSchedule({ plan, routineNames, workouts });
+    const schedule = buildSchedule({ plan, routineNames, workouts, today: scheduleDay(today) });
     const current = currentSession(schedule);
 
     return {
@@ -375,7 +378,7 @@ export function usePlanSchedule(): PlanScheduleView | undefined | null {
       week: weekModifier(current?.week ?? plan.current_week, plan.block_weeks),
       progress: blockProgress(schedule),
     };
-  }, []);
+  }, [today]);
 }
 
 /** One routine as the Programme screen lists it: enough to recognise it by. */
@@ -411,6 +414,7 @@ export interface ProgrammeView {
  * looked like five interchangeable rows.
  */
 export function useProgramme(): ProgrammeView | undefined {
+  const today = useToday();
   return useLiveQuery(async () => {
     const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at === null);
     plans.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
@@ -477,7 +481,7 @@ export function useProgramme(): ProgrammeView | undefined {
         .map((routine) => [routine!.id, routine!.name.split(' — ').at(-1) ?? routine!.name]),
     );
     const workouts = live(await db.workouts.where({ plan_id: plan.id }).toArray());
-    const schedule = buildSchedule({ plan, routineNames, workouts });
+    const schedule = buildSchedule({ plan, routineNames, workouts, today: scheduleDay(today) });
 
     return {
       plan,
@@ -488,7 +492,7 @@ export function useProgramme(): ProgrammeView | undefined {
       sessions,
       standalone,
     };
-  }, []);
+  }, [today]);
 }
 
 export interface BlockWeekView extends WeekSummary {
@@ -505,6 +509,7 @@ export interface BlockWeekView extends WeekSummary {
  * how much easier the week actually is.
  */
 export function useBlockOverview(): BlockWeekView[] | undefined | null {
+  const today = useToday();
   return useLiveQuery(async () => {
     const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at === null);
     plans.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
@@ -518,7 +523,7 @@ export function useBlockOverview(): BlockWeekView[] | undefined | null {
         .map((routine) => [routine!.id, routine!.name.split(' — ').at(-1) ?? routine!.name]),
     );
     const workouts = live(await db.workouts.where({ plan_id: plan.id }).toArray());
-    const schedule = buildSchedule({ plan, routineNames, workouts });
+    const schedule = buildSchedule({ plan, routineNames, workouts, today: scheduleDay(today) });
 
     // Base set counts per routine, read once rather than per week.
     const baseSets = new Map<string, number[]>();
@@ -537,7 +542,7 @@ export function useBlockOverview(): BlockWeekView[] | undefined | null {
         );
       }, 0),
     }));
-  }, []);
+  }, [today]);
 }
 
 /**

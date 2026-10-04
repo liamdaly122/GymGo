@@ -4,6 +4,7 @@ import { useProgramme, type ProgrammeRoutine } from '@/db/queries';
 import { completePlan, createRoutine, startNextBlock } from '@/db/mutations';
 import { Button, Card, EmptyState, Pill, Screen, ScreenTitle } from '@/components/ui';
 import { formatWeekLabel } from '@/domain/programmes/block';
+import { describeBlockProgress } from '@/features/home/blockCopy';
 
 /**
  * The programme you are on, and the routines it is made of.
@@ -99,13 +100,12 @@ export default function ProgrammeScreen() {
           </div>
 
           <p className="mt-1 text-xs text-muted">
-            {view.progress.done} of {view.progress.total} sessions done
-            {view.progress.missed > 0 ? ` · ${view.progress.missed} missed` : ''}
+            {describeBlockProgress(view.progress)}
           </p>
 
           {/* The block had no ending: completed_at was in the schema and nothing
-              ever wrote it, so a finished plan sat on Train forever showing
-              "Week 5/5" with every session behind it marked missed. */}
+              ever wrote it, so a finished plan sat on Train forever. It is
+              finished when every session is done — skipped ones roll forward. */}
           {view.complete ? (
             <div className="mt-3 rounded-xl border border-accent/30 bg-accent/5 p-3">
               <p className="text-xs text-white">This block is finished.</p>

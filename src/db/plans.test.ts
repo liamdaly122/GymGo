@@ -5,6 +5,7 @@ import { createRoutinesFromPlan, discardWorkout, startWorkoutFromRoutine } from 
 import { seedIfEmpty } from './seed';
 import { buildPlan } from '@/domain/programmes/plan';
 import type { Equipment } from '@/domain/types';
+import { makeWorkout } from '@/domain/testFactories';
 
 const COMMERCIAL: Equipment[] = [
   'barbell', 'dumbbell', 'kettlebell', 'cable', 'machine', 'bands',
@@ -124,6 +125,9 @@ describe('training blocks', () => {
 
   it('stamps the block, week and session onto the workout it starts', async () => {
     const { result } = await generate(3);
+    // Started a week ago, so every session of week 1 exists whatever weekday
+    // the test runs on — a block started mid-week has no slots before its start.
+    await db.plans.update(result.planId, { started_at: new Date(Date.now() - 7 * 86_400_000).toISOString() });
     const workoutId = await startWorkoutFromRoutine(result.routineIds[1]!);
     const workout = (await db.workouts.get(workoutId))!;
     expect(workout.plan_id).toBe(result.planId);
@@ -136,7 +140,9 @@ describe('training blocks', () => {
     const { result } = await generate(3);
 
     const setsInWeek = async (week: number) => {
-      // Wind the plan back so the calendar puts us in the week under test.
+      // The week a session belongs to comes from what has been trained, not
+      // from the calendar — a skipped session rolls forward. So reaching week N
+      // means having trained this routine's sessions in the weeks before it.
       const plan = (await db.plans.get(result.planId))!;
       const started = new Date();
       started.setDate(started.getDate() - (week - 1) * 7);
@@ -144,6 +150,20 @@ describe('training blocks', () => {
         started_at: started.toISOString(),
         training_days: [started.getDay()],
       });
+      await db.workouts.where({ plan_id: plan.id }).delete();
+      for (let earlier = 1; earlier < week; earlier += 1) {
+        const day = new Date(started.getTime() + (earlier - 1) * 7 * 86_400_000).toISOString();
+        await db.workouts.add(
+          makeWorkout({
+            id: `trained-${week}-${earlier}`,
+            plan_id: plan.id,
+            plan_week: earlier,
+            plan_session_index: 0,
+            started_at: day,
+            finished_at: day,
+          }),
+        );
+      }
 
       const workoutId = await startWorkoutFromRoutine(result.routineIds[0]!);
       const workoutExercises = await db.workout_exercises.where({ workout_id: workoutId }).toArray();

@@ -25,7 +25,8 @@
     "test:programme": "node e2e/programme.mjs",
     "test:toolkit": "node e2e/toolkit.mjs",
     "test:smart": "node e2e/smart.mjs",
-    "test:session": "node e2e/session.mjs"
+    "test:session": "node e2e/session.mjs",
+    "test:rollover": "node e2e/rollover.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
