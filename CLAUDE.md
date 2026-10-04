@@ -109,11 +109,31 @@ removing something from between a pair does not silently dissolve it.
   The outbox records WHAT changed, not how: push reads the current row out of
   Dexie and upserts the whole thing. Replaying the queued patch would blank every
   column it did not mention, since patches are partial.
-- Conflict resolution is last-write-wins on `updated_at`. Because finished sets
-  are immutable, genuine conflicts can only occur on routines and settings.
+- **Every row a mutation changes is queued, including what it changes as a side
+  effect.** `finishWorkout` used to tidy away untouched sets and empty exercises
+  without queueing them. Because a backup round runs mid-session, the cloud kept
+  them live, and a restore brought empty sets back into finished workouts.
+  `removeSet` and `removeExerciseFromWorkout` had the same gap for the rows they
+  take with them. An import queues every row it restores. The mutation tests
+  check that every changed row is queued, across a backup round mid-session.
+- Conflict resolution is last-write-wins on `updated_at`, **on the server as
+  well as the phone**: the `keep_newest_row` trigger skips any upload older than
+  the stored row, so an upload can only move a row forward in time. A first
+  backup, an old export restored, or a phone that was offline for a week can
+  never roll the cloud back. Because finished sets are immutable, genuine
+  conflicts can only occur on routines and settings.
+- **First-run rows are factory defaults.** The seeded library, the starter gym
+  and default settings are stamped `FACTORY_DEFAULT` (the epoch, in
+  `src/db/schema.ts`), so they lose every conflict. Stamped with the moment of
+  install, a new phone signing in would have overwritten the user's settings and
+  exercise notes, on the phone and then in the cloud.
 - `last_synced_at` lives in settings and is the only cursor the pull needs.
-- `user_id` is null on local rows until magic-link sign-in exists; it is
-  backfilled once at sign-in.
+  Writing it is bookkeeping and leaves `updated_at` alone. The pull orders by
+  `id` within a timestamp, because hundreds of rows share one and Postgres may
+  order ties differently from page to page. It converts timestamps back to
+  `toISOString()`, because Postgres writes them as `+00:00`.
+- `user_id` is null on local rows until sign-in; it is backfilled once at
+  sign-in.
 
 ## Sync lives behind a wall
 
@@ -129,9 +149,43 @@ fails the build if that slips:
 Signing in is the one deliberate, user-initiated wait in the app. Everything else
 observes a status store and carries on.
 
-The Docker daemon is unavailable in the build environment, so push and pull are
-tested against a stand-in client and `fake-indexeddb`. The wipe-and-restore round
-trip against a live project has to be run by hand.
+**Sign-in is by a six-digit code from the email, typed into the app**
+(`verifySignInCode`). On an iPhone a link in Mail opens Safari, which keeps its
+storage apart from the home-screen app, so a link-only sign-in signed Safari in
+and left the app signed out. The link still works in a browser. The Supabase
+email templates have to include `{{ .Token }}`; `supabase/README.md` has the
+setup steps.
+
+**The outbox alone does not make a backup.** `syncNow` in `src/sync/engine.ts`
+runs one round in this order:
+
+1. A phone that has never finished a round **restores first** (a pull with no
+   cursor). This comes before any upload, so a fresh install's placeholders
+   never reach the cloud. The untouched starter gym it made is then dropped
+   (`dropPlaceholderGyms`).
+2. It pushes the outbox.
+3. The first time an account backs up from a phone, it **uploads every row**
+   (`uploadEverything`). Months of training, or an imported export, can predate
+   signing in, and none of it was ever queued. After that, **once a day**, it
+   uploads every row changed since the last pass, queued or not: the safety net
+   under the outbox.
+4. It pulls whatever changed elsewhere.
+
+Uploads go in batches of 500. When those passes ran is device-local, so it
+lives in `localStorage` (`src/sync/ledger.ts`), not in the synced settings row.
+Losing it costs one extra full upload, which the server's trigger makes
+harmless.
+
+The Docker daemon is unavailable in the build environment, so a full local
+Supabase cannot run. Instead `src/sync/testing/` stands in for Supabase Auth and
+REST on real Postgres (PGlite, a dev dependency) with the migrations applied.
+`src/sync/server.test.ts` checks the SQL itself: row level security between
+accounts, the trigger, and that every row the app writes is accepted field for
+field. `sync.test.ts` runs whole rounds against it, including wipe-and-restore.
+`npm run test:backup` serves it over HTTP (`scripts/fake-supabase.ts`) and drives
+the real supabase-js client in a browser, through a backup and then a restore
+onto a brand-new phone. A live project's own dashboard settings (templates,
+URLs, keys) can only be checked by signing in on the phone.
 
 ## Writes go through one place
 
@@ -544,7 +598,9 @@ The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
 `test:programme`, `test:toolkit`, `test:smart`, `test:session`,
 `test:rollover` and `test:planswap`. They expect a
 preview server on `127.0.0.1:5185` — `test:offline` runs its own on 5190. Each
-takes a `BASE_URL` override.
+takes a `BASE_URL` override. `test:backup` is self-contained: it starts the
+stand-in Supabase on 54329, builds a copy of the app pointed at it, and serves
+that on 5191.
 
 **Accessible names are this app's test API.** Around 1,700 lines of Playwright
 key on them, so renaming one is a breaking change to the suites even when the
@@ -570,6 +626,9 @@ screen looks identical. These in particular are load-bearing:
   `Just <session>` and `Whole plan`
 - the `Calendar` region, its list (`This week`, `Next week`, `Week of …`),
   and `Previous week` / `Next week`
+- the `Backup` region in Settings: `Email address`, `Email me a code`,
+  `Sign-in code`, `Sign in`, `Back up now`, and its `status`, which reads
+  `Backed up` once nothing is waiting
 - `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
 
 `Add exercise` names exactly one control at a time: the empty state owns it

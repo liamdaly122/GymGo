@@ -59,8 +59,9 @@ Plus:
       plate rounding, every suggestion explained
 - [x] Five-week training blocks with a deload, plotted onto a calendar
 - [x] Redesign: navy ground, exercise photography, Progress tab with charts
-- [x] Supabase backup and sync — schema, RLS, magic-link sign-in, outbox flush
-      and pull (needs your project; see `supabase/README.md`)
+- [x] Supabase backup and sync — schema, RLS, sign-in by emailed code, a full
+      first backup, a daily catch-up and restore onto a new phone (needs your
+      project; the setup steps are in `supabase/README.md`)
 
 Still to come: Pro mode and the advanced set techniques (drop sets,
 rest-pause, supersets), and accessory rotation between blocks.
@@ -75,7 +76,9 @@ at runtime.
 ## Environment
 
 Copy `.env.local.example` to `.env.local`. Both variables stay empty until the
-Supabase project exists; nothing in the local-only build reads them.
+Supabase project exists; the app works fully without them and says so in
+Settings. For the deployed app they are set in Vercel — see
+`supabase/README.md`.
 
 No secret belongs in this repo. The Supabase service role key is never used in
 client code.
