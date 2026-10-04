@@ -16,6 +16,9 @@ mkdirSync(outDir, { recursive: true });
 
 const standard = readFileSync(resolve(root, 'assets/icon.svg'));
 const maskable = readFileSync(resolve(root, 'assets/icon-maskable.svg'));
+// iOS rounds the corners itself and fills transparent ones with black, so the
+// home screen icon is cut from a full-bleed square, not the rounded one.
+const apple = readFileSync(resolve(root, 'assets/icon-apple.svg'));
 
 const jobs: Array<{ source: Buffer; size: number; name: string }> = [
   { source: standard, size: 192, name: 'icon-192.png' },
@@ -23,7 +26,7 @@ const jobs: Array<{ source: Buffer; size: number; name: string }> = [
   { source: maskable, size: 192, name: 'icon-192-maskable.png' },
   { source: maskable, size: 512, name: 'icon-512-maskable.png' },
   // iOS ignores the manifest and uses this one for the home screen.
-  { source: standard, size: 180, name: 'apple-touch-icon.png' },
+  { source: apple, size: 180, name: 'apple-touch-icon.png' },
   { source: standard, size: 32, name: 'favicon-32.png' },
 ];
 

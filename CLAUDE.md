@@ -173,6 +173,13 @@ poster-sized condensed numbers and one blue highlight.
   `Button`, `Sheet`, `Segmented`, `Toggle`, `Stat` — rather than re-deriving the
   look. The focus ring sits in the base layer so a component can draw its own:
   unlayered, it beat every component that tried.
+- **The icon** is a chalk "GO" in the display face over a blue bar. The source
+  art in `assets/` has the glyphs outlined to paths, because sharp's SVG
+  renderer cannot load the bundled web font and would quietly substitute a
+  system face. `npm run icons:build` rasterises it into `public/icons/`. iOS
+  gets its own full-bleed variant (`icon-apple.svg`): it rounds the corners
+  itself and fills transparent ones with black. The maskable variant keeps the
+  art inside the 40% safe-zone circle.
 
 ## Where things live
 
