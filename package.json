@@ -26,7 +26,8 @@
     "test:toolkit": "node e2e/toolkit.mjs",
     "test:smart": "node e2e/smart.mjs",
     "test:session": "node e2e/session.mjs",
-    "test:rollover": "node e2e/rollover.mjs"
+    "test:rollover": "node e2e/rollover.mjs",
+    "test:planswap": "node e2e/planswap.mjs"
   },
   "dependencies": {
     "@fontsource/barlow": "^5.3.0",

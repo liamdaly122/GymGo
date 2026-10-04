@@ -194,9 +194,14 @@ The plan builder hangs off Plan at `/plan/new`. The old routes — `/routines`,
 installed home-screen app, a bookmark or a back-stack entry still lands.
 
 Today is a poster: the next session as the headline, its work as sets × reps,
-and one Start button. Every training day in its week strip goes somewhere — a
-done day opens what was logged, a planned one opens its session — and a rest
-day is not a button.
+and one Start button. Under it the calendar opens on this week and pages through
+the rest of the block, by swipe or by the arrows, as far as `weekRange` says
+sessions go. Each training day carries a short session name. Every training day
+goes somewhere: a done day opens what was logged, and a planned one opens a
+sheet with that session as it will be that week, with a swap on every exercise.
+Only the session up next starts from the sheet, so nothing is trained out of
+turn from the calendar. A rest day is not a button. A swipe that starts on a day
+must not also open it, which is what the strip's `onClickCapture` is for.
 
 ## The block lifecycle
 
@@ -232,6 +237,14 @@ A workout started from a plan routine fills `slotForRoutine`: the earliest
 session still to do for that routine, wherever it has rolled to. Reading the
 week off "where the block is up to" could name a week whose session for that
 routine was already trained, and overwrite it.
+
+**A session belongs to the block that is running.** `runningPlan` in
+`src/domain/schedule.ts` is the rule: the newest plan not yet finished, and,
+given a routine, the newest that holds it. Not `generated_from_plan_id`, which
+names the block that first wrote the routine. Reading that filed every block-two
+session under block one, so the new block never saw them. Its first session
+rolled forward forever and it could never finish. A routine whose block has
+ended belongs to no block.
 
 `startNextBlock` closes the old plan and opens a new one **on the same
 routines**. Achieved weights carry forward for free, because the progression
@@ -417,6 +430,45 @@ routines, which is what keeps this feature clear of the immutability rule.
 gym profiles. A commercial gym must fill everything; a constrained gym may rule
 combinations out but must still leave one workable option at every day count.
 
+## Changing exercises
+
+"Swap this" means two things. Not wanting to deadlift is answered by a hip
+thrust or a good morning, something else for the same muscles, and not by a
+sumo deadlift. A taken rack is answered by the same lift on other kit.
+`exerciseAlternatives` in `src/domain/search.ts` keeps them apart. It reads the
+lift family from the name (`liftFamily`: every deadlift is a deadlift) and ranks
+each group by weighted muscle overlap, with secondaries at a half. Planning
+leads with the different exercise; mid-session leads with the same lift. The
+different group offers one per family, because three good mornings are one
+idea. Olympic lifts and "other" kit sink. Isolation and core are labels, not
+movements, so they need the same primary muscle. A shared movement also needs
+shared muscles, because the dataset files a glute-ham raise under rows.
+
+**How far a swap reaches is chosen above the list**:
+
+- today only, or every run of this session (mid-session)
+- this session, or the whole plan (anywhere else)
+
+The hint names every lift the swap will change. **"Whole plan" reaches by
+family**, through `planSwapTargets`: in each session, the same exercise if it is
+there, otherwise that session's version of the lift. It changes one per session,
+because the replacement going in twice would double it up. A generated plan
+almost never repeats an exercise, since it spreads variety across the week. The
+four-day full body runs a conventional, a Romanian and a sumo deadlift, so
+matching the exercise id would have left two of the three, and "no deadlifts"
+would have done nothing.
+
+Swaps write routine tables only, so neither a finished workout nor one under way
+can be reached. The replacement takes the row over: its place, its superset and
+its prescription. The sets and rest were written for the slot, not the lift.
+
+**In the builder a swap is a pin on a template slot** (`pinExercises`). It is
+applied after the week is filled, because refilling with the old lift left out
+would ripple through the variety rules and change lifts nobody touched. Shuffle
+re-rolls everything else and keeps the pins. A lift swapped out of the whole
+plan has its family kept out of every shuffle after it. The pinned exercise gets
+the prescription the plan gives that slot.
+
 ## What the suggestion engine may read
 
 `src/domain/progression.ts` reasons from history; `src/domain/coldStart.ts`
@@ -449,8 +501,8 @@ says "in two consecutive sessions", and backing off and still missing is exactly
 when a deload is due.
 
 **A cold start reasons from a lift you have done, never from a table.**
-`estimateOpeningWeight` ranks references with the same `swapSuggestions` tiering
-the swap screen uses, prefers a reference on the same equipment, takes a
+`estimateOpeningWeight` ranks references with `swapSuggestions`, where the same
+movement on the same muscle comes first, prefers a reference on the same equipment, takes a
 conservative fraction, rounds **down** through `loadableWeight`, and returns null
 when nothing related has history. Saying nothing beats guessing. It surfaces as
 `kind: 'estimate'` with a reason that names the reference, because it must never
@@ -489,8 +541,8 @@ Three layers, each earning its place:
 
 The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
 `test:plans`, `test:swap`, `test:gyms`, `test:pro`, `test:block`,
-`test:programme`, `test:toolkit`, `test:smart`, `test:session` and
-`test:rollover`. They expect a
+`test:programme`, `test:toolkit`, `test:smart`, `test:session`,
+`test:rollover` and `test:planswap`. They expect a
 preview server on `127.0.0.1:5185` — `test:offline` runs its own on 5190. Each
 takes a `BASE_URL` override.
 
@@ -512,6 +564,12 @@ screen looks identical. These in particular are load-bearing:
 - `Swap <Exercise> for something else`, `Move <Exercise> earlier` / `later`,
   `Readiness low` — inside it
 - the `timer` role, `Skip rest`, `Show sets` — the rest
+- `Swap <Exercise>`: the swap on a planned exercise, in the builder, the
+  session editor and a day's sheet. The panel it opens is a dialog of the same
+  name. `Swap for` is the reach, a group holding `Today`, `Every <session>`,
+  `Just <session>` and `Whole plan`
+- the `Calendar` region, its list (`This week`, `Next week`, `Week of …`),
+  and `Previous week` / `Next week`
 - `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
 
 `Add exercise` names exactly one control at a time: the empty state owns it
