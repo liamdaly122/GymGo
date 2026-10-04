@@ -347,4 +347,28 @@ export function weekStrip(date: Date, weekStartsOn = 1): Date[] {
   return Array.from({ length: 7 }, (_unused, index) => addDays(first, index));
 }
 
+/**
+ * How far the week strip pages: from the week of the block's first session to
+ * the week of its last, wherever rolling has put it, as whole weeks from the
+ * week containing `today`. This week is always in range, so a block that
+ * starts next Monday still opens on now.
+ */
+export function weekRange(
+  schedule: readonly ScheduledSession[],
+  today: Date,
+  weekStartsOn = 1,
+): { first: number; last: number } {
+  if (schedule.length === 0) return { first: 0, last: 0 };
+  const weekOf = (date: Date) => weekStrip(date, weekStartsOn)[0]!;
+  const current = weekOf(new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12));
+  const weeksFrom = (iso: string) =>
+    Math.round((weekOf(new Date(`${iso}T12:00:00`)).getTime() - current.getTime()) / (7 * 86_400_000));
+
+  const dates = schedule.map((session) => session.date).sort();
+  return {
+    first: Math.min(0, weeksFrom(dates[0]!)),
+    last: Math.max(0, weeksFrom(dates.at(-1)!)),
+  };
+}
+
 export { localIsoDate };

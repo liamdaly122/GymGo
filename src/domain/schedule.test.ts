@@ -8,6 +8,7 @@ import {
   isBlockComplete,
   runningPlan,
   slotForRoutine,
+  weekRange,
   weekStrip,
   type ScheduledSession,
   type SessionStatus,
@@ -504,5 +505,35 @@ describe('the block that is running', () => {
     expect(runningPlan([first, second, other], 'r-upper')?.id).toBe('block-2');
     expect(runningPlan([first, second, other], 'r-mine')?.id).toBe('other');
     expect(runningPlan([first], 'r-upper')).toBeNull();
+  });
+});
+
+describe('paging the week strip', () => {
+  // Five weeks of Monday and Thursday from Monday 3 August.
+  const schedule = build(makePlan());
+
+  it('runs from the first week of the block to the last', () => {
+    expect(weekRange(schedule, new Date(2026, 7, 3))).toEqual({ first: 0, last: 4 });
+    // Wednesday of week 3: two weeks back, two ahead.
+    expect(weekRange(schedule, new Date(2026, 7, 19))).toEqual({ first: -2, last: 2 });
+  });
+
+  it('always includes this week', () => {
+    // The block starts next Monday; today is the Thursday before.
+    expect(weekRange(schedule, new Date(2026, 6, 30))).toEqual({ first: 0, last: 5 });
+    expect(weekRange([], new Date(2026, 7, 3))).toEqual({ first: 0, last: 0 });
+  });
+
+  it('reaches as far as a session has rolled', () => {
+    const rolled = schedule.map((session, index) =>
+      index === schedule.length - 1 ? { ...session, date: '2026-09-14' } : session,
+    );
+    expect(weekRange(rolled, new Date(2026, 7, 3)).last).toBe(6);
+  });
+
+  it('counts weeks from the day the week starts on', () => {
+    // A Sunday: the end of a Monday week, the start of a Sunday one.
+    expect(weekRange(schedule, new Date(2026, 7, 9), 1).first).toBe(0);
+    expect(weekRange(schedule, new Date(2026, 7, 9), 0).first).toBe(-1);
   });
 });

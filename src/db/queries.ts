@@ -484,6 +484,65 @@ export function usePlanSchedule(): PlanScheduleView | undefined | null {
   }, [today]);
 }
 
+export interface SessionPreviewItem {
+  /** The routine row, which a swap from the preview starts from. */
+  rowId: string;
+  name: string;
+  sets: number;
+  reps: string;
+  /** "A1", "A2" for the halves of a superset. */
+  badge: string | null;
+}
+
+export interface SessionPreview {
+  minutes: number;
+  items: SessionPreviewItem[];
+}
+
+/**
+ * What a planned session holds, shaped by the week of the block it falls in:
+ * week 3 adds sets, the deload halves them, so a session three weeks out does
+ * not read like this week's.
+ */
+export function useSessionPreview(
+  routineId: string | undefined,
+  week: WeekModifier | null | undefined,
+): SessionPreview | null | undefined {
+  return useLiveQuery(async () => {
+    if (!routineId) return null;
+    const rows = live(await db.routine_exercises.where({ routine_id: routineId }).toArray()).sort(
+      (a, b) => a.position - b.position,
+    );
+    const exercises = await db.exercises.bulkGet(rows.map((row) => row.exercise_id));
+    const setsOf = (base: number) => (week ? setsForWeek(base, week) : base);
+    const groups = new Map<string, number>();
+    return {
+      minutes: estimateDurationMinutes(
+        rows.map((row) => ({ sets: setsOf(row.target_sets), restSeconds: row.rest_seconds ?? 120 })),
+      ),
+      items: rows.map((row, index) => {
+        let badge: string | null = null;
+        if (row.superset_group) {
+          const n = (groups.get(row.superset_group) ?? 0) + 1;
+          groups.set(row.superset_group, n);
+          badge = `A${n}`;
+        }
+        return {
+          rowId: row.id,
+          name: exercises[index]?.name ?? 'Exercise',
+          sets: setsOf(row.target_sets),
+          reps:
+            row.rep_range_low === row.rep_range_high
+              ? `${row.rep_range_low}`
+              : `${row.rep_range_low}–${row.rep_range_high}`,
+          badge,
+        };
+      }),
+    };
+    // The modifier is derived from these two numbers; its identity is not stable.
+  }, [routineId, week?.week, week?.totalWeeks]);
+}
+
 /** One routine as the Programme screen lists it: enough to recognise it by. */
 export interface ProgrammeRoutine {
   routine: Routine;

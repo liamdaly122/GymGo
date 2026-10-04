@@ -319,10 +319,25 @@ input[type='number']::-webkit-outer-spin-button {
     font-variant-numeric: tabular-nums;
   }
 
+  .cal { display: flex; flex-direction: column; gap: 6px; }
+  .cal-head { display: flex; align-items: center; gap: 4px; margin: 0 -10px; }
+  .cal-head .icon-btn:disabled { opacity: 0.25; }
+  .cal-title { flex: 1; min-width: 0; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; text-align: center; }
+  .cal-title strong { font-family: var(--font-display); font-size: 1.125rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.02em; line-height: 1.1; }
+  .cal-title span { font-size: 0.75rem; color: var(--color-muted); }
+  /* Sideways drags are the strip's; up and down still scroll the page. */
+  .cal-swipe { touch-action: pan-y; }
   .week { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+  .week.from-next { animation: week-from-next 180ms ease-out; }
+  .week.from-previous { animation: week-from-previous 180ms ease-out; }
+  @keyframes week-from-next { from { transform: translateX(28px); opacity: 0; } }
+  @keyframes week-from-previous { from { transform: translateX(-28px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .week.from-next, .week.from-previous { animation: none; }
+  }
   .day {
     width: 100%;
-    min-height: 74px;
+    min-height: 88px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -338,6 +353,21 @@ input[type='number']::-webkit-outer-spin-button {
   .day:disabled { cursor: default; }
   .day .d1 { font-weight: 600; letter-spacing: 0.12em; }
   .day .d2 { font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; color: var(--color-chalk); font-variant-numeric: tabular-nums; }
+  .day .dn {
+    width: 100%;
+    min-height: 1.1em;
+    padding: 0 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 700;
+    line-height: 1.1;
+    text-transform: uppercase;
+    color: var(--color-chalk);
+  }
+  .day.done .dn { color: var(--color-muted); }
   .day .dot { width: 100%; height: 4px; background: transparent; }
   .day.has .dot { box-shadow: inset 0 0 0 1px var(--color-faint); }
   .day.done .dot { background: var(--color-chalk); box-shadow: none; }

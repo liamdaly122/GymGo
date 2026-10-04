@@ -1,27 +1,27 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '@/db/db';
 import {
   useActiveWorkout,
   usePlanSchedule,
   useRepeatCandidate,
   useRoutines,
   useSessionList,
+  useSessionPreview,
   useSettings,
   useWorkoutName,
 } from '@/db/queries';
 import { repeatWorkout, startFreestyleWorkout, startWorkoutFromRoutine } from '@/db/mutations';
-import { Button, Screen, ScreenHeader, SectionLabel } from '@/components/ui';
+import { Button, Screen, ScreenHeader, SectionLabel, Sheet } from '@/components/ui';
 import { Icon } from '@/components/icons';
+import { Toast, useToast } from '@/components/Toast';
 import WeekStrip from '@/components/WeekStrip';
 import { formatDayLabel, formatDuration } from '@/lib/dates';
 import { useToday, scheduleDay } from '@/hooks/useToday';
-import { setsForWeek } from '@/domain/programmes/block';
-import { estimateDurationMinutes } from '@/domain/sessionSummary';
 import { movedLabel } from '@/features/plan/blockCopy';
-import { localIsoDate } from '@/domain/schedule';
+import { localIsoDate, type ScheduledSession } from '@/domain/schedule';
 import type { SessionRow } from '@/db/queries';
 import SessionListRow from '@/components/SessionListRow';
+import RoutineSwap from '@/features/swap/RoutineSwap';
 
 /**
  * Today: what you are doing, as a poster.
@@ -45,41 +45,12 @@ export default function HomeScreen() {
   const next = planned?.current ?? null;
 
   // What the next session actually contains, shaped by this week of the block.
-  const preview = useLiveQuery(async () => {
-    if (!next?.routineId) return null;
-    const rows = (await db.routine_exercises.where({ routine_id: next.routineId }).toArray())
-      .filter((row) => row.deleted_at === null)
-      .sort((a, b) => a.position - b.position);
-    const exercises = await db.exercises.bulkGet(rows.map((row) => row.exercise_id));
-    const week = planned?.week;
-    const groups = new Map<string, number>();
-    return {
-      minutes: estimateDurationMinutes(
-        rows.map((row) => ({
-          sets: week ? setsForWeek(row.target_sets, week) : row.target_sets,
-          restSeconds: row.rest_seconds ?? 120,
-        })),
-      ),
-      items: rows.map((row, index) => {
-        let badge: string | null = null;
-        if (row.superset_group) {
-          const n = (groups.get(row.superset_group) ?? 0) + 1;
-          groups.set(row.superset_group, n);
-          badge = `A${n}`;
-        }
-        return {
-          id: row.id,
-          name: exercises[index]?.name ?? 'Exercise',
-          sets: week ? setsForWeek(row.target_sets, week) : row.target_sets,
-          reps:
-            row.rep_range_low === row.rep_range_high
-              ? `${row.rep_range_low}`
-              : `${row.rep_range_low}–${row.rep_range_high}`,
-          badge,
-        };
-      }),
-    };
-  }, [next?.routineId, planned?.week.week]);
+  const preview = useSessionPreview(next?.routineId, planned?.week);
+
+  // A day opened from the strip, and an exercise of it being swapped.
+  const [opened, setOpened] = useState<ScheduledSession | null>(null);
+  const [swapping, setSwapping] = useState<string | null>(null);
+  const [toast, showToast] = useToast();
 
   // Anything finished today leads the screen, so the day's work is the first thing you see.
   const trainedToday = recent?.filter((row) => localIsoDate(new Date(row.workout.started_at)) === today) ?? [];
@@ -139,7 +110,7 @@ export default function HomeScreen() {
             {preview && preview.items.length > 0 ? (
               <ul className="hero-list">
                 {preview.items.map((item) => (
-                  <li key={item.id}>
+                  <li key={item.rowId}>
                     <span>
                       {item.name}
                       {item.badge ? <> <span className="ss">{item.badge}</span></> : null}
@@ -194,7 +165,7 @@ export default function HomeScreen() {
             weekStartsOn={settings?.week_starts_on ?? 1}
             onSelect={(session) => {
               if (session.workoutId) void navigate(`/history/${session.workoutId}`);
-              else if (session.routineId) void navigate(`/routines/${session.routineId}`);
+              else if (session.routineId) setOpened(session);
             }}
           />
         ) : null}
@@ -257,7 +228,101 @@ export default function HomeScreen() {
           )}
         </section>
       </div>
+
+      {opened && !swapping ? (
+        <DaySheet
+          session={opened}
+          // Only the session that is up next starts from here; the hero offers
+          // the same, so nothing can be trained out of turn from the calendar.
+          onStart={
+            !active && next && opened.routineId === next.routineId && opened.date === next.date
+              ? () => {
+                  setOpened(null);
+                  void handleStartPlanned();
+                }
+              : null
+          }
+          onSwap={setSwapping}
+          onClose={() => setOpened(null)}
+        />
+      ) : null}
+
+      {swapping ? (
+        <RoutineSwap routineExerciseId={swapping} onClose={() => setSwapping(null)} onSwapped={showToast} />
+      ) : null}
+
+      <Toast message={toast} />
     </Screen>
+  );
+}
+
+/**
+ * A day from the calendar: what that session holds that week, with a swap on
+ * every exercise. Seeing Friday's deadlifts on Monday is the time to change
+ * them, not under the bar.
+ */
+function DaySheet({
+  session,
+  onStart,
+  onSwap,
+  onClose,
+}: {
+  session: ScheduledSession;
+  onStart: (() => void) | null;
+  onSwap: (routineExerciseId: string) => void;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const preview = useSessionPreview(session.routineId, session.modifier);
+  const day = new Date(`${session.date}T12:00:00`).toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+  const moved = movedLabel(session);
+
+  return (
+    <Sheet label={`${session.name}, ${day}`} onClose={onClose}>
+      <p className="t-label">
+        {day} · week {session.week} · {session.modifier.label}
+      </p>
+      <h2>{session.name}</h2>
+      <p className="sheet-note">
+        {preview ? `${preview.items.length} exercises · about ${preview.minutes} min` : ' '}
+        {moved ? ` · ${moved}` : ''}
+      </p>
+      {preview && preview.items.length > 0 ? (
+        <ul className="list ex-list">
+          {preview.items.map((item) => (
+            <li key={item.rowId} className="items-center">
+              <span className="ex-name flex-1">
+                <span>
+                  {item.name}
+                  {item.badge ? <> <span className="ss">{item.badge}</span></> : null}
+                </span>
+              </span>
+              <span className="ex-pres">
+                {item.sets} × {item.reps}
+              </span>
+              <button
+                type="button"
+                className="icon-btn -my-2 -mr-2.5"
+                aria-label={`Swap ${item.name}`}
+                onClick={() => onSwap(item.rowId)}
+              >
+                <Icon name="swap" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {onStart ? (
+        <Button variant="primary" onClick={onStart}>
+          Start {session.name}
+        </Button>
+      ) : null}
+      <Button onClick={() => void navigate(`/routines/${session.routineId}`)}>Edit session</Button>
+    </Sheet>
   );
 }
 
