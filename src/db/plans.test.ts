@@ -2,14 +2,21 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from './db';
 import {
+  addExerciseToRoutine,
+  addSet,
   completePlan,
+  completeSet,
   createRoutinesFromPlan,
   discardWorkout,
+  finishWorkout,
   startNextBlock,
   startWorkoutFromRoutine,
+  updateGym,
 } from './mutations';
 import { seedIfEmpty } from './seed';
+import { defaultGym, nextBlockRotation } from './blocks';
 import { buildPlan } from '@/domain/programmes/plan';
+import { roleForPrescription } from '@/domain/programmes/prescribe';
 import type { Equipment } from '@/domain/types';
 import { makeWorkout } from '@/domain/testFactories';
 
@@ -241,5 +248,116 @@ describe('training blocks', () => {
      * routine_exercises.target_rir, shown as a target rather than an answer.
      */
     expect(sets.every((set) => set.rir === null)).toBe(true);
+  });
+});
+
+/**
+ * The brief: "At the end of a block, keep the main lifts and rotate the
+ * accessories." Rotation repoints routine rows in place, as a swap does.
+ */
+describe('rotating the accessories into the next block', () => {
+  const liveRows = async (routineIds: string[]) =>
+    (await db.routine_exercises.where('routine_id').anyOf(routineIds).toArray()).filter(
+      (row) => row.deleted_at === null,
+    );
+
+  it('keeps the main lifts and rotates every accessory, row by row', async () => {
+    const { result } = await generate(4, 'upper_lower');
+    const before = await liveRows(result.routineIds);
+
+    await startNextBlock(result.planId);
+
+    const after = new Map((await liveRows(result.routineIds)).map((row) => [row.id, row]));
+    expect(after.size).toBe(before.length);
+    for (const row of before) {
+      const now = after.get(row.id)!;
+      // The slot's prescription stays with the row.
+      expect(now.target_sets).toBe(row.target_sets);
+      expect(now.rep_range_low).toBe(row.rep_range_low);
+      expect(now.rest_seconds).toBe(row.rest_seconds);
+      expect(now.position).toBe(row.position);
+      if (roleForPrescription('hypertrophy', row) === 'accessory') {
+        expect(now.exercise_id, 'an accessory should rotate').not.toBe(row.exercise_id);
+      } else {
+        expect(now.exercise_id, 'a main lift must stay').toBe(row.exercise_id);
+      }
+    }
+  });
+
+  it('does what the preview said it would', async () => {
+    const { result } = await generate(4, 'upper_lower');
+    const preview = await nextBlockRotation((await db.plans.get(result.planId))!);
+    expect(preview.length).toBeGreaterThan(0);
+
+    await startNextBlock(result.planId);
+
+    for (const rotation of preview) {
+      expect((await db.routine_exercises.get(rotation.rowId))!.exercise_id).toBe(rotation.to.id);
+    }
+  });
+
+  it('queues every row it rotates for backup', async () => {
+    const { result } = await generate(4, 'upper_lower');
+    const preview = await nextBlockRotation((await db.plans.get(result.planId))!);
+    await db.outbox.clear();
+
+    await startNextBlock(result.planId);
+
+    const queued = new Set(
+      (await db.outbox.where({ table_name: 'routine_exercises' }).toArray()).map((entry) => entry.row_id),
+    );
+    for (const rotation of preview) expect(queued.has(rotation.rowId)).toBe(true);
+  });
+
+  it('cannot reach a session already performed', async () => {
+    const { result } = await generate(4, 'upper_lower');
+    const workoutId = await startWorkoutFromRoutine(result.routineIds[0]!);
+    const performed = (await db.workout_exercises.where({ workout_id: workoutId }).toArray()).sort(
+      (a, b) => a.position - b.position,
+    );
+    for (const we of performed) await completeSet(await addSet(we.id, { weight_kg: 20, reps: 10 }));
+    await finishWorkout(workoutId);
+    const exercisesThen = performed.map((we) => we.exercise_id);
+
+    await startNextBlock(result.planId);
+
+    const exercisesNow = (await db.workout_exercises.where({ workout_id: workoutId }).toArray())
+      .filter((we) => we.deleted_at === null)
+      .sort((a, b) => a.position - b.position)
+      .map((we) => we.exercise_id);
+    expect(exercisesNow).toEqual(exercisesThen);
+    // And the routine really did change under it, or this proves nothing.
+    const routineNow = (await liveRows([result.routineIds[0]!])).map((row) => row.exercise_id);
+    expect(routineNow.some((id) => !exercisesThen.includes(id))).toBe(true);
+  });
+
+  it('keeps the same accessories when asked to', async () => {
+    const { result } = await generate(4, 'upper_lower');
+    const before = (await liveRows(result.routineIds)).map((row) => [row.id, row.exercise_id]);
+
+    await startNextBlock(result.planId, { rotate: false });
+
+    const after = (await liveRows(result.routineIds)).map((row) => [row.id, row.exercise_id]);
+    expect(after).toEqual(before);
+  });
+
+  it('leaves alone a lift the lifter added by hand', async () => {
+    const { result } = await generate(4, 'upper_lower');
+    const curl = (await db.exercises.toArray()).find((exercise) => exercise.name === 'Concentration Curls')!;
+    const added = await addExerciseToRoutine(result.routineIds[0]!, curl.id);
+
+    await startNextBlock(result.planId);
+
+    expect((await db.routine_exercises.get(added))!.exercise_id).toBe(curl.id);
+  });
+
+  it('only rotates in what the gym has', async () => {
+    const { result } = await generate(4, 'upper_lower');
+    const gym = (await defaultGym())!;
+    await updateGym(gym.id, { equipment_available: ['dumbbell', 'bodyweight'] });
+
+    const rotations = await nextBlockRotation((await db.plans.get(result.planId))!);
+
+    for (const { to } of rotations) expect(['dumbbell', 'bodyweight']).toContain(to.equipment);
   });
 });

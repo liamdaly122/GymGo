@@ -7,6 +7,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { scheduleDay, useToday } from '@/hooks/useToday';
 import { db } from './db';
+import { defaultGym } from './blocks';
 import { SETTINGS_ID, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
 import { planSwapTargets } from '@/domain/search';
@@ -418,15 +419,6 @@ export function useSessionSummary(workoutId: string | undefined) {
       summary: summariseSession({ workout: view.workout, exercises, previousSameRoutine }),
     };
   }, [workoutId]);
-}
-
-async function defaultGym(): Promise<Gym | null> {
-  const gyms = live(await db.gyms.toArray());
-  const settings = await db.settings.get(SETTINGS_ID);
-  const preferred = settings?.default_gym_id
-    ? gyms.find((gym) => gym.id === settings.default_gym_id)
-    : undefined;
-  return preferred ?? gyms.find((gym) => gym.is_default) ?? gyms[0] ?? null;
 }
 
 /** The gym plans are built against. Its equipment filters every suggestion. */

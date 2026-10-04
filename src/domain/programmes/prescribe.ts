@@ -38,6 +38,35 @@ const TABLE: Record<Goal, Record<Role, Prescription>> = {
 };
 
 /**
+ * Which role a routine row was written for, read back off its prescription.
+ *
+ * No column records it: a generated row carries the role only as the numbers
+ * `prescribe` gave it. Within one goal every role has its own rep range, and
+ * only accessories aim for RIR 1, so the range and the RIR together name the
+ * role. Rest is no help, because the goal and the lift both stretch it.
+ *
+ * Null for anything else. A row added by hand has no RIR target, and one the
+ * lifter has re-prescribed no longer matches. Either way it is the lifter's
+ * choice, and reading a role into it would let the app rotate it away.
+ */
+export function roleForPrescription(
+  profile: Goal,
+  row: { rep_range_low: number; rep_range_high: number; target_rir: number | null },
+): Role | null {
+  const roles = Object.keys(TABLE[profile]) as Role[];
+  return (
+    roles.find((role) => {
+      const base = TABLE[profile][role];
+      return (
+        base.repLow === row.rep_range_low &&
+        base.repHigh === row.rep_range_high &&
+        base.targetRir === row.target_rir
+      );
+    }) ?? null
+  );
+}
+
+/**
  * `restMultiplier` comes from the goal — fat-loss goals shorten rest to raise
  * session density. That is a real difference; a different split would not be.
  */

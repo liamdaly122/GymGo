@@ -33,6 +33,7 @@ import { buildSchedule, currentWeek, runningPlan, slotForRoutine } from '@/domai
 import { loadableWeight, loadingProfileFor, nextLoadableBelow, type LoadingProfile } from '@/domain/plates';
 import { warmupRamp } from '@/domain/warmup';
 import { planSwapTargets } from '@/domain/search';
+import { baseBlockName, defaultGym, nextBlockNumber, nextBlockRotation } from './blocks';
 
 /** Thrown when something tries to edit a workout that has already been finished. */
 export class ImmutableWorkoutError extends Error {
@@ -1071,11 +1072,6 @@ export async function createRoutinesFromPlan(
 // it marked missed.
 // ---------------------------------------------------------------------------
 
-/** Strips a trailing "(block N)" so the counter does not stack up. */
-function baseBlockName(name: string): string {
-  return name.replace(/\s*\(block \d+\)$/, '');
-}
-
 export async function completePlan(planId: string): Promise<void> {
   const now = nowIso();
   const patch = { completed_at: now, updated_at: now };
@@ -1092,20 +1088,31 @@ export async function completePlan(planId: string): Promise<void> {
  * also why the routines are reused rather than regenerated — a new set of
  * exercise ids would throw away the history that makes the suggestions work.
  * Choosing a different split is what the Plans tab is for.
+ *
+ * The main lifts stay and the accessories rotate (`rotateAccessories`),
+ * unless `rotate` is false. A rotated row is repointed in place, as a swap
+ * is, so it keeps its place, superset and prescription, and no finished
+ * workout can be reached: starting a routine copied it.
  */
-export async function startNextBlock(planId: string): Promise<string> {
+export async function startNextBlock(planId: string, options: { rotate?: boolean } = {}): Promise<string> {
   const previous = await db.plans.get(planId);
   if (!previous) throw new Error(`Plan ${planId} not found`);
 
-  const base = baseBlockName(previous.name);
-  const siblings = (await db.plans.toArray()).filter(
-    (plan) => plan.deleted_at === null && baseBlockName(plan.name) === base,
-  );
+  const rotations = options.rotate === false ? [] : await nextBlockRotation(previous);
+  const now = nowIso();
+  await db.transaction('rw', db.routine_exercises, async () => {
+    for (const rotation of rotations) {
+      await db.routine_exercises.update(rotation.rowId, { exercise_id: rotation.to.id, updated_at: now });
+    }
+  });
+  for (const rotation of rotations) {
+    await enqueue('routine_exercises', rotation.rowId, 'put', { exercise_id: rotation.to.id, updated_at: now });
+  }
 
   const next: Plan = {
     ...previous,
     id: newId(),
-    name: `${base} (block ${siblings.length + 1})`,
+    name: `${baseBlockName(previous.name)} (block ${await nextBlockNumber(previous)})`,
     current_week: 1,
     started_at: nowIso(),
     phase_name: weekModifier(1, previous.block_weeks).label,
@@ -1575,10 +1582,5 @@ export async function deleteGym(gymId: string): Promise<void> {
 
 /** The gym a new session should be recorded against. */
 export async function defaultGymId(): Promise<string | null> {
-  const settings = await db.settings.get(SETTINGS_ID);
-  const gyms = (await db.gyms.toArray()).filter((gym) => gym.deleted_at === null);
-  const preferred = settings?.default_gym_id
-    ? gyms.find((gym) => gym.id === settings.default_gym_id)
-    : undefined;
-  return (preferred ?? gyms.find((gym) => gym.is_default) ?? gyms[0])?.id ?? null;
+  return (await defaultGym())?.id ?? null;
 }
