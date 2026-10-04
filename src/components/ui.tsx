@@ -33,11 +33,6 @@ export function Button({
   );
 }
 
-/** A quiet panel, for grouping on the read-only screens. */
-export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-md bg-surface ${className}`}>{children}</div>;
-}
-
 /**
  * Numeric entry for forms: routine targets, gym plates, settings.
  *
@@ -121,11 +116,6 @@ export function ScreenHeader({
       {action}
     </header>
   );
-}
-
-/** The older two-part API, kept so a screen can move over one at a time. */
-export function ScreenTitle({ children, action }: { children: string; action?: ReactNode }) {
-  return <ScreenHeader title={children} action={action} />;
 }
 
 /** "← Plan" — the way back from a detail screen. */
@@ -240,6 +230,47 @@ export function Stat({ label, value, unit }: { label: string; value: ReactNode; 
       <span className="t-label">{label}</span>
       <strong>{value}</strong>
       {unit ? <span className="t-meta">{unit}</span> : null}
+    </div>
+  );
+}
+
+/** A labelled on/off switch, with an optional line of explanation under it. */
+export function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="font-semibold">{label}</p>
+        {hint ? <p className="t-meta">{hint}</p> : null}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${checked ? 'bg-hot' : 'bg-line'}`}
+      >
+        {/*
+          left is pinned rather than left to the static position: an absolutely
+          positioned child with `left: auto` resolved to 24px here, which threw
+          the knob clean outside the track.
+        */}
+        <span
+          className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-chalk transition-transform ${
+            checked ? 'translate-x-5' : 'translate-x-0'
+          }`}
+        />
+      </button>
     </div>
   );
 }

@@ -133,8 +133,8 @@ await step('the progression engine suggests the next jump', async () => {
   // The SAME routine again: every set hit the top of the range, so it should add weight.
   if (!plannedRoutineHref) throw new Error('did not capture the routine that was logged');
   await p.goto(`${BASE}#/routines/${plannedRoutineHref}`, { waitUntil: 'networkidle' });
-  await p.getByRole('button', { name: 'Start this workout' }).waitFor({ timeout: 15000 });
-  await p.getByRole('button', { name: 'Start this workout' }).click();
+  await p.getByRole('button', { name: /^Start / }).waitFor({ timeout: 15000 });
+  await p.getByRole('button', { name: /^Start / }).click();
   await p.waitForTimeout(1500);
 
   // The suggestion is a placeholder in the row, not a card above it — that is

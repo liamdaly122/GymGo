@@ -33,7 +33,7 @@ export default function App() {
     return (
       <div className="grid min-h-dvh place-items-center px-6 text-center">
         <div>
-          <p className="text-sm text-white">Could not open the local database.</p>
+          <p className="text-sm text-chalk">Could not open the local database.</p>
           <p className="mt-2 text-xs text-muted">{error?.message}</p>
           <p className="mt-4 text-xs text-muted">
             If this device is in private browsing, storage is unavailable.

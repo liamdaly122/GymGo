@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import { LastGymError, deleteGym, setDefaultGym, updateGym } from '@/db/mutations';
-import { Button, Card, Screen, ScreenTitle } from '@/components/ui';
+import { BackLink, Button, Screen, ScreenHeader, SectionLabel, Sheet } from '@/components/ui';
+import { Icon } from '@/components/icons';
 import { EQUIPMENT, type Equipment } from '@/domain/types';
 import { EQUIPMENT_LABELS } from '@/features/exercises/labels';
 import { formatPlateLoad, loadableWeight, plateBreakdown } from '@/domain/plates';
@@ -12,6 +13,13 @@ import { formatPlateLoad, loadableWeight, plateBreakdown } from '@/domain/plates
 const PLATE_OPTIONS = [25, 20, 15, 10, 5, 2.5, 1.25, 0.5];
 const BAR_OPTIONS = [20, 15, 10, 7.5];
 
+/**
+ * What one gym has.
+ *
+ * Plan filling, plan viability, swap suggestions and plate rounding all read
+ * this. A new gym starts at bodyweight only: ticking what you own is quicker
+ * and more honest than un-ticking what you do not.
+ */
 export default function GymEditorScreen() {
   const { gymId } = useParams<{ gymId: string }>();
   const navigate = useNavigate();
@@ -44,14 +52,14 @@ export default function GymEditorScreen() {
   if (gym === undefined) {
     return (
       <Screen>
-        <p className="text-sm text-muted">Loading…</p>
+        <p className="t-meta pt-6">Loading…</p>
       </Screen>
     );
   }
   if (!gym || !gymId) {
     return (
       <Screen>
-        <ScreenTitle>Not found</ScreenTitle>
+        <ScreenHeader title="Not found" />
         <Button onClick={() => void navigate('/gyms')}>Back to gyms</Button>
       </Screen>
     );
@@ -64,10 +72,7 @@ export default function GymEditorScreen() {
     void updateGym(gymId, { equipment_available: next });
   };
 
-  const toggleNumber = (
-    key: 'bar_weights' | 'plates_available',
-    value: number,
-  ) => {
+  const toggleNumber = (key: 'bar_weights' | 'plates_available', value: number) => {
     const list = gym[key];
     const next = list.includes(value)
       ? list.filter((entry) => entry !== value)
@@ -90,170 +95,151 @@ export default function GymEditorScreen() {
 
   return (
     <Screen>
-      <Link to="/gyms" className="mb-3 inline-block text-xs text-muted">
-        ← Gyms
-      </Link>
+      <BackLink to="/gyms">Gyms</BackLink>
+      <header className="top">
+        <div className="top-txt min-w-0 flex-1">
+          <p className="t-label">{gym.is_default ? 'Training here' : 'Gym'}</p>
+          <h1 className="sr-only">{gym.name}</h1>
+          <input
+            key={gym.name}
+            defaultValue={gym.name}
+            onBlur={(event) => {
+              const value = event.currentTarget.value.trim();
+              if (value && value !== gym.name) void updateGym(gymId, { name: value });
+              else event.currentTarget.value = gym.name;
+            }}
+            aria-label="Gym name"
+            className="title-input"
+          />
+        </div>
+      </header>
 
-      <input
-        defaultValue={gym.name}
-        onBlur={(event) => {
-          const value = event.currentTarget.value.trim();
-          if (value && value !== gym.name) void updateGym(gymId, { name: value });
-          else event.currentTarget.value = gym.name;
-        }}
-        aria-label="Gym name"
-        className="mb-4 w-full bg-transparent text-2xl font-semibold tracking-tight text-white focus:outline-none"
-      />
+      <div className="stack">
+        {!gym.is_default ? (
+          <Button variant="primary" block onClick={() => void setDefaultGym(gymId)}>
+            Train here
+          </Button>
+        ) : null}
 
-      {!gym.is_default ? (
-        <Button className="mb-4 w-full" onClick={() => void setDefaultGym(gymId)}>
-          Train here
-        </Button>
-      ) : null}
-
-      {error ? (
-        <p className="mb-4 rounded-xl bg-warn/10 px-4 py-3 text-xs text-warn" role="status">
-          {error}
-        </p>
-      ) : null}
-
-      <Card className="mb-4 p-4">
-        <h2 className="eyebrow mb-1">Equipment</h2>
-        <p className="mb-3 text-[11px] text-muted">
-          Tick what is actually here. Plans and swaps will only ever offer these.
-        </p>
-        <ul className="grid grid-cols-2 gap-2">
-          {EQUIPMENT.map((item) => {
-            const on = gym.equipment_available.includes(item);
-            return (
-              <li key={item}>
-                <button
-                  onClick={() => toggleEquipment(item)}
-                  aria-pressed={on}
-                  aria-label={EQUIPMENT_LABELS[item]}
-                  className={`w-full rounded-xl px-3 py-2.5 text-left text-xs transition-colors ${
-                    on
-                      ? 'bg-accent/15 text-accent ring-1 ring-accent/40'
-                      : 'border border-line bg-raised text-muted'
-                  }`}
-                >
-                  {EQUIPMENT_LABELS[item]}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-        {gym.equipment_available.length === 0 ? (
-          <p className="mt-3 text-[11px] text-warn">
-            Nothing selected — no plan can be built for this gym.
+        {error ? (
+          <p className="rounded-md bg-surface p-4 text-sm text-warn" role="status">
+            {error}
           </p>
         ) : null}
-      </Card>
 
-      {hasBarbell ? (
-        <>
-          <Card className="mb-4 p-4">
-            <h2 className="eyebrow mb-1">Bars</h2>
-            <p className="mb-3 text-[11px] text-muted">
-              The heaviest is assumed unless a lift says otherwise.
-            </p>
-            <ChipRow
-              options={BAR_OPTIONS}
-              selected={gym.bar_weights}
-              onToggle={(value) => toggleNumber('bar_weights', value)}
-              suffix="kg"
-            />
-          </Card>
+        <section aria-labelledby="equipment">
+          <SectionLabel id="equipment">Equipment</SectionLabel>
+          <p className="t-meta mb-3">Tick what is actually here. Plans and swaps will only ever offer these.</p>
+          <ul className="toggle-grid">
+            {EQUIPMENT.map((item) => {
+              const on = gym.equipment_available.includes(item);
+              return (
+                <li key={item}>
+                  <button
+                    type="button"
+                    className="toggle"
+                    onClick={() => toggleEquipment(item)}
+                    aria-pressed={on}
+                    aria-label={EQUIPMENT_LABELS[item]}
+                  >
+                    {EQUIPMENT_LABELS[item]}
+                    {on ? <Icon name="check" /> : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {gym.equipment_available.length === 0 ? (
+            <p className="mt-3 text-sm text-warn">Nothing selected — no plan can be built for this gym.</p>
+          ) : null}
+        </section>
 
-          <Card className="mb-4 p-4">
-            <h2 className="eyebrow mb-1">Plates</h2>
-            <p className="mb-3 text-[11px] text-muted">
-              Per side. Suggested weights are rounded to what these can actually make.
-            </p>
-            <ChipRow
-              options={PLATE_OPTIONS}
-              selected={gym.plates_available}
-              onToggle={(value) => toggleNumber('plates_available', value)}
-              suffix="kg"
-            />
-
-            {/* Abstract lists of numbers are hard to sanity-check; this makes the
-                consequence visible. */}
-            <div className="mt-4 border-t border-line pt-3">
-              <p className="eyebrow mb-2">What that loads</p>
-              <ul className="space-y-1.5">
-                {plateExamples.map((example) => (
-                  <li key={example.target} className="text-[11px]">
-                    <span className="text-muted">Asking for {example.target}kg → </span>
-                    <span className="text-white">
-                      {example.actual}kg
-                      {example.actual !== example.target ? ' (nearest)' : ''}
-                    </span>
-                    <span className="block text-muted">{example.text}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </Card>
-        </>
-      ) : null}
-
-      <Card className="p-4">
-        <h2 className="eyebrow mb-1">Danger</h2>
-        {confirmingDelete ? (
+        {hasBarbell ? (
           <>
-            <p className="mb-3 text-sm text-white">
-              Delete {gym.name}? Workouts you did there keep their history.
-            </p>
-            <div className="flex gap-2">
-              <Button variant="danger" className="flex-1" onClick={() => void handleDelete()}>
-                Delete gym
-              </Button>
-              <Button className="flex-1" onClick={() => setConfirmingDelete(false)}>
-                Keep
-              </Button>
-            </div>
+            <section aria-labelledby="bars">
+              <SectionLabel id="bars">Bars</SectionLabel>
+              <p className="t-meta mb-3">The heaviest is assumed unless a lift says otherwise.</p>
+              <NumberToggles
+                options={BAR_OPTIONS}
+                selected={gym.bar_weights}
+                onToggle={(value) => toggleNumber('bar_weights', value)}
+              />
+            </section>
+
+            <section aria-labelledby="plates">
+              <SectionLabel id="plates">Plates</SectionLabel>
+              <p className="t-meta mb-3">
+                Per side. Suggested weights are rounded to what these can actually make.
+              </p>
+              <NumberToggles
+                options={PLATE_OPTIONS}
+                selected={gym.plates_available}
+                onToggle={(value) => toggleNumber('plates_available', value)}
+              />
+
+              {/* Abstract lists of numbers are hard to sanity-check; this makes
+                  the consequence visible. */}
+              <div className="card mt-4 rounded-md bg-surface p-4">
+                <p className="t-label">What that loads</p>
+                <ul className="stack-sm">
+                  {plateExamples.map((example) => (
+                    <li key={example.target} className="text-sm">
+                      <span className="text-muted">Asking for {example.target}kg → </span>
+                      <span className="font-semibold">
+                        {example.actual}kg
+                        {example.actual !== example.target ? ' (nearest)' : ''}
+                      </span>
+                      <span className="block text-muted">{example.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
           </>
-        ) : (
-          <button onClick={() => setConfirmingDelete(true)} className="text-sm text-red-400">
-            Delete this gym
-          </button>
-        )}
-      </Card>
+        ) : null}
+
+        <button type="button" className="btn-text text-danger" onClick={() => setConfirmingDelete(true)}>
+          Delete this gym
+        </button>
+      </div>
+
+      {confirmingDelete ? (
+        <Sheet label={`Delete ${gym.name}`} onClose={() => setConfirmingDelete(false)}>
+          <h2>Delete {gym.name}?</h2>
+          <p className="sheet-note">Workouts you did there keep their history.</p>
+          <Button variant="danger" onClick={() => void handleDelete()}>
+            Delete gym
+          </Button>
+          <Button onClick={() => setConfirmingDelete(false)}>Keep</Button>
+        </Sheet>
+      ) : null}
     </Screen>
   );
 }
 
-function ChipRow({
+function NumberToggles({
   options,
   selected,
   onToggle,
-  suffix,
 }: {
   options: number[];
   selected: number[];
   onToggle: (value: number) => void;
-  suffix: string;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((value) => {
-        const on = selected.includes(value);
-        return (
-          <button
-            key={value}
-            onClick={() => onToggle(value)}
-            aria-pressed={on}
-            aria-label={`${value}${suffix}`}
-            className={`rounded-full px-3 py-1.5 text-xs tabular-nums transition-colors ${
-              on ? 'bg-accent font-medium text-ink' : 'border border-line bg-raised text-muted'
-            }`}
-          >
-            {value}
-            {suffix}
-          </button>
-        );
-      })}
+    <div className="num-toggles">
+      {options.map((value) => (
+        <button
+          key={value}
+          type="button"
+          className="num-toggle"
+          onClick={() => onToggle(value)}
+          aria-pressed={selected.includes(value)}
+          aria-label={`${value}kg`}
+        >
+          {value}
+        </button>
+      ))}
     </div>
   );
 }

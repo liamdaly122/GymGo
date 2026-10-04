@@ -30,7 +30,8 @@ await step('settings links through to gyms', async () => {
 
 await step('the seeded gym is listed and current', async () => {
   const body = await p.locator('body').innerText();
-  if (!/My gym/.test(body)) throw new Error('the seeded gym is missing');
+  // List titles are display type, upper-cased by CSS.
+  if (!/My gym/i.test(body)) throw new Error('the seeded gym is missing');
   if (!/CURRENT/i.test(body)) throw new Error('no gym is marked as current');
 });
 

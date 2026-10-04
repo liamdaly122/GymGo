@@ -108,8 +108,8 @@ await step('"Use this plan" builds six routines', async () => {
 
 await step('a generated routine starts a workout like any other', async () => {
   await p.getByRole('link', { name: /Push A/ }).first().click();
-  await p.getByRole('button', { name: 'Start this workout' }).waitFor({ timeout: 15000 });
-  await p.getByRole('button', { name: 'Start this workout' }).click();
+  await p.getByRole('button', { name: /^Start / }).waitFor({ timeout: 15000 });
+  await p.getByRole('button', { name: /^Start / }).click();
   await p.getByLabel('Set 1 weight in kilograms').first().waitFor({ timeout: 15000 });
   // Exercise names are display type, upper-cased by CSS.
   const body = await p.locator('body').innerText();

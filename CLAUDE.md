@@ -10,7 +10,8 @@ Source of truth for requirements: `docs/build-brief.md`.
 - React 19 + Vite + TypeScript, built as a static single page app
 - Dexie (IndexedDB) as the local working store — read and written on every interaction
 - Supabase (Postgres, Auth, RLS) as the remote store for backup and sync — *later*
-- Tailwind v4 for styling
+- Tailwind v4 for styling, with the look in component classes (see "Design")
+- Big Shoulders Display and Barlow from `@fontsource` (OFL-1.1), bundled and precached
 - Recharts for progress charts
 - vite-plugin-pwa for the service worker and manifest
 - Vercel, free tier, static build
@@ -150,11 +151,51 @@ plus a hand-written override table, and it **must be populated for every
 exercise** — it is what makes both the generator and swap suggestions work.
 `npm run seed:check` fails the build if any seeded exercise lacks a valid pattern.
 
+## Design: "Bold"
+
+Chosen by the owner from three tappable drafts, and ported from the approved
+draft rather than re-imagined: near-black ground, chalk-white type,
+poster-sized condensed numbers and one blue highlight.
+
+- **Two colours, two jobs.** Chalk (`accent`) is the action — the one button you
+  press next. Blue (`hot`) is the highlight — where you are, what moved, what
+  improved. Blue on a button, or chalk on a state, blurs the only signal the
+  palette carries. The competition plate colours (`p25`…`p1`) exist for the
+  plate diagram and nothing else.
+- **Type.** Big Shoulders Display for headlines, numbers and buttons, upper-cased
+  by CSS; Barlow for everything you read. Both are bundled from `@fontsource`
+  (latin subset, imported in `src/main.tsx`) and precached, never fetched, and
+  `test:offline` checks they load with the network cut. Upper-casing is CSS
+  only, so the DOM — and every accessible name — keeps its real case.
+- **The look lives in `src/index.css`**, as component classes ported from the
+  draft; `src/components/ui.tsx` only decides which apply. Screens are built
+  from those parts — `Screen`, `ScreenHeader`, `BackLink`, `SectionLabel`,
+  `Button`, `Sheet`, `Segmented`, `Toggle`, `Stat` — rather than re-deriving the
+  look. The focus ring sits in the base layer so a component can draw its own:
+  unlayered, it beat every component that tried.
+
+## Where things live
+
+Three tabs: **Today** (`/`), **Plan** (`/plan`) and **Progress** (`/progress`,
+with `/progress/lifts`). Settings is the gear on Today. Programme and Plans were
+two tabs for one idea, History and Progress two for another; the owner tested
+the merge in the drafts and chose it. A tab stays lit on the screens beneath it
+(`Layout.tsx`), so a session opened from Progress still reads as Progress.
+
+The plan builder hangs off Plan at `/plan/new`. The old routes — `/routines`,
+`/history` and `/plans/…` — redirect in `App.tsx`, query string and all, so an
+installed home-screen app, a bookmark or a back-stack entry still lands.
+
+Today is a poster: the next session as the headline, its work as sets × reps,
+and one Start button. Every training day in its week strip goes somewhere — a
+done day opens what was logged, a planned one opens its session — and a rest
+day is not a button.
+
 ## The block lifecycle
 
 A plan runs for five weeks and then it has to end. `plan.completed_at` sat in
 the schema unwritten for most of this project's life, so a finished block stayed
-on the Train screen forever, and there was no way to start another.
+on the home screen forever, and there was no way to start another.
 
 **Nothing is ever missed: a session not trained rolls forward.** `buildSchedule`
 in `src/domain/schedule.ts` puts a trained session on the day it was actually
@@ -189,7 +230,8 @@ routine was already trained, and overwrite it.
 routines**. Achieved weights carry forward for free, because the progression
 engine reads an exercise's history across every session ever logged rather than
 per plan. Regenerating the routines would hand back new exercise ids and throw
-that history away. Choosing a different split is what the Plans tab is for.
+that history away. Choosing a different split is what "Build a new plan", on
+Plan, is for.
 
 ## The logging screen shows one station, and one set
 

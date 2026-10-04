@@ -8,7 +8,7 @@ import { downloadFile, exportAsCsv, exportAsJson, importFromJson } from '@/db/ba
 import { exportFilename } from '@/lib/export';
 import { wipeAndReseed } from '@/db/seed';
 import { SCHEMA_VERSION } from '@/db/schema';
-import { BackLink, Button, NumberField, Screen, ScreenHeader, SectionLabel, Segmented } from '@/components/ui';
+import { BackLink, Button, NumberField, Screen, ScreenHeader, SectionLabel, Segmented, Toggle } from '@/components/ui';
 import type { Mode } from '@/domain/types';
 import SyncSection from './SyncSection';
 
@@ -226,47 +226,6 @@ function Row({ label, value }: { label: string; value: number | undefined }) {
     <div className="flex items-baseline justify-between gap-3">
       <dt className="text-muted">{label}</dt>
       <dd className="tabular-nums">{value ?? '—'}</dd>
-    </div>
-  );
-}
-
-function Toggle({
-  label,
-  hint,
-  checked,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0">
-        <p className="font-semibold">{label}</p>
-        {hint ? <p className="t-meta">{hint}</p> : null}
-      </div>
-      <button
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        onClick={() => onChange(!checked)}
-        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
-          checked ? 'bg-hot' : 'bg-line'
-        }`}
-      >
-        {/*
-          left is pinned rather than left to the static position: an absolutely
-          positioned child with `left: auto` resolved to 24px here, which threw
-          the knob clean outside the track.
-        */}
-        <span
-          className={`absolute top-0.5 left-0.5 h-6 w-6 rounded-full bg-chalk transition-transform ${
-            checked ? 'translate-x-5' : 'translate-x-0'
-          }`}
-        />
-      </button>
     </div>
   );
 }

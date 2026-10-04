@@ -256,7 +256,7 @@ await step('create a routine and add an exercise', async () => {
   await page.getByRole('button', { name: 'New routine' }).click();
   await page.getByLabel('Routine name').fill('Lower A');
   await page.getByRole('button', { name: 'Create' }).click();
-  await page.getByRole('button', { name: 'Start this workout' }).waitFor();
+  await page.getByRole('button', { name: /^Start / }).waitFor();
   await page.getByRole('button', { name: 'Add exercise' }).click();
   await page.getByPlaceholder('Add to routine').fill('barbell squat');
   await page.getByRole('button', { name: /^Barbell Squat/ }).first().click();
@@ -273,7 +273,7 @@ await step('set the routine to 3 sets of 5 to 8', async () => {
 
 let routineWorkoutUrl = '';
 await step('start a workout from the routine and log it', async () => {
-  await page.getByRole('button', { name: 'Start this workout' }).click();
+  await page.getByRole('button', { name: /^Start / }).click();
   await page.getByRole('button', { name: 'Add set' }).waitFor();
   // The exercise came across from the routine without being picked again.
   // The name is display type, upper-cased by CSS.
@@ -293,7 +293,7 @@ await step('start a workout from the routine and log it', async () => {
 await step('rewrite the routine completely', async () => {
   await page.goto(`${BASE}#/plan`, { waitUntil: 'networkidle' });
   await page.getByRole('link', { name: /Lower A/ }).click();
-  await page.getByRole('button', { name: 'Start this workout' }).waitFor();
+  await page.getByRole('button', { name: /^Start / }).waitFor();
   // Swap the exercise out for a different one and change every target.
   await page.getByLabel(/Remove Barbell Squat from routine/).click();
   await page.waitForTimeout(400);
