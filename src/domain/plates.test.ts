@@ -4,6 +4,7 @@ import {
   loadableWeight,
   loadingProfileFor,
   plateBreakdown,
+  stepFrom,
 } from './plates';
 
 const COMMERCIAL_BAR = {
@@ -111,5 +112,46 @@ describe('plate breakdown', () => {
 
   it('does not apply to equipment without plates', () => {
     expect(plateBreakdown(30, loadingProfileFor('dumbbell'))).toBeNull();
+  });
+});
+
+describe('the weight steppers', () => {
+  it('move a loaded bar by the smallest pair of plates', () => {
+    expect(stepFrom(100, COMMERCIAL_BAR)).toEqual({ up: 2.5, down: 2.5, base: 100 });
+  });
+
+  it('step from the number on screen, so a suggestion is never thrown away', () => {
+    // 102.5 is the suggestion shown in an empty field: one tap is 105, not 20.
+    expect(stepFrom(102.5, COMMERCIAL_BAR).base).toBe(102.5);
+    expect(stepFrom(102.5, COMMERCIAL_BAR).up).toBe(2.5);
+  });
+
+  it('offer the bare bar as the first tap from nothing', () => {
+    expect(stepFrom(0, COMMERCIAL_BAR)).toEqual({ up: 20, down: null, base: 0 });
+  });
+
+  it('offer nothing lighter than an empty bar', () => {
+    expect(stepFrom(20, COMMERCIAL_BAR).down).toBeNull();
+    expect(stepFrom(20, COMMERCIAL_BAR).up).toBe(2.5);
+  });
+
+  it('follow what the gym actually stocks', () => {
+    // No 1.25s: the smallest change a pair of plates can make is 5kg.
+    const coarse = { ...COMMERCIAL_BAR, plates: [25, 20, 15, 10, 5, 2.5] };
+    expect(stepFrom(100, coarse)).toEqual({ up: 5, down: 5, base: 100 });
+  });
+
+  it('move a stack or a dumbbell by its own increment', () => {
+    const stack = loadingProfileFor('cable');
+    expect(stepFrom(0, stack)).toEqual({ up: 5, down: null, base: 0 });
+    expect(stepFrom(5, stack).down).toBeNull();
+    expect(stepFrom(25, stack)).toEqual({ up: 5, down: 5, base: 25 });
+
+    const bells = loadingProfileFor('dumbbell');
+    expect(stepFrom(22.5, bells)).toEqual({ up: 2.5, down: 2.5, base: 22.5 });
+  });
+
+  it('give bodyweight work a small first step rather than a tenth of a kilo', () => {
+    expect(stepFrom(0, loadingProfileFor('bodyweight')).up).toBe(1.25);
   });
 });

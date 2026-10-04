@@ -111,8 +111,9 @@ await step('a generated routine starts a workout like any other', async () => {
   await p.getByRole('button', { name: 'Start this workout' }).waitFor({ timeout: 15000 });
   await p.getByRole('button', { name: 'Start this workout' }).click();
   await p.getByLabel('Set 1 weight in kilograms').first().waitFor({ timeout: 15000 });
+  // Exercise names are display type, upper-cased by CSS.
   const body = await p.locator('body').innerText();
-  if (!/(Bench Press|Press|Dips)/.test(body)) throw new Error('workout did not carry the plan exercises');
+  if (!/(Bench Press|Press|Dips)/i.test(body)) throw new Error('workout did not carry the plan exercises');
 });
 await p.screenshot({ path: 'e2e/shot-plan-workout.png' });
 

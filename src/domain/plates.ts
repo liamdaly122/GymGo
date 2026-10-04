@@ -246,3 +246,39 @@ export function nextLoadableBelow(weight: number, profile: LoadingProfile): numb
   }
   return best >= 0 ? bar + fromGrid(best) * 2 : bar;
 }
+
+/** What one tap of a weight stepper does. */
+export interface WeightSteps {
+  /** How far one tap up moves the weight, or null when there is nowhere to go. */
+  up: number | null;
+  /** How far one tap down moves it, or null when nothing lighter can be loaded. */
+  down: number | null;
+  /** The weight the steps were worked out from. */
+  base: number;
+}
+
+/**
+ * How far one tap moves the weight, in the equipment's own increments.
+ *
+ * `weight` is the number on screen, which while the field is still empty is the
+ * suggestion — not zero. Stepping from zero offered "+ 20", the bare bar,
+ * beside a suggested 102.5kg, so one tap threw the suggestion away and called
+ * it an adjustment.
+ *
+ * From nothing at all, the first tap gives the smallest thing you can pick up:
+ * the bare bar, or one plate on a stack. A step with nowhere to go is not
+ * offered — there is nothing lighter than an empty bar.
+ */
+export function stepFrom(weight: number, profile: LoadingProfile): WeightSteps {
+  if (!(weight > 0)) {
+    const first = profile.mode === 'free' ? nextLoadableAbove(0, profile) : loadableWeight(0.1, profile);
+    return { up: round2(first), down: null, base: 0 };
+  }
+  const up = round2(nextLoadableAbove(weight, profile) - weight);
+  const down = round2(weight - nextLoadableBelow(weight, profile));
+  return { up: up > 0 ? up : null, down: down > 0 ? down : null, base: weight };
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}

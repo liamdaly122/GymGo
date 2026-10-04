@@ -733,6 +733,39 @@ export async function completeSet(setId: string, completed = true): Promise<void
   await enqueue('sets', setId, 'put', patch);
 }
 
+/**
+ * Logs a set with the numbers on screen, values and tick in one write.
+ *
+ * The logging screen's Done logs what it shows: what was typed, or the
+ * suggestion when nothing was. An empty tick used to save 0kg × 0, and writing
+ * the numbers and the tick separately would leave a window in which the set is
+ * ticked at zero — the same bug, briefly.
+ */
+export async function completeSetWith(
+  setId: string,
+  values: { weight_kg: number; reps: number },
+): Promise<void> {
+  if (!Number.isFinite(values.weight_kg) || values.weight_kg < 0) {
+    throw new Error(`Cannot log a weight of ${values.weight_kg}kg`);
+  }
+  if (!Number.isFinite(values.reps) || values.reps < 0) {
+    throw new Error(`Cannot log ${values.reps} reps`);
+  }
+  await assertSetEditable(setId);
+  const now = nowIso();
+  const patch = {
+    weight_kg: values.weight_kg,
+    reps: Math.round(values.reps),
+    completed: true,
+    completed_at: now,
+    updated_at: now,
+  };
+  await db.transaction('rw', db.sets, db.outbox, async () => {
+    await db.sets.update(setId, patch);
+    await enqueue('sets', setId, 'put', patch);
+  });
+}
+
 export async function removeSet(setId: string): Promise<void> {
   await assertSetEditable(setId);
   const now = nowIso();

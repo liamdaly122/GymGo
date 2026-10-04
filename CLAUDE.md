@@ -82,10 +82,12 @@ deliberate: a coarse cable stack or a light dumbbell steps down one real
 increment when 80% rounds back onto the parent, and a bare bar is left alone
 because nothing lighter can be loaded.
 
-Rest after a superset is `src/domain/supersets.ts`, and it is the same shape of
-rule: rest runs after an exercise unless a **later** exercise shares its group.
-Grouping is stored on the rows, not derived from adjacency, so removing
-something from between a pair does not silently dissolve it.
+Rest after a superset is `restsAfterSet` in `src/domain/supersets.ts`, and it
+is the same shape of rule: rest runs after a working set unless a **later**
+member of the station still has its set to do in the same round. Judged by
+round, so a pair whose halves have different set counts still rests after A1's
+extra set. Grouping is stored on the rows, not derived from adjacency, so
+removing something from between a pair does not silently dissolve it.
 
 ### 4. Units and dates
 
@@ -189,7 +191,7 @@ engine reads an exercise's history across every session ever logged rather than
 per plan. Regenerating the routines would hand back new exercise ids and throw
 that history away. Choosing a different split is what the Plans tab is for.
 
-## The logging screen shows one station
+## The logging screen shows one station, and one set
 
 The unit on screen is a **station**: a solo exercise, or a whole superset group.
 Not one exercise — an A1/A2 pair is performed by alternating, so splitting it
@@ -198,49 +200,77 @@ across two screens would make it unloggable. `sessionStations` in
 it reads the stored `superset_group` rather than adjacency, so a pair with
 something between them is still one station.
 
-Before this, a five-exercise session put 147 interactive controls on the page,
-only 40 of which were the weight and reps fields the task actually needs, and
-one exercise card rendered taller than the window — at 390×844 a complete
-exercise never fit on screen at all, and a six-exercise session was seven
-screen-heights of scrolling.
+Inside the station, one set is on screen: the **set in hand**, poster-sized,
+with a single Done bar under your thumb. Which set that is comes from
+`setInHand` in `src/domain/supersets.ts`, in the order the work is performed:
+warm-ups first, then working sets by round across the station — A1, A2, A1, A2,
+never all of A1 first — and each child set straight after its parent, before
+the partner's turn. Everything else is a chip (`SetChips`) that opens the set
+(`SetSheet`): fix the numbers, untick it, delete it, and in Pro hang a drop,
+rest-pause or myo off it.
 
-**Focus never moves on its own.** It is seeded from the first station with
+Before the station, a five-exercise session put 147 interactive controls on the
+page, only 40 of which were the weight and reps fields the task actually needs,
+and one exercise card rendered taller than the window.
+
+**Done logs the numbers on screen.** The big fields show what was typed or,
+while empty, the suggestion as a placeholder, and Done logs exactly that through
+`completeSetWith` — values and tick in one write. An empty tick used to save
+0kg × 0. With nothing to show — no suggestion and nothing typed — Done asks for
+the number rather than logging zero. The button says what it will log
+("Done · 102.5 × 6"), and its accessible name reads it out.
+
+**Focus never moves on its own.** The station is seeded from the first one with
 anything unticked, and after that it only moves because you tapped the strip or
-"Next exercise". If it followed the session, ticking the last set of a station
-would teleport the screen while the rest dial is up and you are about to correct
-a mistyped rep — and every `.first()` in the browser suites would quietly
-retarget.
+"Next exercise", which is what the Done bar becomes once a station is finished.
+If it followed the session, the last Done of a station would teleport the screen
+while you are about to correct a mistyped rep — and every `.first()` in the
+browser suites would quietly retarget. The set in hand does move on Done; that
+is inside the station, and it is the point.
 
-**At most one border between you and the background.** The panel *is* the
-screen: its body sits on the ground colour, sets are rows separated by
-`divide-y`, and the only bordered things are the fields, the tick and the sheet.
-Nested cards are what made the old card unreadable, not the amount of
-information on it. `Card` still belongs on Train, Programme and History, which
-are read rather than operated.
+**At most one border between you and the background.** The station sits on the
+ground colour; the only bordered things are the chips, the sheets and the
+dashed Add set. Nested cards are what made the old card unreadable, not the
+amount of information on it. `Card` belongs on the read screens — Plan,
+Progress, a session's detail — not on the one you operate.
 
-**One line of prose maximum, with the rest behind a tap.** The suggestion is a
-placeholder in the set row — that is what the brief specifies — plus one plan
-line carrying a verb chip and a single `Use`. Two cards used to sit above the
-rows, each with its own `Use`, showing two different weights about 250px apart,
-both looking authoritative.
+**One line of prose maximum, with the rest behind a tap.** The suggestion is
+the placeholder in the field — that is what the brief specifies — plus one plan
+line carrying a verb chip and the reason, clamped to a line. There is no `Use`
+any more: Done logs the suggestion when nothing is typed, so taking it is the
+same tap as logging it.
 
 Everything that is not logging a set — swap, warm-up, move earlier, move later,
 remove, and in Pro the superset toggle — lives in one overflow sheet per
-exercise, opened by the `More for …` button.
+exercise, opened by the `More for …` button. In a superset the other half sits
+under the set in hand with its own chips and overflow, so pairing two exercises
+never hides one of them.
+
+Finishing lands on the session's own detail screen with `state: { fresh: true }`,
+which makes it read "Done." with one button back to Today. The summary you see
+in the gym is the record you find later.
 
 ## The steppers move the number you can see
 
-Quick-adjust steps from the value on the row, and while the field is still empty
-that value is the **placeholder**, not zero. Stepping from zero offered "+ 20" —
+Quick-adjust steps from the number on screen, and while the field is still empty
+that number is the **placeholder**, not zero. Stepping from zero offered "+ 20" —
 the bare bar — beside a suggested 102.5kg, so one tap threw the suggestion away
-and called it an adjustment. `weightStep` therefore carries the base it was
-computed from, and `SetRow` does its arithmetic on that rather than on
-`set.weight_kg`.
+and called it an adjustment. `stepFrom` in `src/domain/plates.ts` therefore
+carries the base it was computed from, and one tap moves by what the equipment
+can actually make (`nextLoadableAbove`/`nextLoadableBelow`), not a fixed 1kg.
 
-Deleting a set that has work on it asks first; deleting an untouched row does
-not, because there is nothing to lose and the confirm would be friction for its
-own sake. It is hidden altogether on the set in hand, where it sat one
-thumb-width from the tick you press after every single set.
+The fields in `SetInHand` are controlled, so a second fast tap reads the first
+tap's result rather than a stale base, and writes go through `useWriteQueue`.
+Tapping a stepper while the field is focused fires blur — which commits the
+typed value — and then click; the queue keeps those writes in that order.
+
+Deleting a set that has work on it asks first and names what would be lost;
+deleting an untouched one does not, because there is nothing to lose and the
+confirm would be friction for its own sake. Delete lives in the set's sheet, so
+the set in hand has none — it used to sit one thumb-width from the tick you
+press after every single set. Add set carries forward what was typed into the
+set in hand, never its placeholder: the new set gets the same suggestion as its
+own.
 
 ## The in-gym toolkit
 
@@ -252,10 +282,11 @@ index.** A warm-up ramp sits in front of the working sets, so indexing by
 position turns the first working set into "Set 4" — which is not what a lifter
 counts, not what the rep range refers to, and would have silently repointed
 every `getByLabel('Set 1 …')` in the browser suites at a warm-up rung. Warm-ups
-are numbered on their own sequence, and a child set inherits its parent's
-number: a drop hanging off set 3 is still set 3. Because that gives a child the
-same number as its parent, children also carry a name of their own — "Drop
-under set 1" — or a screen reader announces two identical controls.
+are numbered on their own sequence — the chips read W1 W2 W3 W4, then 1 — and a
+child set inherits its parent's number: a drop hanging off set 3 is still set 3.
+Because that gives a child the same number as its parent, children also carry a
+name of their own — "Drop under set 1" — or a screen reader announces two
+identical controls. The names live in `src/features/workout/setNames.ts`.
 
 **Warm-ups round down through the gym's plates and are never automatic.**
 `warmupRamp` in `src/domain/warmup.ts` opens a barbell ramp with the empty bar,
@@ -265,33 +296,33 @@ before it, is dropped rather than repeated — so a narrow range gives two sets
 rather than four near-identical ones, and a bare bar gives none at all. The
 generator is a button: nothing the user did not ask for may enter their log.
 
-**The plate line and the weight steppers ride on the current set only** — one
-set for the whole session, resolved in `ActiveWorkoutScreen`. Computed per card
-it was one *per card*, so five unfinished exercises put five adjuster rows —
-twenty buttons — on the page and defeated the point of attaching the tools to
-the set you are about to do. At 390px the row is already 128px of fixed width
-before the two fields, so nothing more fits inline, and repeating the loading
-for four sets at the same weight is noise. One tap moves the weight by what the
-equipment can actually make (`nextLoadableAbove`/`nextLoadableBelow`), not a
-fixed 1kg. The plate breakdown
-is shown in **both** modes — the brief lists it under Pro, but it is
-information rather than density, and Beginner mode is precisely who does not
-know how to load a bar.
-
-`SetRow` serialises its own writes through a small promise queue. Tapping a
-stepper while the field is focused fires blur — which commits the typed value —
-and then click; without the queue the click would read a stale weight from its
-closure, and two fast taps would both read the same base and move one step
-instead of two.
+**The plate diagram rides on the set in hand.** `PlateDiagram` draws the bar
+from `plateBreakdown`, heaviest plates innermost in competition colours, with
+the breakdown in words beneath for anyone who cannot see it. Other equipment
+gets a line instead — two 22.5kg dumbbells, a pin in a stack. It is shown in
+**both** modes — the brief lists it under Pro, but it is information rather
+than density, and Beginner mode is precisely who does not know how to load a
+bar. A dumbbell weight reads "kg each" and is stored exactly as typed, so
+tonnage counts the logged number and the counting rules are untouched.
 
 The rest timer and the wake lock live in `WorkoutShell`, a layout route wrapping
 both `/workout/:id` and its swap child. They used to sit inside
 `ActiveWorkoutScreen`, so tapping "Swap" mid-rest unmounted both: the countdown
-vanished and the screen was free to sleep. The countdown also persists to
-`localStorage` — deliberately not Dexie, since it is ephemeral interface state
-with nothing to sync — and the end-of-rest cue is seeded as already-fired on
-restore, or a rest that expired while the app was closed would beep the moment
-it came back.
+vanished and the screen was free to sleep. The rest fills the screen while it
+runs, with the page beneath it `inert`; "Show sets" shrinks it to a bar across
+the top, and it closes itself when it runs out. Its "up next" line is published
+by the logging screen. In Pro it offers a drop, rest-pause or myo on the set
+just done: a drop stops the rest, the others restart it at the technique's own
+short gap. The countdown persists to `localStorage` — deliberately not Dexie,
+since it is ephemeral interface state with nothing to sync — and the
+end-of-rest cue is seeded as already-fired on restore, or a rest that expired
+while the app was closed would beep the moment it came back. The time left is
+derived from a clock that only ticks while a rest runs, capped at the rest's own
+length so the first frame of a new rest reads 3:00 rather than "63:00". It used
+to live in state that started at zero, which made every rest look over for one
+frame: the cue fired the moment you pressed Done and whenever a running rest was
+restored — and since it fires once per end time, not again when that rest ran
+out. `test:toolkit` stubs `navigator.vibrate` to hold it to that.
 
 ## Gyms
 
@@ -418,14 +449,20 @@ takes a `BASE_URL` override.
 key on them, so renaming one is a breaking change to the suites even when the
 screen looks identical. These in particular are load-bearing:
 
-- `Set N weight in kilograms`, `Set N repetitions`, `Mark set N done`,
-  `Delete set N`, `Warm-up N …` — the logging path
+- `Set N weight in kilograms`, `Set N repetitions` — the set in hand's fields,
+  and the same fields in a set's sheet; `Warm-up N …` and `Drop under set N …`
+  on their own sequences
+- `Mark set N done` — the Done bar. Its name goes on to say what it will log
+  ("Mark set 1 done, 100kg × 5"), so match it with a pattern
+- `Edit set N…` — a set's chip, which opens its sheet; `Delete set N` and
+  `Delete set N for good` live inside
 - `<Exercise>, N of M sets done` — the station strip, and the only handle on
   session order now that one station renders at a time
 - `More for <Exercise>` — the overflow, which everything secondary now sits
   behind
 - `Swap <Exercise> for something else`, `Move <Exercise> earlier` / `later`,
   `Readiness low` — inside it
+- the `timer` role, `Skip rest`, `Show sets` — the rest
 - `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
 
 `Add exercise` names exactly one control at a time: the empty state owns it
@@ -433,10 +470,11 @@ until there is a session, then the strip's `+` does. Two controls under one name
 are ambiguous to a screen reader and resolve strictly in Playwright, so the
 strip renders nothing at all when the session is empty.
 
-**`innerText` respects CSS `text-transform`.** The `.eyebrow` class uppercases,
-so a check for `/Resting/` can never match and passes whatever happened. Two
-assertions sat there doing nothing before this was noticed. Match
-case-insensitively against any eyebrow text.
+**`innerText` respects CSS `text-transform`.** Display type is upper-cased by
+CSS — headings, exercise names, buttons, labels — and innerText sees the
+capitals, so a check for `/Resting/` can never match and passes whatever
+happened. Two assertions sat there doing nothing before this was noticed. Match
+case-insensitively, or read accessible names, which come from the DOM text.
 
 When a bug is found by driving the app, add the regression test at the lowest
 layer that can catch it.

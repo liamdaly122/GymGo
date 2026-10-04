@@ -41,9 +41,11 @@ await step('swap with nothing logged replaces cleanly', async () => {
   await p.getByRole('button', { name: /Dumbbell Bench Press/ }).first().click();
   await p.getByRole('button', { name: 'Add exercise' }).waitFor({ timeout: 15000 });
   await p.waitForTimeout(500);
+  // Display type, upper-cased by CSS: match without case, or the first check
+  // would pass whether or not the swap happened.
   const after = await p.locator('body').innerText();
-  if (/Barbell Bench Press/.test(after)) throw new Error('the original should have been replaced');
-  if (!/Dumbbell Bench Press/.test(after)) throw new Error('the replacement is missing');
+  if (/Barbell Bench Press/i.test(after)) throw new Error('the original should have been replaced');
+  if (!/Dumbbell Bench Press/i.test(after)) throw new Error('the replacement is missing');
 });
 
 await step('log two sets on the replacement', async () => {
@@ -55,7 +57,7 @@ await step('log two sets on the replacement', async () => {
     await p.getByLabel(`Set ${s} repetitions`).first().fill('10');
     await p.getByLabel(new RegExp(`Mark set ${s} done`)).first().click();
     await p.waitForTimeout(200);
-    const skip = p.getByRole('button', { name: 'Skip', exact: true });
+    const skip = p.getByRole('button', { name: 'Skip rest' });
     if (await skip.count()) await skip.click();
   }
 });

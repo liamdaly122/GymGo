@@ -43,6 +43,12 @@ export interface WorkoutExerciseView {
    * breakdown and the weight steppers agree with the progression engine.
    */
   loading: LoadingProfile;
+  /**
+   * The rep range the routine asks for, when the session came from one. Read
+   * for display beside the name; the suggestion engine reads the same row.
+   * Null for freestyle work, which has no prescription to show.
+   */
+  repRange: { low: number; high: number } | null;
 }
 
 export interface WorkoutView {
@@ -67,6 +73,15 @@ async function composeWorkout(workoutId: string): Promise<WorkoutView | undefine
     ? await db.gyms.get(workout.gym_id)
     : live(await db.gyms.toArray()).find((candidate) => candidate.is_default);
 
+  const prescribed = new Map<string, { low: number; high: number }>();
+  if (workout.routine_id) {
+    for (const row of live(await db.routine_exercises.where({ routine_id: workout.routine_id }).toArray())) {
+      if (!prescribed.has(row.exercise_id)) {
+        prescribed.set(row.exercise_id, { low: row.rep_range_low, high: row.rep_range_high });
+      }
+    }
+  }
+
   return {
     workout,
     exercises: workoutExercises.map((we) => ({
@@ -76,6 +91,7 @@ async function composeWorkout(workoutId: string): Promise<WorkoutView | undefine
         .filter((set) => set.workout_exercise_id === we.id)
         .sort((a, b) => a.set_index - b.set_index),
       loading: loadingProfileFor(exerciseById.get(we.exercise_id)?.equipment ?? 'other', gym ?? {}),
+      repRange: prescribed.get(we.exercise_id) ?? null,
     })),
   };
 }

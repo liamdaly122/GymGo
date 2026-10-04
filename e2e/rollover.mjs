@@ -84,6 +84,9 @@ await step('training it ticks off the slot it rolled from', async () => {
   await p.getByLabel('Set 1 repetitions').first().fill('8');
   await p.getByLabel(/Mark set 1 done/).first().click();
   await p.waitForTimeout(400);
+  // The rest fills the screen; skip it to reach Finish.
+  const skip = p.getByRole('button', { name: 'Skip rest' });
+  if (await skip.count()) await skip.click();
   await p.getByRole('button', { name: 'Finish', exact: true }).click();
   await p.getByRole('button', { name: 'Finish and save' }).click();
   await p.waitForURL(/#\/history\//, { timeout: 15000 });

@@ -1,5 +1,6 @@
 import { updateWorkout } from '@/db/mutations';
 import type { Readiness } from '@/domain/types';
+import { Icon } from '@/components/icons';
 
 /**
  * How today is going, asked once.
@@ -27,31 +28,44 @@ const CHOICES: Array<{ value: Readiness; label: string }> = [
 export default function ReadinessPrompt({
   workoutId,
   onDismiss,
+  onAnswered,
 }: {
   workoutId: string;
   onDismiss: () => void;
+  /** Said back in a toast, so a tap that changes no number still visibly lands. */
+  onAnswered?: (message: string) => void;
 }) {
   return (
-    <div className="mb-4 flex items-center gap-2">
-      <p className="shrink-0 text-meta text-muted">How's today?</p>
+    <div className="ready" role="group" aria-label="How is today going?">
+      <p>How's today?</p>
 
       {CHOICES.map((choice) => (
         <button
           key={choice.value}
-          onClick={() => void updateWorkout(workoutId, { readiness: choice.value })}
+          type="button"
+          className="btn btn-secondary"
+          onClick={() =>
+            void updateWorkout(workoutId, { readiness: choice.value }).then(() =>
+              onAnswered?.(
+                choice.value === 'low'
+                  ? 'Suggestions are 10% lighter today.'
+                  : 'Noted. Suggestions stay as planned.',
+              ),
+            )
+          }
           aria-label={`Readiness ${choice.value}`}
-          className="h-11 flex-1 rounded-xl border border-line bg-raised text-meta text-white active:bg-line"
         >
           {choice.label}
         </button>
       ))}
 
       <button
+        type="button"
         onClick={onDismiss}
         aria-label="Dismiss the readiness question"
-        className="grid h-11 w-8 shrink-0 place-items-center text-muted"
+        className="icon-btn"
       >
-        ✕
+        <Icon name="x" />
       </button>
     </div>
   );

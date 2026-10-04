@@ -7,6 +7,7 @@ import {
   addExerciseToWorkout,
   addSet,
   completeSet,
+  completeSetWith,
   createRoutine,
   finishWorkout,
   removeExerciseFromRoutine,
@@ -239,5 +240,51 @@ describe('deletes are soft', () => {
     const row = await db.routine_exercises.get(routineExerciseId);
     expect(row).toBeDefined();
     expect(row!.deleted_at).not.toBeNull();
+  });
+});
+
+describe('logging the numbers on screen', () => {
+  it('writes the values and the tick together', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const workoutExerciseId = await addExerciseToWorkout(workoutId, EXERCISE_A);
+    const setId = await addSet(workoutExerciseId);
+
+    // Nothing typed: Done logs the suggestion, not 0kg × 0.
+    await completeSetWith(setId, { weight_kg: 102.5, reps: 6 });
+
+    const stored = await db.sets.get(setId);
+    expect(stored).toMatchObject({ weight_kg: 102.5, reps: 6, completed: true });
+    expect(stored!.completed_at).not.toBeNull();
+
+    const queued = (await db.outbox.toArray()).filter((entry) => entry.row_id === setId);
+    expect(queued.at(-1)!.payload).toMatchObject({ weight_kg: 102.5, reps: 6, completed: true });
+  });
+
+  it('keeps reps whole', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const setId = await addSet(await addExerciseToWorkout(workoutId, EXERCISE_A));
+    await completeSetWith(setId, { weight_kg: 40, reps: 7.6 });
+    expect((await db.sets.get(setId))!.reps).toBe(8);
+  });
+
+  it('refuses a number that cannot be lifted', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const setId = await addSet(await addExerciseToWorkout(workoutId, EXERCISE_A));
+    await expect(completeSetWith(setId, { weight_kg: -5, reps: 5 })).rejects.toThrow();
+    await expect(completeSetWith(setId, { weight_kg: 50, reps: Number.NaN })).rejects.toThrow();
+    expect((await db.sets.get(setId))!.completed).toBe(false);
+  });
+
+  it('cannot touch a finished workout', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const workoutExerciseId = await addExerciseToWorkout(workoutId, EXERCISE_A);
+    const logged = await addSet(workoutExerciseId, { weight_kg: 100, reps: 5 });
+    await completeSet(logged);
+    await finishWorkout(workoutId);
+
+    await expect(completeSetWith(logged, { weight_kg: 200, reps: 1 })).rejects.toThrow(
+      ImmutableWorkoutError,
+    );
+    expect((await db.sets.get(logged))!.weight_kg).toBe(100);
   });
 });

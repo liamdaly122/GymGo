@@ -63,17 +63,28 @@ await step('+30s extends the rest', async () => {
 });
 
 await step('skip dismisses the rest timer', async () => {
-  await page.getByRole('button', { name: 'Skip', exact: true }).click();
+  await page.getByRole('button', { name: 'Skip rest' }).click();
   await page.waitForTimeout(300);
   if (await page.getByRole('timer').count() !== 0) throw new Error('rest timer still showing after skip');
 });
 
-await step('header shows the volume', async () => {
+await step('header shows where the session is', async () => {
+  // Time, sets done out of planned, and which exercise. Volume is a number
+  // you read afterwards, on the summary, not between sets.
   const text = await page.locator('header').innerText();
-  if (!text.includes('500')) throw new Error(`expected 500 kg tonnage, header said: ${text.replace(/\n/g,' | ')}`);
-  // The header is a Time / Volume / Sets grid.
-  if (!/sets/i.test(text)) throw new Error(`expected a Sets stat, header said: ${text.replace(/\n/g,' | ')}`);
+  if (!/1\/1 sets/.test(text)) throw new Error(`expected 1/1 sets, header said: ${text.replace(/\n/g,' | ')}`);
   if (!/exercise 1\/1/i.test(text)) throw new Error(`expected an exercise counter, header said: ${text.replace(/\n/g,' | ')}`);
+});
+
+await step('the logged set is a chip showing what was done', async () => {
+  // One set at a time: once done, set 1 leaves the big fields and becomes a
+  // chip that opens it again.
+  if (!(await page.getByRole('button', { name: 'Edit set 1, 100kg × 5, done' }).count())) {
+    throw new Error('expected set 1 as a done chip reading 100kg × 5');
+  }
+  if (await page.getByLabel('Set 1 weight in kilograms').count()) {
+    throw new Error('a done set should not keep the big fields');
+  }
 });
 
 await step('add a second set carries the weight forward', async () => {
@@ -146,6 +157,8 @@ await step('second workout logs a heavier top set', async () => {
   await page.getByLabel('Set 1 repetitions').fill('5');
   await page.getByLabel(/Mark set 1 done/).click();
   await page.waitForTimeout(300);
+  // The rest fills the screen; skip it to reach Finish.
+  await page.getByRole('button', { name: 'Skip rest' }).click();
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
   await page.getByRole('button', { name: 'Finish and save' }).click();
   await page.waitForTimeout(800);
@@ -195,20 +208,39 @@ await step('the empty set row is pre-filled from the suggestion', async () => {
   }
 });
 
-await step('"Use" fills the row without logging it', async () => {
-  const placeholder = await page.getByLabel('Set 1 weight in kilograms').getAttribute('placeholder');
-  await page.getByRole('button', { name: 'Use', exact: true }).first().click();
-  await page.waitForTimeout(500);
-  const value = await page.getByLabel('Set 1 weight in kilograms').inputValue();
-  if (value !== placeholder) throw new Error(`expected the row filled with ${placeholder}, got "${value}"`);
-  // Filling is not logging: the set must still be unticked.
-  const pressed = await page.getByLabel(/Mark set 1 done/).getAttribute('aria-pressed');
-  if (pressed !== 'false') throw new Error('filling the row should not tick it off');
-});
-
 await page.screenshot({ path: 'e2e/shot-previous.png' });
 
+await step('Done logs the suggestion when nothing was typed', async () => {
+  // The number on screen is the number logged. An empty tick used to save
+  // 0kg × 0; with the suggestion in the field, Done now logs the suggestion.
+  const weight = Number(await page.getByLabel('Set 1 weight in kilograms').getAttribute('placeholder'));
+  const reps = Number(await page.getByLabel('Set 1 repetitions').getAttribute('placeholder'));
+  if (!weight || !reps) throw new Error(`expected a suggested weight and reps, got ${weight} × ${reps}`);
+  if (await page.getByLabel('Set 1 weight in kilograms').inputValue() !== '') {
+    throw new Error('the suggestion is a placeholder, not something typed for you');
+  }
+  const done = page.getByLabel(/Mark set 1 done/);
+  const label = await done.getAttribute('aria-label');
+  if (!label.includes(`${weight}kg × ${reps}`)) throw new Error(`Done should say what it will log, said: ${label}`);
+  await done.click();
+  await page.waitForTimeout(500);
+
+  const logged = await page.evaluate(async () => {
+    const open = indexedDB.open('gymgo');
+    const db = await new Promise((res, rej) => { open.onsuccess = () => res(open.result); open.onerror = () => rej(open.error); });
+    const get = (s) => new Promise((res, rej) => { const r = db.transaction(s).objectStore(s).getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    const [workouts, wes, sets] = await Promise.all([get('workouts'), get('workout_exercises'), get('sets')]);
+    const live = workouts.find(w => w.deleted_at === null && w.finished_at === null);
+    const mine = wes.filter(w => w.workout_id === live.id).map(w => w.id);
+    return sets.filter(x => mine.includes(x.workout_exercise_id) && x.completed).map(x => ({ weight: x.weight_kg, reps: x.reps }));
+  });
+  if (logged.length !== 1 || logged[0].weight !== weight || logged[0].reps !== reps) {
+    throw new Error(`expected ${weight}kg × ${reps} logged, got ${JSON.stringify(logged)}`);
+  }
+});
+
 await step('discard that scratch session', async () => {
+  await page.getByRole('button', { name: 'Skip rest' }).click();
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
   await page.getByRole('button', { name: 'Discard workout' }).click();
   await page.waitForTimeout(600);
@@ -244,12 +276,14 @@ await step('start a workout from the routine and log it', async () => {
   await page.getByRole('button', { name: 'Start this workout' }).click();
   await page.getByRole('button', { name: 'Add set' }).waitFor();
   // The exercise came across from the routine without being picked again.
+  // The name is display type, upper-cased by CSS.
   const body = await page.locator('body').innerText();
-  if (!/Barbell Squat/.test(body)) throw new Error('routine exercise was not copied into the workout');
+  if (!/Barbell Squat/i.test(body)) throw new Error('routine exercise was not copied into the workout');
   await page.getByLabel('Set 1 weight in kilograms').fill('120');
   await page.getByLabel('Set 1 repetitions').fill('5');
   await page.getByLabel(/Mark set 1 done/).click();
   await page.waitForTimeout(300);
+  await page.getByRole('button', { name: 'Skip rest' }).click();
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
   await page.getByRole('button', { name: 'Finish and save' }).click();
   await page.waitForTimeout(800);

@@ -1,4 +1,5 @@
 import type { WorkoutExerciseView } from '@/db/queries';
+import { Icon } from '@/components/icons';
 
 /**
  * Where you are in the session, and how to get somewhere else.
@@ -34,7 +35,7 @@ export default function ExerciseStrip({
   if (stations.length === 0) return null;
 
   return (
-    <ul className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+    <ul className="strip" aria-label="Exercises in this session">
       {stations.map((station, index) => {
         const entries = station.map((i) => exercises[i]!).filter(Boolean);
         const sets = entries.flatMap((entry) => entry.sets.filter((set) => set.type !== 'warmup'));
@@ -47,30 +48,21 @@ export default function ExerciseStrip({
         return (
           <li key={station.join('-')} className="shrink-0">
             <button
+              type="button"
               onClick={() => onFocus(index)}
               aria-current={current ? 'true' : undefined}
               aria-label={`${name}, ${done} of ${sets.length} sets done`}
-              className={`grid h-11 min-w-11 place-items-center rounded-full px-3 text-meta tabular-nums transition-colors ${
-                complete
-                  ? 'bg-accent font-medium text-ink'
-                  : current
-                    ? 'bg-raised text-white ring-2 ring-accent'
-                    : 'bg-raised text-muted'
-              }`}
+              className={`pill ${complete ? 'full' : ''}`}
             >
-              {complete ? '✓' : done > 0 ? `${done}/${sets.length}` : index + 1}
+              {complete ? <Icon name="check" /> : done > 0 ? `${done}/${sets.length}` : index + 1}
             </button>
           </li>
         );
       })}
 
       <li className="shrink-0">
-        <button
-          onClick={onAdd}
-          aria-label="Add exercise"
-          className="grid h-11 min-w-11 place-items-center rounded-full border border-dashed border-line px-3 text-meta text-muted active:bg-raised"
-        >
-          +
+        <button type="button" onClick={onAdd} aria-label="Add exercise" className="pill add">
+          <Icon name="plus" />
         </button>
       </li>
     </ul>

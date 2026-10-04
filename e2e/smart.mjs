@@ -76,18 +76,23 @@ await step('start the planned session and log it', async () => {
   // "Start Push A", or "Start early: Push A" when the block starts tomorrow.
   await p.getByRole('region', { name: 'Next session' }).getByRole('button', { name: /^Start/ }).click();
   await p.getByLabel('Set 1 weight in kilograms').first().waitFor({ timeout: 20000 });
-  // Log every set of the first exercise at the top of the rep range.
-  const weights = await p.getByLabel(/Set \d+ weight in kilograms/).all();
-  const first = Math.min(weights.length, 4);
-  for (let i = 1; i <= first; i++) {
-    await p.getByLabel(`Set ${i} weight in kilograms`).first().fill('100');
-    await p.getByLabel(`Set ${i} repetitions`).first().fill('10');
-    await p.getByLabel(new RegExp(`Mark set ${i} done`)).first().click();
-    await p.waitForTimeout(150);
+  // Log every set of the first exercise at the top of the rep range. One set
+  // is in hand at a time, and each Done brings up the next until the station
+  // is finished.
+  let logged = 0;
+  for (let i = 1; i <= 6; i++) {
+    const field = p.getByLabel(`Set ${i} weight in kilograms`);
+    if (!(await field.count())) break;
+    await field.fill('100');
+    await p.getByLabel(`Set ${i} repetitions`).fill('10');
+    await p.getByLabel(new RegExp(`Mark set ${i} done`)).click();
+    await p.waitForTimeout(300);
+    const skip = p.getByRole('button', { name: 'Skip rest' });
+    if (await skip.count()) await skip.click();
+    await p.waitForTimeout(200);
+    logged = i;
   }
-  await p.waitForTimeout(400);
-  const skip = p.getByRole('button', { name: 'Skip', exact: true });
-  if (await skip.count()) await skip.click();
+  if (logged < 2) throw new Error(`expected the plan's sets to come up one after another, logged ${logged}`);
   plannedRoutineHref = await p.evaluate(async () => {
     const open = indexedDB.open('gymgo');
     const db = await new Promise((res, rej) => { open.onsuccess = () => res(open.result); open.onerror = () => rej(open.error); });
@@ -154,15 +159,22 @@ await step('the progression engine suggests the next jump', async () => {
     throw new Error(`reason claims +${claimed[1]}kg but suggests ${suggested}kg`);
   }
 
-  // One "Use", and it fills every unlogged set rather than just the first.
-  await p.getByRole('button', { name: 'Use', exact: true }).first().click();
+  // Taking the suggestion is one tap: Done logs the numbers on screen, and
+  // with nothing typed those are the suggestion.
+  await p.getByLabel(/Mark set 1 done/).click();
   await p.waitForTimeout(600);
-  if (await weightField.inputValue() !== String(suggested)) {
-    throw new Error(`Use should have written ${suggested}, field holds ${await weightField.inputValue()}`);
-  }
-  const second = p.getByLabel('Set 2 weight in kilograms').first();
-  if (await second.count() && await second.inputValue() !== String(suggested)) {
-    throw new Error('Use should fill every unlogged set, not only the first');
+  const workoutId = new URL(p.url()).hash.split('/')[2];
+  const set1 = await p.evaluate(async (id) => {
+    const open = indexedDB.open('gymgo');
+    const db = await new Promise((res, rej) => { open.onsuccess = () => res(open.result); open.onerror = () => rej(open.error); });
+    const get = (s) => new Promise((res, rej) => { const r = db.transaction(s).objectStore(s).getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    const [wes, sets] = await Promise.all([get('workout_exercises'), get('sets')]);
+    const first = wes.filter(w => w.workout_id === id && w.deleted_at === null).sort((a, b) => a.position - b.position)[0];
+    const done = sets.filter(x => x.workout_exercise_id === first.id && x.completed && x.deleted_at === null);
+    return done.map(x => ({ weight: x.weight_kg, reps: x.reps }));
+  }, workoutId);
+  if (set1.length !== 1 || set1[0].weight !== suggested || set1[0].reps !== suggestedReps) {
+    throw new Error(`Done should have logged ${suggested}kg × ${suggestedReps}, logged ${JSON.stringify(set1)}`);
   }
 });
 await p.screenshot({ path: 'e2e/shot-suggestion.png' });

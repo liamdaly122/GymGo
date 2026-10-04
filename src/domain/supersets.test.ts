@@ -1,42 +1,151 @@
 import { describe, expect, it } from 'vitest';
-import { restsAfter, sessionStations, supersetLabel, type SupersetMember } from './supersets';
+import {
+  restsAfterSet,
+  sessionStations,
+  setInHand,
+  supersetLabel,
+  type OrderedSet,
+  type SupersetMember,
+} from './supersets';
 
 const entries = (...groups: (string | null)[]): SupersetMember[] =>
   groups.map((superset_group, index) => ({ id: `e${index}`, superset_group }));
 
+/** A set as the running order sees it. Ids read as "<member><round>". */
+const set = (
+  id: string,
+  options: { type?: string; done?: boolean; parent?: string | null } = {},
+): OrderedSet => ({
+  id,
+  type: options.type ?? 'working',
+  completed: options.done ?? false,
+  parent_set_id: options.parent ?? null,
+});
+
+describe('the set in hand', () => {
+  it('works through a solo exercise in order', () => {
+    const members = [[set('a1', { done: true }), set('a2'), set('a3')]];
+    expect(setInHand(members)).toEqual({ member: 0, setId: 'a2' });
+  });
+
+  it('alternates the halves of a superset round by round', () => {
+    // The whole point of a superset: A1, A2, A1, A2 — not all of A1 first.
+    const order: string[] = [];
+    const members = [
+      [set('a1'), set('a2'), set('a3')],
+      [set('b1'), set('b2'), set('b3')],
+    ];
+    for (let next = setInHand(members); next; next = setInHand(members)) {
+      order.push(next.setId);
+      members[next.member]!.find((candidate) => candidate.id === next!.setId)!.completed = true;
+    }
+    expect(order).toEqual(['a1', 'b1', 'a2', 'b2', 'a3', 'b3']);
+  });
+
+  it('carries on with the longer half once the shorter one runs out', () => {
+    const members = [
+      [set('a1', { done: true }), set('a2', { done: true }), set('a3')],
+      [set('b1', { done: true }), set('b2', { done: true })],
+    ];
+    expect(setInHand(members)).toEqual({ member: 0, setId: 'a3' });
+  });
+
+  it('puts every warm-up before the first working set of the pair', () => {
+    const members = [
+      [set('aw1', { type: 'warmup', done: true }), set('aw2', { type: 'warmup' }), set('a1')],
+      [set('bw1', { type: 'warmup' }), set('b1')],
+    ];
+    expect(setInHand(members)).toEqual({ member: 0, setId: 'aw2' });
+    members[0]![1]!.completed = true;
+    expect(setInHand(members)).toEqual({ member: 1, setId: 'bw1' });
+    members[1]![0]!.completed = true;
+    expect(setInHand(members)).toEqual({ member: 0, setId: 'a1' });
+  });
+
+  it('takes a child set straight after its parent, before the partner', () => {
+    // A drop is done the moment the top set ends, not after the other half.
+    const members = [
+      [set('a1', { done: true }), set('a1-drop', { type: 'drop', parent: 'a1' }), set('a2')],
+      [set('b1'), set('b2')],
+    ];
+    expect(setInHand(members)).toEqual({ member: 0, setId: 'a1-drop' });
+  });
+
+  it('does a parent unticked after its child before the child', () => {
+    const members = [[set('a1'), set('a1-drop', { type: 'drop', parent: 'a1' })]];
+    expect(setInHand(members)).toEqual({ member: 0, setId: 'a1' });
+  });
+
+  it('still reaches a set nothing else orders', () => {
+    // A continuation hanging off a warm-up is not part of any round.
+    const members = [
+      [set('w1', { type: 'warmup', done: true }), set('w1-drop', { type: 'drop', parent: 'w1' }), set('a1', { done: true })],
+    ];
+    expect(setInHand(members)).toEqual({ member: 0, setId: 'w1-drop' });
+  });
+
+  it('is empty once everything is ticked', () => {
+    expect(setInHand([[set('a1', { done: true })], [set('b1', { done: true })]])).toBeNull();
+    expect(setInHand([])).toBeNull();
+    expect(setInHand([[]])).toBeNull();
+  });
+});
+
 describe('when rest runs', () => {
-  it('runs after every exercise when nothing is supersetted', () => {
-    const list = entries(null, null, null);
-    expect([0, 1, 2].map((i) => restsAfter(list, i))).toEqual([true, true, true]);
+  it('runs after every set of a solo exercise', () => {
+    const members = [[set('a1', { done: true }), set('a2')]];
+    expect(restsAfterSet(members, 0, 'a1')).toBe(true);
   });
 
   it('skips the first half of a pair and runs after the second', () => {
-    const list = entries('a', 'a');
-    // The whole point: A1 runs straight into A2, and rest comes after the round.
-    expect(restsAfter(list, 0)).toBe(false);
-    expect(restsAfter(list, 1)).toBe(true);
+    const members = [
+      [set('a1', { done: true }), set('a2')],
+      [set('b1'), set('b2')],
+    ];
+    // A1 runs straight into A2, and rest comes after the round.
+    expect(restsAfterSet(members, 0, 'a1')).toBe(false);
+    members[1]![0]!.completed = true;
+    expect(restsAfterSet(members, 1, 'b1')).toBe(true);
   });
 
   it('handles a giant set of three', () => {
-    const list = entries('a', 'a', 'a');
-    expect([0, 1, 2].map((i) => restsAfter(list, i))).toEqual([false, false, true]);
+    const members = [[set('a1', { done: true })], [set('b1')], [set('c1')]];
+    expect(restsAfterSet(members, 0, 'a1')).toBe(false);
+    members[1]![0]!.completed = true;
+    expect(restsAfterSet(members, 1, 'b1')).toBe(false);
+    members[2]![0]!.completed = true;
+    expect(restsAfterSet(members, 2, 'c1')).toBe(true);
   });
 
-  it('keeps two separate supersets apart', () => {
-    const list = entries('a', 'a', 'b', 'b');
-    expect([0, 1, 2, 3].map((i) => restsAfter(list, i))).toEqual([false, true, false, true]);
+  it('rests after the extra set of the longer half', () => {
+    // Nothing is left to alternate with, so A1's third set ends a round too.
+    const members = [
+      [set('a1', { done: true }), set('a2', { done: true }), set('a3', { done: true })],
+      [set('b1', { done: true }), set('b2', { done: true })],
+    ];
+    expect(restsAfterSet(members, 0, 'a3')).toBe(true);
   });
 
   it('treats a group left with one member as an ordinary exercise', () => {
     // The partner was swapped out or removed mid-session.
-    expect(restsAfter(entries('a'), 0)).toBe(true);
+    expect(restsAfterSet([[set('a1', { done: true })]], 0, 'a1')).toBe(true);
   });
 
-  it('rests after a standalone exercise sitting between grouped ones', () => {
-    const list = entries('a', null, 'a');
-    // The pair is still a pair even with something logged between them, so rest
-    // waits for the second half.
-    expect([0, 1, 2].map((i) => restsAfter(list, i))).toEqual([false, true, true]);
+  it('never runs after a warm-up or a continuation', () => {
+    const members = [
+      [
+        set('w1', { type: 'warmup', done: true }),
+        set('a1', { done: true }),
+        set('a1-drop', { type: 'drop', parent: 'a1', done: true }),
+      ],
+    ];
+    expect(restsAfterSet(members, 0, 'w1')).toBe(false);
+    expect(restsAfterSet(members, 0, 'a1-drop')).toBe(false);
+  });
+
+  it('says no for a set it cannot find', () => {
+    expect(restsAfterSet([[set('a1')]], 0, 'missing')).toBe(false);
+    expect(restsAfterSet([[set('a1')]], 3, 'a1')).toBe(false);
   });
 });
 

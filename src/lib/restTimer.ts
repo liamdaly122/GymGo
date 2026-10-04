@@ -23,8 +23,9 @@ export interface PersistedRest {
 /**
  * How long after the buzzer a stored rest is still worth restoring.
  *
- * Coming back thirty seconds late you want to see "Rest over". Coming back an
- * hour later, that was a different workout.
+ * Coming back thirty seconds late, the rest is restored already over: the
+ * timer closes itself without a beep, because the cue is seeded as fired.
+ * Coming back an hour later, that was a different workout.
  */
 const GRACE_MS = 120_000;
 

@@ -34,10 +34,14 @@ const headerPosition = async () => {
 };
 
 const skipRest = async () => {
-  const skip = p.getByRole('button', { name: 'Skip', exact: true });
+  const skip = p.getByRole('button', { name: 'Skip rest' });
   if (await skip.count()) await skip.click();
   await p.waitForTimeout(300);
 };
+
+// Exercise names are display type, upper-cased by CSS, and innerText sees the
+// capitals — so names are matched without case.
+const shows = (body, name) => new RegExp(name.replace(/[-]/g, '\\$&'), 'i').test(body);
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
 await step('app loads', async () => { await p.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 40000 }); });
@@ -58,7 +62,7 @@ await step('only one exercise is on screen', async () => {
 
   const body = await p.locator('body').innerText();
   const named = ['Barbell Bench Press', 'Barbell Squat', 'One-Arm Dumbbell Row']
-    .filter((name) => body.includes(name));
+    .filter((name) => shows(body, name));
   if (named.length !== 1) throw new Error(`expected one exercise named on screen, saw: ${named.join(', ')}`);
 
   const { at, of } = await headerPosition();
@@ -73,8 +77,8 @@ await step('the strip jumps back to the first exercise', async () => {
   const { at } = await headerPosition();
   if (at !== 1) throw new Error(`the strip should have gone to exercise 1, header says ${at}`);
   const body = await p.locator('body').innerText();
-  if (!/Barbell Bench Press/.test(body)) throw new Error('the bench should be the station on screen');
-  if (/Barbell Squat/.test(body)) throw new Error('only one station may render');
+  if (!shows(body, 'Barbell Bench Press')) throw new Error('the bench should be the station on screen');
+  if (shows(body, 'Barbell Squat')) throw new Error('only one station may render');
 });
 
 await step('finishing a station does not move the screen', async () => {
@@ -95,7 +99,8 @@ await step('finishing a station does not move the screen', async () => {
   const { at } = await headerPosition();
   if (at !== 1) throw new Error(`the screen moved on its own — header says ${at}, should still say 1`);
   const body = await p.locator('body').innerText();
-  if (!/Barbell Bench Press/.test(body)) throw new Error('the finished station should still be on screen');
+  if (!shows(body, 'Barbell Bench Press')) throw new Error('the finished station should still be on screen');
+  if (!/all sets done/i.test(body)) throw new Error('a finished station should say so');
 });
 
 await step('"Next exercise" is what moves it', async () => {
@@ -104,7 +109,7 @@ await step('"Next exercise" is what moves it', async () => {
   const { at } = await headerPosition();
   if (at !== 2) throw new Error(`expected exercise 2, header says ${at}`);
   const body = await p.locator('body').innerText();
-  if (!/Barbell Squat/.test(body)) throw new Error('the squat should be the station on screen');
+  if (!shows(body, 'Barbell Squat')) throw new Error('the squat should be the station on screen');
 });
 
 await step('finish the session so the bench has history', async () => {
@@ -162,19 +167,20 @@ await step('a lift never performed is offered a labelled estimate', async () => 
 });
 await p.screenshot({ path: 'e2e/shot-session.png' });
 
-await step('an empty set deletes on one tap', async () => {
+await step('an empty set deletes without asking', async () => {
+  // Every set but the one in hand is a chip that opens it.
   await p.getByRole('button', { name: 'Add set' }).click();
   await p.waitForTimeout(400);
-  if (await p.getByLabel(/Set \d+ weight in kilograms/).count() !== 2) {
-    throw new Error('expected a second set to delete');
-  }
+  const chip = p.getByRole('button', { name: 'Edit set 2' });
+  if (!(await chip.count())) throw new Error('expected a second set to delete');
+  await chip.click();
   await p.getByRole('button', { name: 'Delete set 2' }).click();
   await p.waitForTimeout(500);
-  if (await p.getByLabel(/Set \d+ weight in kilograms/).count() !== 1) {
-    throw new Error('an empty row should go without ceremony');
+  if (await p.getByRole('button', { name: 'Edit set 2' }).count()) {
+    throw new Error('an empty set should go without ceremony');
   }
   if (await p.getByRole('button', { name: /Delete set \d+ for good/ }).count()) {
-    throw new Error('an empty row has nothing to lose — it should not ask');
+    throw new Error('an empty set has nothing to lose — it should not ask');
   }
 });
 
@@ -184,11 +190,8 @@ await step('a set you have done asks before it goes', async () => {
   await p.getByLabel(/Mark set 1 done/).click();
   await p.waitForTimeout(500);
   await skipRest();
-  // The tools follow the set in hand, so set 1's delete only reappears once
-  // there is a later unfinished set.
-  await p.getByRole('button', { name: 'Add set' }).click();
-  await p.waitForTimeout(400);
 
+  await p.getByRole('button', { name: 'Edit set 1, 20kg × 10, done' }).click();
   await p.getByRole('button', { name: 'Delete set 1' }).click();
   await p.waitForTimeout(400);
   const body = await p.locator('body').innerText();
@@ -197,6 +200,18 @@ await step('a set you have done asks before it goes', async () => {
   await p.waitForTimeout(400);
   if (await p.getByLabel('Set 1 weight in kilograms').inputValue() !== '20') {
     throw new Error('"Keep it" should have kept the logged set');
+  }
+  await p.keyboard.press('Escape');
+  await p.waitForTimeout(300);
+});
+
+await step('a mistyped rep is fixed from its chip', async () => {
+  await p.getByRole('button', { name: 'Edit set 1, 20kg × 10, done' }).click();
+  await p.getByLabel('Set 1 repetitions').fill('12');
+  await p.getByRole('button', { name: 'Done', exact: true }).click();
+  await p.waitForTimeout(500);
+  if (!(await p.getByRole('button', { name: 'Edit set 1, 20kg × 12, done' }).count())) {
+    throw new Error('the corrected reps should be on the chip');
   }
 });
 
@@ -224,7 +239,7 @@ await step('removing an exercise asks first', async () => {
   await p.getByRole('button', { name: 'Keep it' }).click();
   await p.waitForTimeout(300);
   const body = await p.locator('body').innerText();
-  if (!/Incline Dumbbell Press/.test(body)) throw new Error('"Keep it" should have kept it');
+  if (!shows(body, 'Incline Dumbbell Press')) throw new Error('"Keep it" should have kept it');
 });
 
 console.log(errs.length ? '\nBrowser errors:\n' + errs.join('\n') : '\nNo browser errors.');

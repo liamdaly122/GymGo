@@ -74,7 +74,7 @@ await step('logs a full workout offline', async () => {
   await page.getByLabel('Set 1 repetitions').fill('8');
   await page.getByLabel(/Mark set 1 done/).click();
   await page.waitForTimeout(400);
-  await page.getByRole('button', { name: 'Skip', exact: true }).click();
+  await page.getByRole('button', { name: 'Skip rest' }).click();
   await page.getByRole('button', { name: 'Finish', exact: true }).click();
   await page.getByRole('button', { name: 'Finish and save' }).click();
   await page.waitForTimeout(900);

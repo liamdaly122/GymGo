@@ -45,15 +45,14 @@ await step('log a 100kg top set with RIR 2', async () => {
   await p.waitForTimeout(300);
   await p.getByLabel(/Mark set 1 done/).first().click();
   await p.waitForTimeout(500);
-  const skip = p.getByRole('button', { name: 'Skip', exact: true });
-  if (await skip.count()) await skip.click();
 });
 
-await step('a completed working set offers the techniques', async () => {
-  const body = await p.locator('body').innerText();
+await step('the rest after a working set offers the techniques', async () => {
+  // A drop is done the moment the top set ends, so the rest is where to add it.
+  const offered = p.getByRole('group', { name: 'Add to the set just done' });
   for (const label of ['+ Drop', '+ Rest-pause', '+ Myo']) {
-    if (!body.includes(label.toUpperCase()) && !body.includes(label)) {
-      throw new Error(`expected ${label}, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
+    if (!(await offered.getByRole('button', { name: label }).count())) {
+      throw new Error(`expected ${label} on the rest screen`);
     }
   }
 });
@@ -77,7 +76,12 @@ await step('adding a drop set loads it 20% lighter, on real plates', async () =>
   if (sets[1].weight !== 80) throw new Error(`expected an 80kg drop, got ${sets[1].weight}`);
 });
 
-await step('the drop is indented and labelled, not shown as set 2', async () => {
+await step('the drop comes up straight away, labelled, not as set 2', async () => {
+  // Adding a drop stops the rest: the drop is the next thing you do.
+  if (await p.getByRole('timer').count()) throw new Error('a drop has no rest in front of it');
+  const field = p.getByLabel('Drop under set 1 weight in kilograms');
+  if (await field.inputValue() !== '80') throw new Error(`the drop should be in hand at 80kg, got ${await field.inputValue()}`);
+  if (await p.getByLabel(/^Set 2 /).count()) throw new Error('the drop must not read as set 2');
   const body = await p.locator('body').innerText();
   if (!/\bD\b/.test(body)) throw new Error('the drop set should carry its D label');
 });
@@ -86,7 +90,7 @@ await step('finishing leaves the 100kg record intact', async () => {
   await p.getByLabel('Drop under set 1 repetitions').first().fill('8');
   await p.getByLabel(/Mark drop under set 1 done/).first().click();
   await p.waitForTimeout(600);
-  const skip = p.getByRole('button', { name: 'Skip', exact: true });
+  const skip = p.getByRole('button', { name: 'Skip rest' });
   if (await skip.count()) await skip.click();
   await p.getByRole('button', { name: 'Finish', exact: true }).click();
   await p.getByRole('button', { name: 'Finish and save' }).click();
@@ -165,29 +169,28 @@ await step('and the rest timer runs for the prescribed 210s, not the default', a
   await p.getByLabel(/Mark set 1 done/).first().click();
   await p.waitForTimeout(800);
 
-  const body = await p.locator('body').innerText();
   // 210s is 3:30. The exercise default for a barbell bench is 180s (3:00), so
-  // a clock reading 3:2x proves the routine's prescription won.
-  if (!/3:2\d|3:30/.test(body)) {
-    throw new Error(`expected a 3:30 rest, saw: ${body.replace(/\n/g,' | ').slice(0,300)}`);
-  }
-  console.log('       timer shows:', (body.match(/\d:\d\d/) ?? ['?'])[0]);
+  // a clock reading 3:2x proves the routine's prescription won. Read from the
+  // timer itself: the session clock in the header is m:ss too.
+  const shown = await p.getByRole('timer').innerText();
+  if (!/3:2\d|3:30/.test(shown)) throw new Error(`expected a 3:30 rest, the timer says ${shown}`);
+  console.log('       timer shows:', shown);
 });
 
 await step('AMRAP relabels the reps field', async () => {
-  const amrap = p.getByLabel(/Set 1 as many reps as possible/).first();
+  await p.getByRole('button', { name: 'Skip rest' }).click();
+  // Set 1 is done, so the flag belongs to the set now in hand.
+  const amrap = p.getByLabel(/Set 2 as many reps as possible/).first();
   if (!(await amrap.count())) throw new Error('Pro mode should offer an AMRAP flag');
   await amrap.click();
   await p.waitForTimeout(500);
-  const suffix = await p.locator('body').innerText();
-  if (!/AMRAP/.test(suffix)) throw new Error('the reps field should say AMRAP');
+  const unit = await p.getByLabel('Set 2 repetitions').locator('xpath=..').innerText();
+  if (!/AMRAP/i.test(unit)) throw new Error(`the reps field should say AMRAP, it says ${unit}`);
 });
 
 await step('supersetting two exercises stops the timer running between them', async () => {
-  // A fresh session: the previous one has a ticked set and a running timer,
-  // which would make "the first unticked set" ambiguous. Close it properly
-  // rather than resuming it.
-  const skip = p.getByRole('button', { name: 'Skip', exact: true });
+  // A fresh session: close the previous one properly rather than resuming it.
+  const skip = p.getByRole('button', { name: 'Skip rest' });
   if (await skip.count()) await skip.click();
   await p.getByRole('button', { name: 'Finish', exact: true }).click();
   await p.getByRole('button', { name: 'Finish and save' }).click();
@@ -233,26 +236,21 @@ await step('finishing the first half of the pair starts no rest', async () => {
   await p.getByLabel(/Mark set 1 done/).first().click();
   await p.waitForTimeout(1000);
 
-  const body = await p.locator('body').innerText();
-  // Case-insensitive: the label is uppercased by CSS, and innerText respects
-  // text-transform, so /Resting/ would never match and the check would pass
-  // whatever happened.
-  if (/resting/i.test(body)) throw new Error('rest must not run between the halves of a superset');
+  if (await p.getByRole('timer').count()) throw new Error('rest must not run between the halves of a superset');
+  // The round alternates: the second half is in hand now, not set 2 of the first.
+  const current = await p.getByRole('list', { name: 'Superset' }).locator('[aria-current="step"]').innerText();
+  if (!/A2/.test(current)) throw new Error(`the second half should be in hand, the round says ${current}`);
 });
 
 await step('finishing the second half does start the rest', async () => {
-  // The first card's button now reads "tap to undo", so the only remaining
-  // "Mark set 1 done" is the second half of the pair.
-  await p.getByLabel('Set 1 weight in kilograms').nth(1).fill('30');
-  await p.getByLabel('Set 1 repetitions').nth(1).fill('10');
-  await p.getByLabel(/Mark set 1 done/).first().click();
+  await p.getByLabel('Set 1 weight in kilograms').fill('30');
+  await p.getByLabel('Set 1 repetitions').fill('10');
+  await p.getByLabel(/Mark set 1 done/).click();
   await p.waitForTimeout(1000);
 
-  const body = await p.locator('body').innerText();
-  if (!/resting/i.test(body)) {
-    throw new Error(`rest should run after the round, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
-  }
-  console.log('       rest after the round:', (body.match(/\d:\d\d/) ?? ['?'])[0]);
+  const timer = p.getByRole('timer');
+  if (!(await timer.count())) throw new Error('rest should run after the round');
+  console.log('       rest after the round:', await timer.innerText());
 });
 
 console.log(errs.length ? '\nBrowser errors:\n' + errs.join('\n') : '\nNo browser errors.');
