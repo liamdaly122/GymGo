@@ -56,7 +56,7 @@ export default function SwapExerciseScreen() {
     setSaving(true);
     try {
       await swapWorkoutExercise(workoutExerciseId, replacement.id, {
-        updateRoutine: keepInRoutine,
+        scope: keepInRoutine ? 'routine' : 'workout',
       });
       back();
     } finally {

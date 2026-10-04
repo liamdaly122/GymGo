@@ -14,6 +14,26 @@
 import type { Plan, Workout } from '@/db/schema';
 import { weekModifier, type WeekModifier } from './programmes/block';
 
+/**
+ * The block that is running: the latest live plan not yet finished. Only one
+ * runs at a time, but an import or a sync can leave two open, and the newest
+ * is the one being trained.
+ *
+ * With `routineId`, the running block that holds that routine — which is not
+ * the routine's `generated_from_plan_id`: the next block runs the same
+ * routines, and that field still names the block that first wrote them.
+ */
+export function runningPlan(plans: readonly Plan[], routineId?: string): Plan | null {
+  const running = plans.filter(
+    (plan) =>
+      plan.deleted_at === null &&
+      plan.completed_at === null &&
+      (routineId === undefined || plan.routine_ids.includes(routineId)),
+  );
+  running.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
+  return running[0] ?? null;
+}
+
 export type SessionStatus = 'done' | 'today' | 'upcoming';
 
 export interface ScheduledSession {

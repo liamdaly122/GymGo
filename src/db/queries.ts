@@ -19,6 +19,7 @@ import {
   currentWeek,
   groupByWeek,
   isBlockComplete,
+  runningPlan,
   type ScheduledSession,
   type WeekSummary,
 } from '@/domain/schedule';
@@ -438,9 +439,7 @@ export function useDefaultGym(): Gym | undefined | null {
  */
 export function useActivePlan(): Plan | undefined | null {
   return useLiveQuery(async () => {
-    const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at === null);
-    plans.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
-    return plans[0] ?? null;
+    return runningPlan(await db.plans.toArray());
   }, []);
 }
 
@@ -457,9 +456,7 @@ export function usePlanSchedule(): PlanScheduleView | undefined | null {
   // Live, so a session skipped yesterday rolls onto today without a reload.
   const today = useToday();
   return useLiveQuery(async () => {
-    const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at === null);
-    plans.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
-    const plan = plans[0];
+    const plan = runningPlan(await db.plans.toArray());
     if (!plan) return null;
 
     const routines = await db.routines.bulkGet(plan.routine_ids);
@@ -520,9 +517,7 @@ export interface ProgrammeView {
 export function useProgramme(): ProgrammeView | undefined {
   const today = useToday();
   return useLiveQuery(async () => {
-    const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at === null);
-    plans.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
-    const plan = plans[0] ?? null;
+    const plan = runningPlan(await db.plans.toArray());
 
     const allRoutines = live(await db.routines.toArray()).filter((routine) => !routine.archived);
 
@@ -615,9 +610,7 @@ export interface BlockWeekView extends WeekSummary {
 export function useBlockOverview(): BlockWeekView[] | undefined | null {
   const today = useToday();
   return useLiveQuery(async () => {
-    const plans = live(await db.plans.toArray()).filter((plan) => plan.completed_at === null);
-    plans.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
-    const plan = plans[0];
+    const plan = runningPlan(await db.plans.toArray());
     if (!plan) return null;
 
     const routines = await db.routines.bulkGet(plan.routine_ids);

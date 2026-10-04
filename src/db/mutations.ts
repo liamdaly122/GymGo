@@ -29,7 +29,7 @@ import { nowIso } from '@/lib/dates';
 import type { Readiness, SetType, Technique } from '@/domain/types';
 import type { GeneratedPlan } from '@/domain/programmes/plan';
 import { DEFAULT_BLOCK_WEEKS, setsForWeek, weekModifier } from '@/domain/programmes/block';
-import { buildSchedule, currentWeek, slotForRoutine } from '@/domain/schedule';
+import { buildSchedule, currentWeek, runningPlan, slotForRoutine } from '@/domain/schedule';
 import { loadableWeight, loadingProfileFor, nextLoadableBelow, type LoadingProfile } from '@/domain/plates';
 import { warmupRamp } from '@/domain/warmup';
 
@@ -160,21 +160,11 @@ async function resolvePlanSlot(
 }
 
 /**
- * The block a routine is being trained in: the running plan that holds it.
- *
- * Not `generated_from_plan_id`. That names the block that first wrote the
- * routine, and the next block runs the same routines, so reading it filed
- * every block-two session under block one. The new block never saw them, its
- * first session rolled forward for ever, and it could never finish. A routine
- * whose block has ended belongs to no block: training it is just training it.
+ * The block a routine is being trained in. A routine whose block has ended
+ * belongs to no block: training it is just training it.
  */
 async function runningPlanFor(routineId: string): Promise<Plan | undefined> {
-  const running = (await db.plans.toArray()).filter(
-    (plan) =>
-      plan.deleted_at === null && plan.completed_at === null && plan.routine_ids.includes(routineId),
-  );
-  running.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
-  return running[0];
+  return runningPlan(await db.plans.toArray(), routineId) ?? undefined;
 }
 
 export async function startWorkoutFromRoutine(
@@ -1219,6 +1209,13 @@ export async function repeatWorkout(
 
 export type SwapOutcome = 'replaced' | 'appended';
 
+/**
+ * How far a swap reaches. `workout` is today only; `routine` is every future
+ * run of this session; `plan` is every session of the running block that has
+ * the exercise. None of them reaches a workout already performed.
+ */
+export type SwapScope = 'workout' | 'routine' | 'plan';
+
 export interface SwapResult {
   outcome: SwapOutcome;
   /** The row now carrying the replacement — a new one when sets were kept. */
@@ -1240,7 +1237,7 @@ export interface SwapResult {
 export async function swapWorkoutExercise(
   workoutExerciseId: string,
   newExerciseId: string,
-  options: { updateRoutine?: boolean } = {},
+  options: { scope?: SwapScope } = {},
 ): Promise<SwapResult> {
   const current = await db.workout_exercises.get(workoutExerciseId);
   if (!current) throw new Error(`Workout exercise ${workoutExerciseId} not found`);
@@ -1268,7 +1265,7 @@ export async function swapWorkoutExercise(
       exercise_id: newExerciseId,
       updated_at: now,
     });
-    await maybeUpdateRoutine(current, newExerciseId, options.updateRoutine ?? false);
+    await keepSwap(current, newExerciseId, options.scope ?? 'workout');
     return { outcome: 'replaced', workoutExerciseId };
   }
 
@@ -1326,37 +1323,87 @@ export async function swapWorkoutExercise(
   await enqueue('workout_exercises', replacement.id, 'put', replacement);
   for (const set of plannedSets) await enqueue('sets', set.id, 'put', set);
 
-  await maybeUpdateRoutine(current, newExerciseId, options.updateRoutine ?? false);
+  await keepSwap(current, newExerciseId, options.scope ?? 'workout');
 
   return { outcome: 'appended', workoutExerciseId: replacement.id };
 }
 
 /**
- * Optionally keeps the swap for next time.
+ * Keeps a mid-session swap for next time, as far as the scope says.
  *
  * Safe to offer because starting a routine COPIES it: editing the routine now
  * cannot reach into a session already performed, whatever it says about the
  * next one.
  */
-async function maybeUpdateRoutine(
-  original: WorkoutExercise,
-  newExerciseId: string,
-  update: boolean,
-): Promise<void> {
-  if (!update) return;
+async function keepSwap(original: WorkoutExercise, newExerciseId: string, scope: SwapScope): Promise<void> {
+  if (scope === 'workout') return;
 
   const workout = await db.workouts.get(original.workout_id);
   if (!workout?.routine_id) return;
 
-  const routineExercises = (
-    await db.routine_exercises.where({ routine_id: workout.routine_id }).toArray()
-  ).filter((row) => row.deleted_at === null && row.exercise_id === original.exercise_id);
+  const plan = scope === 'plan' ? await runningPlanFor(workout.routine_id) : undefined;
+  await replaceExerciseInRoutines(plan?.routine_ids ?? [workout.routine_id], original.exercise_id, newExerciseId);
+}
+
+/**
+ * Swaps one exercise for another wherever it appears in these routines.
+ *
+ * Routine tables only, so a swap takes effect from the next session: starting
+ * a routine copies it, and nothing written here can reach a workout already
+ * performed. The replacement takes the row over — its place in the order, its
+ * superset and its prescription — because the sets, reps, rest and RIR were
+ * written for that slot in the session, not for the lift.
+ *
+ * Returns how many routines changed.
+ */
+export async function replaceExerciseInRoutines(
+  routineIds: readonly string[],
+  fromExerciseId: string,
+  toExerciseId: string,
+): Promise<number> {
+  if (fromExerciseId === toExerciseId || routineIds.length === 0) return 0;
+
+  const rows = (await db.routine_exercises.where('routine_id').anyOf([...routineIds]).toArray()).filter(
+    (row) => row.deleted_at === null && row.exercise_id === fromExerciseId,
+  );
+  if (rows.length === 0) return 0;
 
   const now = nowIso();
-  for (const row of routineExercises) {
-    await db.routine_exercises.update(row.id, { exercise_id: newExerciseId, updated_at: now });
-    await enqueue('routine_exercises', row.id, 'put', { exercise_id: newExerciseId, updated_at: now });
+  await db.transaction('rw', db.routine_exercises, async () => {
+    for (const row of rows) {
+      await db.routine_exercises.update(row.id, { exercise_id: toExerciseId, updated_at: now });
+    }
+  });
+  for (const row of rows) {
+    await enqueue('routine_exercises', row.id, 'put', { exercise_id: toExerciseId, updated_at: now });
   }
+  return new Set(rows.map((row) => row.routine_id)).size;
+}
+
+/**
+ * Swaps an exercise in a routine — this one row — or, with `plan`, in every
+ * session of the running block that has it. "No deadlifts" is a decision about
+ * the plan, not about Monday.
+ *
+ * A routine that is in no running block has nowhere further to reach, so
+ * `plan` falls back to the routine. Returns how many routines changed.
+ */
+export async function swapRoutineExercise(
+  routineExerciseId: string,
+  toExerciseId: string,
+  options: { scope?: 'routine' | 'plan' } = {},
+): Promise<number> {
+  const row = await db.routine_exercises.get(routineExerciseId);
+  if (!row || row.deleted_at !== null) throw new Error(`Routine exercise ${routineExerciseId} not found`);
+  if (row.exercise_id === toExerciseId) return 0;
+
+  if (options.scope === 'plan') {
+    const plan = await runningPlanFor(row.routine_id);
+    if (plan) return replaceExerciseInRoutines(plan.routine_ids, row.exercise_id, toExerciseId);
+  }
+
+  await updateRoutineExercise(routineExerciseId, { exercise_id: toExerciseId });
+  return 1;
 }
 
 // ---------------------------------------------------------------------------

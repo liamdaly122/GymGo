@@ -6,6 +6,7 @@ import {
   currentWeek,
   groupByWeek,
   isBlockComplete,
+  runningPlan,
   slotForRoutine,
   weekStrip,
   type ScheduledSession,
@@ -484,5 +485,24 @@ describe('knowing when a block is over', () => {
     // A plan with no training days would otherwise declare itself finished the
     // moment it was created.
     expect(isBlockComplete([])).toBe(false);
+  });
+});
+
+describe('the block that is running', () => {
+  const first = makePlan({ id: 'block-1', started_at: '2026-06-01T08:00:00.000Z', completed_at: '2026-07-06T08:00:00.000Z' });
+  const second = makePlan({ id: 'block-2', started_at: '2026-07-06T08:00:00.000Z' });
+  const other = makePlan({ id: 'other', started_at: '2026-07-01T08:00:00.000Z', routine_ids: ['r-mine'] });
+
+  it('is the newest plan not yet finished', () => {
+    expect(runningPlan([first, other, second])?.id).toBe('block-2');
+    expect(runningPlan([first])).toBeNull();
+    expect(runningPlan([{ ...second, deleted_at: '2026-07-07T08:00:00.000Z' }, other])?.id).toBe('other');
+  });
+
+  /** Both blocks hold the same routines; only one of them is being trained. */
+  it('holding a routine is the block that runs it, not the one that wrote it', () => {
+    expect(runningPlan([first, second, other], 'r-upper')?.id).toBe('block-2');
+    expect(runningPlan([first, second, other], 'r-mine')?.id).toBe('other');
+    expect(runningPlan([first], 'r-upper')).toBeNull();
   });
 });
