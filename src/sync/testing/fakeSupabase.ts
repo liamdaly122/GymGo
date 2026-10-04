@@ -42,6 +42,8 @@ export interface FakeSupabase {
   rows(table: string): Promise<Array<Record<string, unknown>>>;
   /** Makes uploads fail until cleared, as a dropped connection would. */
   failUploads(message: string | null): void;
+  /** Makes sign-in emails fail until cleared, as a refusing mail server would. */
+  failEmails(error: { message: string; code?: string; status: number } | null): void;
   /** Every upload request, by table and size. */
   uploads: Array<{ table: string; rows: number }>;
 }
@@ -53,6 +55,7 @@ export async function createFakeSupabase(): Promise<FakeSupabase> {
   const uploads: Array<{ table: string; rows: number }> = [];
   let session: { access_token: string; user: FakeUser } | null = null;
   let uploadFailure: string | null = null;
+  let emailFailure: { message: string; code?: string; status: number } | null = null;
 
   const notify = (event: string) => {
     for (const listener of listeners) listener(event, session);
@@ -70,6 +73,8 @@ export async function createFakeSupabase(): Promise<FakeSupabase> {
       return { data: { session }, error: null };
     },
     async signInWithOtp({ email }: { email: string }) {
+      // Shaped like supabase-js's AuthApiError: message, code and status.
+      if (emailFailure) return { data: { user: null, session: null }, error: { ...emailFailure } };
       codes.set(email, String(100000 + codes.size * 7919).slice(0, 6));
       return { data: { user: null, session: null }, error: null };
     },
@@ -155,6 +160,9 @@ export async function createFakeSupabase(): Promise<FakeSupabase> {
     rows: (table) => serverRows(pg, table),
     failUploads: (message) => {
       uploadFailure = message;
+    },
+    failEmails: (error) => {
+      emailFailure = error;
     },
     uploads,
   };

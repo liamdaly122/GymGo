@@ -179,6 +179,34 @@ await step('Settings offers a sign-in, not a setup message', async () => {
   if (!/Sign in to back up this phone/.test(text)) throw new Error(`unexpected Backup section: ${text}`);
 });
 
+/**
+ * The owner's first real sign-in failed with Supabase's bare "Error sending
+ * confirmation email": a custom SMTP server had refused. The app has to say
+ * where to look, not repeat the failure.
+ */
+await step('a refused email says where to look', async () => {
+  const section = backupSection(page);
+  await section.getByLabel('Email address').fill('smtp-broken@example.com');
+  await section.getByRole('button', { name: 'Email me a code' }).click();
+  const note = section.getByText(/Supabase could not send the email/);
+  await note.waitFor({ timeout: 15000 });
+  const text = await note.textContent();
+  if (!/SMTP Settings/.test(text) || !/Logs → Auth/.test(text)) throw new Error(`unhelpful explanation: ${text}`);
+  if (await section.getByLabel('Sign-in code').count()) throw new Error('a refused email must not move on to the code');
+  await section.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await page.screenshot({ path: 'e2e/shot-backup-refused.png' });
+});
+
+await step('"I already have a code" goes straight to the code', async () => {
+  const section = backupSection(page);
+  await section.getByLabel('Email address').fill(EMAIL);
+  await section.getByRole('button', { name: 'I already have a code' }).click();
+  await section.getByLabel('Sign-in code').waitFor({ timeout: 5000 });
+  if (await section.getByText(/Supabase could not send/).count()) throw new Error('the old error should be cleared');
+  await section.getByRole('button', { name: 'Use another email' }).click();
+  await section.getByLabel('Email address').waitFor({ timeout: 5000 });
+});
+
 await step('sign in with the emailed code', async () => {
   await signIn(page, 'e2e/shot-backup-code.png');
   await waitUntilBackedUp(page);

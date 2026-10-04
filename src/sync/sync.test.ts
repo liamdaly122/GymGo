@@ -33,6 +33,7 @@ const { seedIfEmpty } = await import('@/db/seed');
 const { pushOutbox, pendingCount, UPLOAD_BATCH } = await import('./push');
 const { pullSince } = await import('./pull');
 const { syncNow, resetSyncSession } = await import('./engine');
+const { currentAccount, sendSignInCode, verifySignInCode } = await import('./auth');
 const { forgetLedgers, readLedger, writeLedger } = await import('./ledger');
 const { getSyncStatus, setSyncStatus } = await import('./status');
 const { exportAsJson, importFromJson } = await import('@/db/backup');
@@ -77,6 +78,7 @@ beforeEach(async () => {
   );
   await wipeThePhone();
   fake.failUploads(null);
+  fake.failEmails(null);
   fake.uploads.length = 0;
   userId = await ensureUser(fake.pg, EMAIL);
 });
@@ -94,6 +96,34 @@ async function logASession(weights: number[] = [100, 102.5]) {
   await finishWorkout(workoutId);
   return workoutId;
 }
+
+describe('signing in', () => {
+  it('signs the app in with the emailed code', async () => {
+    await sendSignInCode(EMAIL);
+    await verifySignInCode(EMAIL, ` ${fake.codeFor(EMAIL)} `);
+
+    expect((await currentAccount())?.email).toBe(EMAIL);
+  });
+
+  it('says a wrong code did not work, rather than Supabase\u2019s wording', async () => {
+    await sendSignInCode(EMAIL);
+
+    await expect(verifySignInCode(EMAIL, '000000')).rejects.toThrow(/That code did not work/);
+    expect(await currentAccount()).toBeNull();
+  });
+
+  /**
+   * The owner's first sign-in: a custom SMTP server refused, and all Supabase
+   * said was "Error sending confirmation email".
+   */
+  it('turns a refused email into where to look', async () => {
+    fake.failEmails({ message: 'Error sending confirmation email', code: 'unexpected_failure', status: 500 });
+    const before = fake.codeFor(EMAIL);
+
+    await expect(sendSignInCode(EMAIL)).rejects.toThrow(/SMTP Settings/);
+    expect(fake.codeFor(EMAIL), 'no new code was sent').toBe(before);
+  });
+});
 
 describe('pushing local changes', () => {
   beforeEach(async () => {

@@ -33,6 +33,9 @@ const migrations = readdirSync(dir)
   .map((file) => readFileSync(resolve(dir, file), 'utf8'));
 const pg = await createSupabaseDb(migrations);
 
+/** Signing in with this address fails the way a refusing SMTP server does. */
+const BROKEN_SMTP_ADDRESS = 'smtp-broken@example.com';
+
 /** The last code "emailed" to each address. */
 const codes = new Map<string, string>();
 /** Access and refresh tokens to the account they belong to. */
@@ -130,6 +133,15 @@ async function handle(request: IncomingMessage, response: ServerResponse) {
   // ---- Auth ----
   if (path === '/auth/v1/otp' && request.method === 'POST') {
     const { email } = (await readBody(request)) as { email: string };
+    // A mail server that refuses, as a custom SMTP login does once its provider
+    // stops accepting a plain password. The body is what Supabase Auth sends.
+    if (email === BROKEN_SMTP_ADDRESS) {
+      return send(response, 500, {
+        code: 500,
+        error_code: 'unexpected_failure',
+        msg: 'Error sending confirmation email',
+      });
+    }
     codes.set(email, String(randomInt(100000, 1000000)));
     return send(response, 200, {});
   }

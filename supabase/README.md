@@ -58,8 +58,13 @@ signed out.
    under **Redirect URLs**. That is where the link in the email goes.
 3. Sign in with **the same email address as your Supabase account**. The
    built-in email service only delivers to members of the project's team, and
-   only a few emails an hour. For one person that is all you need. Another
-   address would need adding to the team, or your own SMTP server.
+   only a few emails an hour. For one person that is all you need.
+4. **Leave SMTP Settings alone.** The dashboard nudges you towards setting up
+   your own email server, but for one person the built-in email is enough. An
+   Outlook, Hotmail, Live or Gmail account will not work as the server: those
+   providers no longer let another service send through them with just your
+   password. They refuse, and sign-in fails with "Supabase could not send the
+   email". If you have already switched custom SMTP on, switch it off.
 
 ## 4. Give the app the project's address and public key
 
@@ -107,6 +112,25 @@ GymGo, open **Settings → Backup**, sign in with a code, and everything comes
 back. It says how many workouts it restored. Your settings, gyms and exercise
 notes come back too, and the new install's blank defaults do not overwrite
 them.
+
+## If signing in goes wrong
+
+The app explains every refusal in Settings → Backup. For the full reason,
+Supabase's **Logs → Auth** has each request and what went wrong with it.
+
+| The app says | Why | What to do |
+| --- | --- | --- |
+| Supabase could not send the email… SMTP Settings | The email server refused. Usually it is a custom SMTP server Supabase cannot log in to, such as an Outlook, Hotmail, Live or Gmail account. | **Authentication → Emails → SMTP Settings**: switch custom SMTP off. If it still fails, reset both email templates to their defaults and add `{{ .Token }}` again, exactly as written. A typo there breaks sending too. |
+| …only sends to members of your Supabase team | The built-in email only goes to people on your Supabase team. | Use the email you log in to Supabase with, or invite this address to the team. |
+| …only sends a few emails an hour | The built-in email's hourly limit. | Wait a few minutes. A code you already have still works: **I already have a code**. |
+| That code did not work | A wrong or old code. Each is good for an hour, and a new email replaces the last. | Use the newest email's code, or send another. |
+| Email sign-in is switched off / set not to create new accounts | A setting under **Authentication → Sign In / Providers**. | Turn **Email** on, and **Allow new users to sign up** for the first sign-in. |
+| Could not reach Supabase | No signal, or a wrong project URL. | Try again with signal. If it persists, check `VITE_SUPABASE_URL` in Vercel and redeploy. |
+| Supabase is not answering properly | The project is paused or having a bad moment. | Open the Supabase dashboard; a paused project offers **Restore**. |
+
+No email at all? Look in **Junk**: Outlook often files the built-in sender
+(`noreply@mail.app.supabase.io`) there. Mark it as not junk once and later ones
+arrive normally.
 
 ## 6. Keep the project awake (recommended)
 

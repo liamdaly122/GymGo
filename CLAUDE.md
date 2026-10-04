@@ -156,6 +156,15 @@ and left the app signed out. The link still works in a browser. The Supabase
 email templates have to include `{{ .Token }}`; `supabase/README.md` has the
 setup steps.
 
+**A refused sign-in says what to do, not what failed.** `explainSignInError` in
+`src/sync/signInErrors.ts` turns Supabase's codes and statuses into the setting
+to change. The owner's first sign-in showed only "Error sending confirmation
+email": a custom SMTP server, on an Outlook account, had refused, and the fix
+was a switch in the dashboard. Supabase's raw wording is passed through only
+for codes the function does not recognise. The guide says to leave SMTP alone,
+since the built-in email reaches the project's own team, which for one person
+is all it needs.
+
 **The outbox alone does not make a backup.** `syncNow` in `src/sync/engine.ts`
 runs one round in this order:
 
@@ -627,8 +636,9 @@ screen looks identical. These in particular are load-bearing:
 - the `Calendar` region, its list (`This week`, `Next week`, `Week of …`),
   and `Previous week` / `Next week`
 - the `Backup` region in Settings: `Email address`, `Email me a code`,
-  `Sign-in code`, `Sign in`, `Back up now`, and its `status`, which reads
-  `Backed up` once nothing is waiting
+  `I already have a code`, `Sign-in code`, `Sign in`, `Use another email`,
+  `Back up now`, and its `status`, which reads `Backed up` once nothing is
+  waiting
 - `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
 
 `Add exercise` names exactly one control at a time: the empty state owns it

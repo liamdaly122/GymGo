@@ -13,6 +13,7 @@
 import { db } from '@/db/db';
 import { SETTINGS_ID } from '@/db/schema';
 import { SYNCED_TABLES, getClient } from './client';
+import { explainSignInError } from './signInErrors';
 
 export interface SyncAccount {
   userId: string;
@@ -27,16 +28,21 @@ export async function currentAccount(): Promise<SyncAccount | null> {
   return user ? { userId: user.id, email: user.email ?? null } : null;
 }
 
-/** Emails a sign-in code (and a link, for a browser). Creates the account on first use. */
+/**
+ * Emails a sign-in code (and a link, for a browser). Creates the account on
+ * first use. A refusal is thrown as what to do about it (`explainSignInError`),
+ * not Supabase's own wording.
+ */
 export async function sendSignInCode(email: string): Promise<void> {
   const client = getClient();
   if (!client) throw new Error('No Supabase project is configured.');
 
+  const redirectTo = typeof window === 'undefined' ? undefined : window.location.origin;
   const { error } = await client.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: window.location.origin, shouldCreateUser: true },
+    options: { shouldCreateUser: true, ...(redirectTo ? { emailRedirectTo: redirectTo } : {}) },
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(explainSignInError(error));
 }
 
 /** Signs this app in with the code from the email. */
@@ -48,9 +54,9 @@ export async function verifySignInCode(email: string, code: string): Promise<voi
   const { error } = await client.auth.verifyOtp({ email, token, type: 'email' });
   if (error) {
     throw new Error(
-      /expired|invalid/i.test(error.message)
+      error.code === 'otp_expired' || /expired|invalid/i.test(error.message)
         ? 'That code did not work. Codes expire after an hour — check it, or send a new one.'
-        : error.message,
+        : explainSignInError(error),
     );
   }
 }

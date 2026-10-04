@@ -151,6 +151,20 @@ export default function SyncSection() {
             >
               {busy ? 'Sending…' : 'Email me a code'}
             </Button>
+            {/* For a code that came through after all: a slow email, or one
+                sent before Supabase's hourly limit stopped the next. */}
+            <button
+              type="button"
+              className="btn-text self-start"
+              disabled={busy || email.trim() === ''}
+              onClick={() => {
+                setSentTo(email.trim());
+                setCode('');
+                setNote(null);
+              }}
+            >
+              I already have a code
+            </button>
           </>
         ) : (
           <>
