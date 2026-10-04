@@ -32,6 +32,7 @@ import { DEFAULT_BLOCK_WEEKS, setsForWeek, weekModifier } from '@/domain/program
 import { buildSchedule, currentWeek, runningPlan, slotForRoutine } from '@/domain/schedule';
 import { loadableWeight, loadingProfileFor, nextLoadableBelow, type LoadingProfile } from '@/domain/plates';
 import { warmupRamp } from '@/domain/warmup';
+import { planSwapTargets } from '@/domain/search';
 
 /** Thrown when something tries to edit a workout that has already been finished. */
 export class ImmutableWorkoutError extends Error {
@@ -1341,8 +1342,15 @@ async function keepSwap(original: WorkoutExercise, newExerciseId: string, scope:
   const workout = await db.workouts.get(original.workout_id);
   if (!workout?.routine_id) return;
 
-  const plan = scope === 'plan' ? await runningPlanFor(workout.routine_id) : undefined;
-  await replaceExerciseInRoutines(plan?.routine_ids ?? [workout.routine_id], original.exercise_id, newExerciseId);
+  if (scope === 'plan') {
+    const plan = await runningPlanFor(workout.routine_id);
+    const from = await db.exercises.get(original.exercise_id);
+    if (plan && from) {
+      await swapAcrossPlan(plan, from, newExerciseId);
+      return;
+    }
+  }
+  await replaceExerciseInRoutines([workout.routine_id], original.exercise_id, newExerciseId);
 }
 
 /**
@@ -1381,12 +1389,13 @@ export async function replaceExerciseInRoutines(
 }
 
 /**
- * Swaps an exercise in a routine — this one row — or, with `plan`, in every
- * session of the running block that has it. "No deadlifts" is a decision about
- * the plan, not about Monday.
+ * Swaps an exercise in a routine — this one row — or, with `plan`, across the
+ * running block: in every session, the same exercise or that session's version
+ * of the same lift (`planSwapTargets`). "No deadlifts" is a decision about the
+ * plan, not about Monday, and it means the Romanian on Thursday too.
  *
  * A routine that is in no running block has nowhere further to reach, so
- * `plan` falls back to the routine. Returns how many routines changed.
+ * `plan` falls back to the row. Returns how many routines changed.
  */
 export async function swapRoutineExercise(
   routineExerciseId: string,
@@ -1399,11 +1408,57 @@ export async function swapRoutineExercise(
 
   if (options.scope === 'plan') {
     const plan = await runningPlanFor(row.routine_id);
-    if (plan) return replaceExerciseInRoutines(plan.routine_ids, row.exercise_id, toExerciseId);
+    const from = await db.exercises.get(row.exercise_id);
+    if (plan && from) return swapAcrossPlan(plan, from, toExerciseId, row);
   }
 
   await updateRoutineExercise(routineExerciseId, { exercise_id: toExerciseId });
   return 1;
+}
+
+/**
+ * The plan-wide swap, written to routine rows only. `tapped` is the row the
+ * swap was started from, which is the one to change in its own session even
+ * if that session happens to hold the exercise twice.
+ */
+async function swapAcrossPlan(
+  plan: Plan,
+  from: Exercise,
+  toExerciseId: string,
+  tapped?: RoutineExercise,
+): Promise<number> {
+  const rows = (await db.routine_exercises.where('routine_id').anyOf(plan.routine_ids).toArray()).filter(
+    (row) => row.deleted_at === null,
+  );
+  const exercises = await db.exercises.bulkGet([...new Set(rows.map((row) => row.exercise_id))]);
+  const byId = new Map(exercises.filter(Boolean).map((exercise) => [exercise!.id, exercise!]));
+
+  const sessions = plan.routine_ids.map((routineId) =>
+    rows
+      .filter((row) => row.routine_id === routineId)
+      .sort((a, b) => a.position - b.position)
+      .flatMap((row) => {
+        const exercise = byId.get(row.exercise_id);
+        return exercise ? [{ row, exercise }] : [];
+      }),
+  );
+
+  const targets = planSwapTargets(sessions, from)
+    .map(({ sessionIndex, item }) =>
+      tapped && plan.routine_ids[sessionIndex] === tapped.routine_id ? tapped : item.row,
+    )
+    .filter((row) => row.exercise_id !== toExerciseId);
+
+  const now = nowIso();
+  await db.transaction('rw', db.routine_exercises, async () => {
+    for (const row of targets) {
+      await db.routine_exercises.update(row.id, { exercise_id: toExerciseId, updated_at: now });
+    }
+  });
+  for (const row of targets) {
+    await enqueue('routine_exercises', row.id, 'put', { exercise_id: toExerciseId, updated_at: now });
+  }
+  return targets.length;
 }
 
 // ---------------------------------------------------------------------------

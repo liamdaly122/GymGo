@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { exerciseAlternatives, filterExercises, liftFamily, muscleOverlap, swapSuggestions } from './search';
+import {
+  exerciseAlternatives,
+  filterExercises,
+  liftFamily,
+  muscleOverlap,
+  planSwapTargets,
+  swapSuggestions,
+} from './search';
 import { makeExercise } from './testFactories';
 import type { Exercise } from '@/db/schema';
 import type { Muscle } from './types';
@@ -244,5 +251,39 @@ describe('muscle overlap', () => {
     expect(muscleOverlap(a, b)).toBeCloseTo(muscleOverlap(b, a));
     expect(muscleOverlap(a, b)).toBeGreaterThan(0);
     expect(muscleOverlap(a, b)).toBeLessThan(1);
+  });
+});
+
+describe('how far a swap across the plan reaches', () => {
+  const conventional = lift({ id: 'dl', name: 'Barbell Deadlift', source_id: null });
+  const romanian = lift({ id: 'rdl', name: 'Romanian Deadlift', source_id: null });
+  const stiffLegged = lift({ id: 'sldl', name: 'Stiff-Legged Barbell Deadlift', source_id: null });
+  const squat = lift({ id: 'squat', name: 'Barbell Squat', source_id: null });
+  const plank = lift({ id: 'plank', name: 'Plank', source_id: null });
+  const farmer = lift({ id: 'farmer', name: 'Farmer Walk', source_id: null });
+  const row = (exercise: Exercise) => ({ exercise });
+
+  it('reaches every version of the lift, one per session', () => {
+    // The four-day full body: a different deadlift on three of its days.
+    const week = [[row(squat), row(conventional)], [row(romanian), row(plank)], [row(squat)], [row(stiffLegged)]];
+
+    const targets = planSwapTargets(week, conventional);
+
+    expect(targets.map((target) => [target.sessionIndex, target.item.exercise.id])).toEqual([
+      [0, 'dl'],
+      [1, 'rdl'],
+      [3, 'sldl'],
+    ]);
+  });
+
+  it('prefers the same exercise where a session has two versions', () => {
+    const week = [[row(romanian), row(conventional)]];
+    expect(planSwapTargets(week, conventional)[0]!.item.exercise).toBe(conventional);
+    expect(planSwapTargets(week, romanian)[0]!.item.exercise).toBe(romanian);
+  });
+
+  it('reaches only the same exercise when it belongs to no family', () => {
+    const week = [[row(farmer)], [row(plank)], [row(farmer)]];
+    expect(planSwapTargets(week, farmer).map((target) => target.sessionIndex)).toEqual([0, 2]);
   });
 });

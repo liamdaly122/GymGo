@@ -298,6 +298,31 @@ export function exerciseAlternatives(
   };
 }
 
+/**
+ * Where a swap across a whole plan lands: in each session, the same exercise
+ * if it has it, otherwise its first version of the same lift.
+ *
+ * By family, because that is what "no deadlifts" means. A generated plan
+ * almost never repeats an exercise — it spreads variety across the week — so
+ * a four-day full body runs three different deadlifts, and swapping one
+ * exercise id would leave the other two. One per session, because the
+ * replacement going in twice would double it up.
+ */
+export function planSwapTargets<T extends { exercise: Exercise }>(
+  sessions: readonly (readonly T[])[],
+  exercise: Exercise,
+): Array<{ sessionIndex: number; item: T }> {
+  const family = liftFamily(exercise.name);
+  const targets: Array<{ sessionIndex: number; item: T }> = [];
+  sessions.forEach((items, sessionIndex) => {
+    const item =
+      items.find((candidate) => candidate.exercise.id === exercise.id) ??
+      (family === null ? undefined : items.find((candidate) => liftFamily(candidate.exercise.name) === family));
+    if (item) targets.push({ sessionIndex, item });
+  });
+  return targets;
+}
+
 /** Pattern labels that group exercises without describing a movement. */
 const LOOSE_PATTERNS = new Set<string>(['isolation', 'core']);
 

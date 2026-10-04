@@ -9,7 +9,7 @@ import { scheduleDay, useToday } from '@/hooks/useToday';
 import { db } from './db';
 import { SETTINGS_ID, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
-import { swapSuggestions, type SwapSuggestions } from '@/domain/search';
+import { planSwapTargets } from '@/domain/search';
 import { personalRecords, recordsBrokenPerSession } from '@/domain/prs';
 import { estimateDurationMinutes, summariseSession } from '@/domain/sessionSummary';
 import {
@@ -420,16 +420,18 @@ export function useSessionSummary(workoutId: string | undefined) {
   }, [workoutId]);
 }
 
+async function defaultGym(): Promise<Gym | null> {
+  const gyms = live(await db.gyms.toArray());
+  const settings = await db.settings.get(SETTINGS_ID);
+  const preferred = settings?.default_gym_id
+    ? gyms.find((gym) => gym.id === settings.default_gym_id)
+    : undefined;
+  return preferred ?? gyms.find((gym) => gym.is_default) ?? gyms[0] ?? null;
+}
+
 /** The gym plans are built against. Its equipment filters every suggestion. */
 export function useDefaultGym(): Gym | undefined | null {
-  return useLiveQuery(async () => {
-    const gyms = live(await db.gyms.toArray());
-    const settings = await db.settings.get(SETTINGS_ID);
-    const preferred = settings?.default_gym_id
-      ? gyms.find((gym) => gym.id === settings.default_gym_id)
-      : undefined;
-    return preferred ?? gyms.find((gym) => gym.is_default) ?? gyms[0] ?? null;
-  }, []);
+  return useLiveQuery(() => defaultGym(), []);
 }
 
 /**
@@ -937,29 +939,93 @@ export function useExerciseTrend(exerciseId: string | undefined): TrendPoint[] |
   }, [exerciseId]);
 }
 
-export interface SwapOptionsView {
+/** A generated routine is named "<plan> — <session>"; the session is the name. */
+const sessionLabel = (routine: Routine) => routine.name.split(' — ').at(-1) ?? routine.name;
+
+/**
+ * How far a swap can reach from one session, and what is already there.
+ *
+ * The exercise ids are what a swap must not offer: putting a lift into a
+ * session that already has it would double it up.
+ */
+export interface SwapReach {
+  /** This session, by its short name. */
+  routine: { id: string; label: string; exerciseIds: ReadonlySet<string> } | null;
+  /**
+   * The running block, and what a swap across it would change: each session's
+   * version of the lift (`planSwapTargets`), in plan order.
+   */
+  plan: {
+    id: string;
+    targets: Array<{ session: string; exercise: string }>;
+    exerciseIds: ReadonlySet<string>;
+  } | null;
+}
+
+async function swapReach(routineId: string | null, exercise: Exercise): Promise<SwapReach> {
+  if (!routineId) return { routine: null, plan: null };
+  const routine = await db.routines.get(routineId);
+  if (!routine || routine.deleted_at !== null) return { routine: null, plan: null };
+
+  const plan = runningPlan(await db.plans.toArray(), routine.id);
+  const routineIds = plan ? plan.routine_ids : [routine.id];
+  const routines = await db.routines.bulkGet(routineIds);
+  const rows = live(await db.routine_exercises.where('routine_id').anyOf(routineIds).toArray());
+  const exercises = await db.exercises.bulkGet([...new Set(rows.map((row) => row.exercise_id))]);
+  const byId = new Map(exercises.filter(Boolean).map((candidate) => [candidate!.id, candidate!]));
+
+  const sessions = routineIds.map((id) =>
+    rows
+      .filter((row) => row.routine_id === id)
+      .sort((a, b) => a.position - b.position)
+      .flatMap((row) => {
+        const found = byId.get(row.exercise_id);
+        return found ? [{ exercise: found }] : [];
+      }),
+  );
+  const idsIn = (index: number) => sessions[index]!.map((item) => item.exercise.id);
+
+  const reach: SwapReach = {
+    routine: {
+      id: routine.id,
+      label: sessionLabel(routine),
+      exerciseIds: new Set(idsIn(routineIds.indexOf(routine.id))),
+    },
+    plan: null,
+  };
+  if (!plan) return reach;
+
+  const targets = planSwapTargets(sessions, exercise).filter(({ sessionIndex }) => {
+    const session = routines[sessionIndex];
+    return session !== undefined && session.deleted_at === null;
+  });
+  return {
+    ...reach,
+    plan: {
+      id: plan.id,
+      targets: targets.map(({ sessionIndex, item }) => ({
+        session: sessionLabel(routines[sessionIndex]!),
+        exercise: item.exercise.name,
+      })),
+      exerciseIds: new Set(targets.flatMap(({ sessionIndex }) => idsIn(sessionIndex))),
+    },
+  };
+}
+
+export interface SwapOptionsView extends SwapReach {
   /** The exercise being swapped out. */
   current: Exercise;
   /** How many sets are already logged — they stay on the current exercise. */
   loggedSets: number;
-  /** The routine this session came from, when it came from one. */
-  routineName: string | null;
-  gymName: string | null;
-  suggestions: SwapSuggestions;
+  /** What today's session already has. */
+  workoutExerciseIds: ReadonlySet<string>;
+  /** Every exercise, for the alternatives and the search. */
+  library: Exercise[];
+  gym: Gym | null;
 }
 
-/**
- * What to offer instead of the exercise in progress.
- *
- * `anyGym` drops the equipment filter, for a gym profile that is wrong or a
- * session away from home.
- */
-export function useSwapOptions(
-  workoutExerciseId: string | undefined,
-  options: { anyGym?: boolean } = {},
-): SwapOptionsView | null | undefined {
-  const anyGym = options.anyGym ?? false;
-
+/** What a swap mid-session can offer, and how far it can reach. */
+export function useSwapOptions(workoutExerciseId: string | undefined): SwapOptionsView | null | undefined {
   return useLiveQuery(async () => {
     if (!workoutExerciseId) return null;
 
@@ -971,22 +1037,40 @@ export function useSwapOptions(
 
     const workout = await db.workouts.get(workoutExercise.workout_id);
     const sets = live(await db.sets.where({ workout_exercise_id: workoutExerciseId }).toArray());
-
-    const gym = workout?.gym_id
-      ? await db.gyms.get(workout.gym_id)
-      : live(await db.gyms.toArray()).find((candidate) => candidate.is_default);
-
-    const routine = workout?.routine_id ? await db.routines.get(workout.routine_id) : undefined;
+    const inSession = live(await db.workout_exercises.where({ workout_id: workoutExercise.workout_id }).toArray());
+    const sessionGym = workout?.gym_id ? await db.gyms.get(workout.gym_id) : undefined;
 
     return {
       current,
       loggedSets: sets.filter((set) => set.completed).length,
-      routineName: routine?.name ?? null,
-      gymName: gym?.name ?? null,
-      suggestions: swapSuggestions(current, live(await db.exercises.toArray()), {
-        availableEquipment: anyGym ? null : (gym?.equipment_available ?? null),
-        limit: 10,
-      }),
+      workoutExerciseIds: new Set(inSession.map((row) => row.exercise_id)),
+      library: live(await db.exercises.toArray()),
+      gym: sessionGym && sessionGym.deleted_at === null ? sessionGym : await defaultGym(),
+      ...(await swapReach(workout?.routine_id ?? null, current)),
     };
-  }, [workoutExerciseId, anyGym]);
+  }, [workoutExerciseId]);
+}
+
+export interface RoutineSwapView extends SwapReach {
+  current: Exercise;
+  library: Exercise[];
+  gym: Gym | null;
+}
+
+/** What a swap in a planned session can offer, and how far it can reach. */
+export function useRoutineSwapOptions(routineExerciseId: string | undefined): RoutineSwapView | null | undefined {
+  return useLiveQuery(async () => {
+    if (!routineExerciseId) return null;
+    const row = await db.routine_exercises.get(routineExerciseId);
+    if (!row || row.deleted_at !== null) return null;
+    const current = await db.exercises.get(row.exercise_id);
+    if (!current) return null;
+
+    return {
+      current,
+      library: live(await db.exercises.toArray()),
+      gym: await defaultGym(),
+      ...(await swapReach(row.routine_id, current)),
+    };
+  }, [routineExerciseId]);
 }

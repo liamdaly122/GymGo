@@ -7,7 +7,15 @@ import { SPLITS, SUPPORTED_DAYS, sessionsFor, splitsForDays } from './splits';
 import { SESSION_TEMPLATES } from './templates';
 import { prescribe } from './prescribe';
 import { fillSession } from './fill';
-import { InvalidPlanSelectionError, assessPlan, buildPlan, weeklySetsPerMuscle, workableSplits } from './plan';
+import {
+  InvalidPlanSelectionError,
+  assessPlan,
+  buildPlan,
+  pinExercises,
+  slotIndexOf,
+  weeklySetsPerMuscle,
+  workableSplits,
+} from './plan';
 
 /** The real seeded library, with the sync fields the app stamps on insert. */
 const EXERCISES: Exercise[] = (seedData as unknown as Array<Record<string, unknown>>).map(
@@ -406,5 +414,64 @@ describe('viability at a real gym', () => {
       equipment: DUMBBELL_HOME,
     });
     expect(assessPlan(plan).viable).toBe(true);
+  });
+});
+
+describe('swapping exercises in a plan before it is saved', () => {
+  const plan = buildPlan({ goalId: 'build_muscle', splitId: 'push_pull_legs', days: 6 }, EXERCISES, {
+    equipment: COMMERCIAL,
+  });
+  const byName = (name: string) => EXERCISES.find((exercise) => exercise.name === name)!;
+  const hipThrust = byName('Barbell Hip Thrust');
+  const legExtension = byName('Leg Extensions');
+
+  const pull = plan.sessions[1]!;
+  const first = pull.exercises[0]!;
+
+  it('puts the chosen exercise in its slot and changes nothing else', () => {
+    const pinned = pinExercises(plan, [{ dayIndex: 1, slotIndex: slotIndexOf(pull, first), exercise: hipThrust }]);
+
+    expect(pinned.sessions[1]!.exercises[0]!.exercise).toBe(hipThrust);
+    expect(pinned.sessions[1]!.exercises.slice(1)).toEqual(pull.exercises.slice(1));
+    for (const index of [0, 2, 3, 4, 5]) expect(pinned.sessions[index]).toBe(plan.sessions[index]);
+  });
+
+  it('prescribes it as the plan would have in that slot', () => {
+    const legs = plan.sessions[2]!;
+    const primary = legs.exercises[0]!;
+    expect(primary.slot.role).toBe('primary');
+
+    const pinned = pinExercises(plan, [{ dayIndex: 2, slotIndex: slotIndexOf(legs, primary), exercise: legExtension }]);
+
+    const entry = pinned.sessions[2]!.exercises[0]!;
+    // An isolation lift in a primary slot rests less than the compound did.
+    expect(entry.prescription).toEqual(
+      prescribe('hypertrophy', 'primary', { isCompound: false, restMultiplier: plan.goal.restMultiplier }),
+    );
+    expect(entry.prescription.restSeconds).toBeLessThan(primary.prescription.restSeconds);
+  });
+
+  it('fills a slot the gym left empty, in the template order', () => {
+    // Bodyweight alone cannot cover every slot of a push/pull/legs week.
+    const home = buildPlan({ goalId: 'build_muscle', splitId: 'push_pull_legs', days: 3 }, EXERCISES, {
+      equipment: ['bodyweight'],
+    });
+    const session = home.sessions.find((candidate) => candidate.unfilled.length > 0)!;
+    const slots = SESSION_TEMPLATES[session.templateId].slots;
+    const emptySlot = session.unfilled[0]!;
+    const slotIndex = slots.indexOf(emptySlot);
+
+    const pinned = pinExercises(home, [{ dayIndex: session.dayIndex, slotIndex, exercise: hipThrust }]);
+
+    const after = pinned.sessions[session.dayIndex]!;
+    expect(after.unfilled).not.toContain(emptySlot);
+    expect(pinned.unfilledCount).toBe(home.unfilledCount - 1);
+    const order = after.exercises.map((entry) => slots.indexOf(entry.slot));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(after.exercises[order.indexOf(slotIndex)]!.exercise).toBe(hipThrust);
+  });
+
+  it('is a no-op with nothing pinned', () => {
+    expect(pinExercises(plan, [])).toBe(plan);
   });
 });

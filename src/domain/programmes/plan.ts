@@ -140,6 +140,77 @@ export function buildPlan(
 }
 
 /**
+ * An exercise chosen by hand for one slot of one day.
+ *
+ * Keyed by the slot's place in the session template, not by position in the
+ * list: a shuffle can leave a different slot empty and shift every position
+ * after it, but the slot a lift was chosen for stays the same slot.
+ */
+export interface PlanPin {
+  dayIndex: number;
+  slotIndex: number;
+  exercise: Exercise;
+}
+
+/** Which slot of its session template a planned exercise fills. */
+export function slotIndexOf(session: PlannedSession, entry: PlannedExercise): number {
+  return template(session.templateId).slots.indexOf(entry.slot);
+}
+
+/**
+ * Puts hand-picked exercises into their slots, prescribed as the plan would
+ * have prescribed them there.
+ *
+ * Applied after the week is filled, not inside it, so swapping one exercise
+ * changes that exercise and nothing else. Refilling the week with the old lift
+ * left out would ripple through the variety rules and change lifts nobody
+ * touched.
+ */
+export function pinExercises(plan: GeneratedPlan, pins: readonly PlanPin[]): GeneratedPlan {
+  if (pins.length === 0) return plan;
+
+  const sessions = plan.sessions.map((session) => {
+    const mine = pins.filter((pin) => pin.dayIndex === session.dayIndex);
+    if (mine.length === 0) return session;
+
+    const slots = template(session.templateId).slots;
+    const exercises = [...session.exercises];
+    let unfilled = session.unfilled;
+
+    for (const pin of mine) {
+      const slot = slots[pin.slotIndex];
+      if (!slot) continue;
+      const entry: PlannedExercise = {
+        exercise: pin.exercise,
+        slot,
+        prescription: prescribe(plan.goal.profile, slot.role, {
+          isCompound: pin.exercise.is_compound,
+          restMultiplier: plan.goal.restMultiplier,
+        }),
+      };
+
+      const at = exercises.findIndex((existing) => existing.slot === slot);
+      if (at !== -1) {
+        exercises[at] = entry;
+        continue;
+      }
+      // A slot this fill left empty: back where the template has it.
+      const after = exercises.findIndex((existing) => slots.indexOf(existing.slot) > pin.slotIndex);
+      exercises.splice(after === -1 ? exercises.length : after, 0, entry);
+      unfilled = unfilled.filter((empty) => empty !== slot);
+    }
+
+    return { ...session, exercises, unfilled };
+  });
+
+  return {
+    ...plan,
+    sessions,
+    unfilledCount: sessions.reduce((total, session) => total + session.unfilled.length, 0),
+  };
+}
+
+/**
  * Weekly sets per muscle.
  *
  * Two readings, because they answer different questions:

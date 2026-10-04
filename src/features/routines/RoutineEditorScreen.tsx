@@ -14,6 +14,8 @@ import { BackLink, Button, NumberField, Screen, ScreenHeader, SectionLabel, Shee
 import { Icon } from '@/components/icons';
 import { estimateDurationMinutes } from '@/domain/sessionSummary';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
+import RoutineSwap from '@/features/swap/RoutineSwap';
+import { Toast, useToast } from '@/components/Toast';
 
 /**
  * A routine: the template a workout is copied from.
@@ -29,6 +31,8 @@ export default function RoutineEditorScreen() {
   const pro = settings?.mode === 'pro';
   const [picking, setPicking] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [swapping, setSwapping] = useState<string | null>(null);
+  const [toast, showToast] = useToast();
 
   if (view === undefined) {
     return (
@@ -116,6 +120,14 @@ export default function RoutineEditorScreen() {
                         <p className="font-semibold">{entry.exercise?.name ?? 'Unknown exercise'}</p>
                         <p className="t-meta first-letter:uppercase">{entry.exercise?.primary_muscle}</p>
                       </div>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => setSwapping(entry.routineExercise.id)}
+                        aria-label={`Swap ${name}`}
+                      >
+                        <Icon name="swap" />
+                      </button>
                       <button
                         type="button"
                         className="icon-btn"
@@ -274,6 +286,12 @@ export default function RoutineEditorScreen() {
           <Button onClick={() => setConfirmingDelete(false)}>Keep</Button>
         </Sheet>
       ) : null}
+
+      {swapping ? (
+        <RoutineSwap routineExerciseId={swapping} onClose={() => setSwapping(null)} onSwapped={showToast} />
+      ) : null}
+
+      <Toast message={toast} />
 
       {picking ? (
         <ExercisePicker

@@ -18,11 +18,13 @@ import {
 import { personalRecords } from '@/domain/prs';
 import { newId } from '@/lib/ids';
 import { nowIso } from '@/lib/dates';
+import { makeExercise } from '@/domain/testFactories';
 
 const BENCH = 'exercise-bench';
 const DUMBBELL = 'exercise-dumbbell';
 const ROW = 'exercise-row';
 const DEADLIFT = 'exercise-deadlift';
+const RDL = 'exercise-rdl';
 const HIP_THRUST = 'exercise-hip-thrust';
 const SQUAT = 'exercise-squat';
 
@@ -230,7 +232,16 @@ describe('swapping across the plan', () => {
       .filter((row) => row.deleted_at === null)
       .sort((a, b) => a.position - b.position);
 
+  /** Names matter here: a swap across the plan reaches each session's version of the lift. */
   async function planWithDeadlifts() {
+    await db.exercises.bulkAdd([
+      makeExercise({ id: DEADLIFT, name: 'Barbell Deadlift', source_id: null }),
+      makeExercise({ id: RDL, name: 'Romanian Deadlift', source_id: null }),
+      makeExercise({ id: HIP_THRUST, name: 'Barbell Hip Thrust', source_id: null }),
+      makeExercise({ id: SQUAT, name: 'Barbell Squat', source_id: null }),
+      makeExercise({ id: ROW, name: 'Bent Over Barbell Row', source_id: null }),
+      makeExercise({ id: BENCH, name: 'Barbell Bench Press', source_id: null }),
+    ]);
     const pullA = await createRoutine('Build muscle · PPL — Pull A');
     const legs = await createRoutine('Build muscle · PPL — Legs');
     const pullB = await createRoutine('Build muscle · PPL — Pull B');
@@ -240,7 +251,8 @@ describe('swapping across the plan', () => {
     });
     await addExerciseToRoutine(pullA, ROW);
     await addExerciseToRoutine(legs, SQUAT);
-    await addExerciseToRoutine(legs, DEADLIFT, {
+    // A different deadlift, as a generated plan would have it.
+    await addExerciseToRoutine(legs, RDL, {
       target_sets: 3, rep_range_low: 6, rep_range_high: 8, rest_seconds: 150,
     });
     await addExerciseToRoutine(pullB, DEADLIFT);
@@ -269,7 +281,7 @@ describe('swapping across the plan', () => {
     return { planId, pullA, legs, pullB, push, pullADeadlift };
   }
 
-  it('swaps it in every session of the plan that has it', async () => {
+  it('swaps every deadlift in the plan, whichever deadlift it is', async () => {
     const { pullA, legs, pullB, push, pullADeadlift } = await planWithDeadlifts();
 
     const changed = await swapRoutineExercise(pullADeadlift, HIP_THRUST, { scope: 'plan' });
@@ -279,8 +291,19 @@ describe('swapping across the plan', () => {
       const ids = (await exercisesIn(routine)).map((row) => row.exercise_id);
       expect(ids).toContain(HIP_THRUST);
       expect(ids).not.toContain(DEADLIFT);
+      expect(ids).not.toContain(RDL);
     }
     expect((await exercisesIn(push)).map((row) => row.exercise_id)).toEqual([BENCH]);
+  });
+
+  it('changes one exercise per session, so nothing is doubled up', async () => {
+    const { pullB, pullADeadlift } = await planWithDeadlifts();
+    await addExerciseToRoutine(pullB, RDL);
+
+    await swapRoutineExercise(pullADeadlift, HIP_THRUST, { scope: 'plan' });
+
+    // The same exercise is the one that goes; the other version stays.
+    expect((await exercisesIn(pullB)).map((row) => row.exercise_id)).toEqual([HIP_THRUST, RDL]);
   });
 
   /** The sets, reps and rest were written for the slot, not the lift. */
@@ -315,7 +338,7 @@ describe('swapping across the plan', () => {
 
     expect(changed).toBe(1);
     expect((await exercisesIn(pullA))[0]!.exercise_id).toBe(HIP_THRUST);
-    expect((await exercisesIn(legs)).map((row) => row.exercise_id)).toContain(DEADLIFT);
+    expect((await exercisesIn(legs)).map((row) => row.exercise_id)).toContain(RDL);
     expect((await exercisesIn(pullB)).map((row) => row.exercise_id)).toEqual([DEADLIFT]);
   });
 
@@ -326,7 +349,7 @@ describe('swapping across the plan', () => {
     const changed = await swapRoutineExercise(pullADeadlift, HIP_THRUST, { scope: 'plan' });
 
     expect(changed).toBe(1);
-    expect((await exercisesIn(legs)).map((row) => row.exercise_id)).toContain(DEADLIFT);
+    expect((await exercisesIn(legs)).map((row) => row.exercise_id)).toContain(RDL);
   });
 
   it('starts the next session with the replacement', async () => {
@@ -352,7 +375,7 @@ describe('swapping across the plan', () => {
     await swapRoutineExercise(pullADeadlift, HIP_THRUST, { scope: 'plan' });
 
     const performed = await db.workout_exercises.where('workout_id').anyOf([done, underway]).toArray();
-    expect(performed.filter((row) => row.exercise_id === DEADLIFT)).toHaveLength(2);
+    expect(performed.filter((row) => row.exercise_id === DEADLIFT || row.exercise_id === RDL)).toHaveLength(2);
     expect(performed.some((row) => row.exercise_id === HIP_THRUST)).toBe(false);
   });
 
@@ -391,7 +414,7 @@ describe('swapping across the plan', () => {
       await swapWorkoutExercise(weId, HIP_THRUST, { scope: 'routine' });
 
       expect((await exercisesIn(pullA))[0]!.exercise_id).toBe(HIP_THRUST);
-      expect((await exercisesIn(legs)).map((row) => row.exercise_id)).toContain(DEADLIFT);
+      expect((await exercisesIn(legs)).map((row) => row.exercise_id)).toContain(RDL);
     });
 
     it('keeps it across the whole plan', async () => {
@@ -400,7 +423,10 @@ describe('swapping across the plan', () => {
       await swapWorkoutExercise(weId, HIP_THRUST, { scope: 'plan' });
 
       for (const routine of [pullA, legs, pullB]) {
-        expect((await exercisesIn(routine)).map((row) => row.exercise_id)).not.toContain(DEADLIFT);
+        const ids = (await exercisesIn(routine)).map((row) => row.exercise_id);
+        expect(ids).toContain(HIP_THRUST);
+        expect(ids).not.toContain(DEADLIFT);
+        expect(ids).not.toContain(RDL);
       }
     });
   });

@@ -35,9 +35,17 @@ await step('swap with nothing logged replaces cleanly', async () => {
   await p.getByRole('heading', { name: 'Swap exercise' }).waitFor({ timeout: 15000 });
   await p.waitForTimeout(700);
   const body = await p.locator('body').innerText();
-  if (!/DIRECT SWAPS/i.test(body)) throw new Error('expected a direct swaps section');
-  if (!/ALTERNATIVES/i.test(body)) throw new Error('expected an alternatives section');
+  // Mid-session the same lift on other kit leads: that is the swap you make
+  // between sets. Headings are display type, so read them without case.
+  const sections = await p.locator('main h2').allTextContents();
+  const same = sections.findIndex(t => /Same lift, another way/i.test(t));
+  const different = sections.findIndex(t => /Different exercise, same muscles/i.test(t));
+  if (same === -1) throw new Error(`expected a same-lift section, saw ${JSON.stringify(sections)}`);
+  if (different === -1) throw new Error(`expected a different-exercise section, saw ${JSON.stringify(sections)}`);
+  if (same > different) throw new Error('mid-session, the same lift should come first');
   if (/already logged/i.test(body)) throw new Error('nothing is logged, so there should be no warning');
+  // A session from no routine has nowhere further to reach, so no choice.
+  if (await p.getByRole('group', { name: 'Swap for' }).count()) throw new Error('a freestyle session offered a scope');
   await p.getByRole('button', { name: /Dumbbell Bench Press/ }).first().click();
   await p.getByRole('button', { name: 'Add exercise' }).waitFor({ timeout: 15000 });
   await p.waitForTimeout(500);

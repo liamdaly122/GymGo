@@ -153,8 +153,7 @@ await step('swap suggestions at a dumbbell gym stay dumbbell', async () => {
   await p.getByRole('heading', { name: 'Swap exercise' }).waitFor({ timeout: 15000 });
   await p.waitForTimeout(800);
 
-  const names = await p.locator('main button').evaluateAll(els =>
-    els.map(e => e.innerText.split('\n')[0]).filter(Boolean));
+  const names = await p.locator('main .ex-row strong').allTextContents();
   const offered = names.filter(n => /press|fly|dip|push/i.test(n));
   console.log('       offered:', JSON.stringify(offered.slice(0, 8)));
   const barbell = offered.filter(n => /^barbell|smith|cable|machine/i.test(n));
