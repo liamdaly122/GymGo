@@ -1,7 +1,13 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from './db';
-import { createRoutinesFromPlan, discardWorkout, startWorkoutFromRoutine } from './mutations';
+import {
+  completePlan,
+  createRoutinesFromPlan,
+  discardWorkout,
+  startNextBlock,
+  startWorkoutFromRoutine,
+} from './mutations';
 import { seedIfEmpty } from './seed';
 import { buildPlan } from '@/domain/programmes/plan';
 import type { Equipment } from '@/domain/types';
@@ -133,6 +139,34 @@ describe('training blocks', () => {
     expect(workout.plan_id).toBe(result.planId);
     expect(workout.plan_week).toBe(1);
     expect(workout.plan_session_index).toBe(1);
+  });
+
+  /**
+   * The next block runs the same routines, and each routine still names the
+   * block that first wrote it. Reading that filed every block-two session under
+   * block one: the new block never saw them, so its first session rolled
+   * forward forever and the block could never finish.
+   */
+  it('files a session under the block that is running, not the one that wrote the routine', async () => {
+    const { result } = await generate(3);
+    const second = await startNextBlock(result.planId);
+
+    const workoutId = await startWorkoutFromRoutine(result.routineIds[0]!);
+
+    expect((await db.workouts.get(workoutId))!.plan_id).toBe(second);
+    // The closed block's week counter is history and stays put.
+    expect((await db.plans.get(result.planId))!.current_week).toBe(1);
+  });
+
+  it('files a session under no block once its block has ended', async () => {
+    const { result } = await generate(3);
+    await completePlan(result.planId);
+
+    const workoutId = await startWorkoutFromRoutine(result.routineIds[0]!);
+
+    const workout = (await db.workouts.get(workoutId))!;
+    expect(workout.plan_id).toBeNull();
+    expect(workout.plan_week).toBeNull();
   });
 
   /** Without this the block would be five identical weeks. */

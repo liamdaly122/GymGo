@@ -159,6 +159,24 @@ async function resolvePlanSlot(
   return slot ? { week: slot.week, sessionIndex: slot.sessionIndex } : null;
 }
 
+/**
+ * The block a routine is being trained in: the running plan that holds it.
+ *
+ * Not `generated_from_plan_id`. That names the block that first wrote the
+ * routine, and the next block runs the same routines, so reading it filed
+ * every block-two session under block one. The new block never saw them, its
+ * first session rolled forward for ever, and it could never finish. A routine
+ * whose block has ended belongs to no block: training it is just training it.
+ */
+async function runningPlanFor(routineId: string): Promise<Plan | undefined> {
+  const running = (await db.plans.toArray()).filter(
+    (plan) =>
+      plan.deleted_at === null && plan.completed_at === null && plan.routine_ids.includes(routineId),
+  );
+  running.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
+  return running[0];
+}
+
 export async function startWorkoutFromRoutine(
   routineId: string,
   options: { gymId?: string | null; readiness?: Readiness | null } = {},
@@ -170,12 +188,10 @@ export async function startWorkoutFromRoutine(
     .filter((re) => re.deleted_at === null)
     .sort((a, b) => a.position - b.position);
 
-  // If this routine came from a training block, record which week and which day
+  // If this routine is part of a running block, record which week and which day
   // of the rotation, so the calendar can mark it done and the progression engine
   // knows which week's targets applied.
-  const plan = routine.generated_from_plan_id
-    ? await db.plans.get(routine.generated_from_plan_id)
-    : undefined;
+  const plan = await runningPlanFor(routineId);
   const slot = plan ? await resolvePlanSlot(plan, routineId) : null;
   const week = slot?.week ?? null;
 
