@@ -1,23 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui';
+import { Button, SectionLabel } from '@/components/ui';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import { describeSyncStatus } from '@/sync/status';
-import { currentAccount, sendMagicLink, signOut, type SyncAccount } from '@/sync/auth';
+import { currentAccount, sendSignInCode, signOut, verifySignInCode, type SyncAccount } from '@/sync/auth';
 import { isSyncConfigured } from '@/sync/config';
 import { syncNow } from '@/sync/engine';
-import { formatDayLabel } from '@/lib/dates';
+import { formatSince } from '@/lib/dates';
 
 /**
- * Backup and sync, in Settings and nowhere else.
+ * Backup, in Settings and nowhere else.
  *
  * Signing in is the one place the interface deliberately waits on the network,
  * because the user asked it to. Nothing on the logging path ever does.
+ *
+ * Sign-in is by a code typed into the app, because that is what works in a
+ * home-screen app on an iPhone: the link in the same email opens Safari, which
+ * keeps its own storage, so it would sign Safari in and leave the app signed
+ * out. The link still works in a browser.
  */
 export default function SyncSection() {
   const status = useSyncStatus();
-  const [account, setAccount] = useState<SyncAccount | null>(null);
+  const [account, setAccount] = useState<SyncAccount | null | undefined>(undefined);
   const [email, setEmail] = useState('');
-  const [sending, setSending] = useState(false);
+  const [code, setCode] = useState('');
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -27,109 +34,176 @@ export default function SyncSection() {
   if (!isSyncConfigured()) {
     return (
       <section aria-labelledby="sync" className="stack-sm">
-        <h2 className="t-section" id="sync">Backup and sync</h2>
-        <p className="text-sm">Not set up yet.</p>
-        <p className="mt-1 text-[11px] text-muted">
-          Everything works without it — this is about keeping a second copy off this phone. Add a
-          Supabase project and set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Until then, Export
-          is your backup.
+        <SectionLabel id="sync">Backup</SectionLabel>
+        <p className="font-semibold">Not connected yet.</p>
+        <p className="t-meta">
+          Everything works without it. Connected to a free Supabase project, every workout is copied
+          off this phone as you log it, so a lost phone or a reinstall is a restore rather than a loss.
+          Until then, Export below is your backup.
+        </p>
+        <p className="t-meta">
+          To connect: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY where the app is built. The
+          steps are in supabase/README.md.
         </p>
       </section>
     );
   }
 
-  const handleSend = async () => {
-    const trimmed = email.trim();
-    if (!trimmed) return;
-    setSending(true);
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
     setNote(null);
     try {
-      await sendMagicLink(trimmed);
-      setNote({ tone: 'ok', text: `Link sent to ${trimmed}. Open it on this phone.` });
+      await work();
     } catch (cause) {
       setNote({ tone: 'error', text: cause instanceof Error ? cause.message : String(cause) });
     } finally {
-      setSending(false);
+      setBusy(false);
     }
   };
+
+  const handleSend = () =>
+    run(async () => {
+      const address = email.trim();
+      await sendSignInCode(address);
+      setSentTo(address);
+      setCode('');
+      setNote({ tone: 'ok', text: `Code sent to ${address}.` });
+    });
+
+  const handleVerify = () =>
+    run(async () => {
+      if (!sentTo) return;
+      await verifySignInCode(sentTo, code);
+      setAccount(await currentAccount());
+      setSentTo(null);
+      setCode('');
+      setNote(null);
+    });
+
+  const backedUp = status.state === 'idle' && status.pending === 0 && status.lastSyncedAt !== null;
 
   return (
     <section aria-labelledby="sync" className="stack-sm">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="t-section" id="sync">Backup and sync</h2>
-        <span
-          className={`text-[11px] ${
-            status.state === 'error' ? 'text-warn' : status.state === 'idle' ? 'text-hot' : 'text-muted'
-          }`}
-        >
-          {describeSyncStatus(status)}
-        </span>
+        <SectionLabel id="sync">Backup</SectionLabel>
+        {account ? (
+          <span
+            role="status"
+            className={`text-sm font-semibold ${
+              status.state === 'error' ? 'text-warn' : backedUp ? 'text-hot' : 'text-muted'
+            }`}
+          >
+            {describeSyncStatus(status)}
+          </span>
+        ) : null}
       </div>
 
       {account ? (
         <>
-          <p className="text-sm">{account.email ?? 'Signed in'}</p>
-          <p className="mt-0.5 text-[11px] text-muted">
-            {status.lastSyncedAt
-              ? `Last backed up ${formatDayLabel(status.lastSyncedAt).toLowerCase()}`
-              : 'Not backed up yet'}
+          {status.restoredWorkouts ? (
+            <p className="font-semibold text-hot">
+              Restored {status.restoredWorkouts} workout{status.restoredWorkouts === 1 ? '' : 's'} from
+              your backup.
+            </p>
+          ) : null}
+          <p className="text-sm">
+            {status.lastSyncedAt ? `Last backed up ${formatSince(status.lastSyncedAt)}` : 'Not backed up yet'}
             {status.pending > 0 ? ` · ${status.pending} waiting` : ''}
           </p>
-
-          <div className="grid gap-2">
-            <Button onClick={() => void syncNow()} disabled={status.state === 'syncing'}>
-              {status.state === 'syncing' ? 'Backing up…' : 'Back up now'}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                void signOut().then(() => setAccount(null));
-              }}
-            >
-              Sign out
-            </Button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="text-sm">Sign in to keep a copy off this phone.</p>
-          <p className="mt-1 mb-3 text-[11px] text-muted">
-            No password. You get a link by email, tap it once on this phone, and stay signed in.
+          <p className="t-meta">
+            Signed in as {account.email ?? 'you'}. It backs up by itself whenever there is signal,
+            within a couple of minutes of a change, and checks everything over once a day. On a new
+            phone, sign in here and everything comes back.
           </p>
-          <input
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@example.com"
-            aria-label="Email address for the sign-in link"
-            className="field"
-          />
-          <Button
-            variant="primary"
-            block
-            disabled={sending || email.trim() === ''}
-            onClick={() => void handleSend()}
-          >
-            {sending ? 'Sending…' : 'Email me a link'}
+          <Button block onClick={() => void syncNow()} disabled={status.state === 'syncing'}>
+            {status.state === 'syncing' ? describeSyncStatus(status) : 'Back up now'}
           </Button>
+          <button
+            type="button"
+            className="btn-text self-start"
+            onClick={() => void signOut().then(() => setAccount(null))}
+          >
+            Sign out
+          </button>
         </>
-      )}
+      ) : account === null ? (
+        sentTo === null ? (
+          <>
+            <p className="font-semibold">Sign in to back up this phone.</p>
+            <p className="t-meta">
+              No password. You get a six-digit code by email, type it in here, and stay signed in.
+            </p>
+            <input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+              aria-label="Email address"
+              className="field"
+            />
+            <Button
+              variant="primary"
+              block
+              disabled={busy || email.trim() === ''}
+              onClick={() => void handleSend()}
+            >
+              {busy ? 'Sending…' : 'Email me a code'}
+            </Button>
+          </>
+        ) : (
+          <>
+            <p className="font-semibold">Enter the code from the email.</p>
+            <p className="t-meta">
+              Type it here rather than tapping the link: on an iPhone the link opens Safari, which
+              keeps its own storage, and this app would stay signed out.
+            </p>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              value={code}
+              onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, '').slice(0, 10))}
+              placeholder="123456"
+              aria-label="Sign-in code"
+              className="field text-center text-2xl tracking-[0.3em]"
+            />
+            <Button
+              variant="primary"
+              block
+              disabled={busy || code.length < 6}
+              onClick={() => void handleVerify()}
+            >
+              {busy ? 'Signing in…' : 'Sign in'}
+            </Button>
+            <div className="flex justify-between gap-3">
+              <button type="button" className="btn-text" disabled={busy} onClick={() => void handleSend()}>
+                Send a new code
+              </button>
+              <button
+                type="button"
+                className="btn-text"
+                onClick={() => {
+                  setSentTo(null);
+                  setNote(null);
+                }}
+              >
+                Use another email
+              </button>
+            </div>
+          </>
+        )
+      ) : null}
 
       {note ? (
-        <p
-          className={`mt-3 text-[11px] ${note.tone === 'ok' ? 'text-hot' : 'text-warn'}`}
-          role="status"
-        >
+        <p className={`text-sm ${note.tone === 'ok' ? 'text-hot' : 'text-warn'}`} role="status">
           {note.text}
         </p>
       ) : null}
 
-      {status.state === 'error' && status.message ? (
-        <p className="mt-2 text-[11px] text-muted">
-          Last attempt failed: {status.message}. It will retry on its own.
-        </p>
+      {account && status.state === 'error' && status.message ? (
+        <p className="t-meta">Last attempt failed: {status.message}. It will try again by itself.</p>
       ) : null}
     </section>
   );

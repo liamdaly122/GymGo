@@ -1,12 +1,17 @@
 /**
- * Magic-link sign-in. One user, one phone, signed in once.
+ * Email sign-in. One user, one phone, signed in once.
  *
  * No password to remember and nothing to leak. The only thing the client ever
  * holds is the anon public key and a session token.
+ *
+ * The email carries a six-digit code as well as a link, and the code is the
+ * one that matters on an iPhone. A home-screen app keeps its storage apart
+ * from Safari, and a link tapped in Mail opens in Safari — so the link signs
+ * Safari in and leaves the app exactly where it was. Typing the code into the
+ * app signs in the app itself.
  */
 import { db } from '@/db/db';
 import { SETTINGS_ID } from '@/db/schema';
-import { nowIso } from '@/lib/dates';
 import { SYNCED_TABLES, getClient } from './client';
 
 export interface SyncAccount {
@@ -22,20 +27,41 @@ export async function currentAccount(): Promise<SyncAccount | null> {
   return user ? { userId: user.id, email: user.email ?? null } : null;
 }
 
-/** Sends the link. The user taps it on the same phone and lands back signed in. */
-export async function sendMagicLink(email: string): Promise<void> {
+/** Emails a sign-in code (and a link, for a browser). Creates the account on first use. */
+export async function sendSignInCode(email: string): Promise<void> {
   const client = getClient();
   if (!client) throw new Error('No Supabase project is configured.');
 
   const { error } = await client.auth.signInWithOtp({
     email,
-    options: { emailRedirectTo: window.location.origin },
+    options: { emailRedirectTo: window.location.origin, shouldCreateUser: true },
   });
   if (error) throw new Error(error.message);
 }
 
+/** Signs this app in with the code from the email. */
+export async function verifySignInCode(email: string, code: string): Promise<void> {
+  const client = getClient();
+  if (!client) throw new Error('No Supabase project is configured.');
+
+  const token = code.replace(/\s+/g, '');
+  const { error } = await client.auth.verifyOtp({ email, token, type: 'email' });
+  if (error) {
+    throw new Error(
+      /expired|invalid/i.test(error.message)
+        ? 'That code did not work. Codes expire after an hour — check it, or send a new one.'
+        : error.message,
+    );
+  }
+}
+
+/**
+ * Signs out, and forgets where the pull was up to: the next account to sign in
+ * on this phone starts from a clean slate, not from someone else's cursor.
+ */
 export async function signOut(): Promise<void> {
   await getClient()?.auth.signOut();
+  await resetSyncCursor();
 }
 
 /**
@@ -63,7 +89,11 @@ export async function backfillUserId(userId: string): Promise<number> {
   return stamped;
 }
 
-/** Clears the cursor so the next sync re-pulls everything from scratch. */
+/**
+ * Clears the cursor so the next round starts as a phone's first: everything
+ * the account has comes down before anything goes up. Bookkeeping, not an
+ * edit, so `updated_at` is left alone.
+ */
 export async function resetSyncCursor(): Promise<void> {
-  await db.settings.update(SETTINGS_ID, { last_synced_at: null, updated_at: nowIso() });
+  await db.settings.update(SETTINGS_ID, { last_synced_at: null });
 }

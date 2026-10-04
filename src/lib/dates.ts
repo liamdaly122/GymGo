@@ -68,3 +68,22 @@ export function formatDayLabel(iso: string, now: Date = new Date()): string {
   if (days < -1 && days > -7) return then.toLocaleDateString('en-GB', { weekday: 'long' });
   return then.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }
+
+/**
+ * "just now" / "4 min ago" / "3 hours ago" / then the day — how long since
+ * something happened, for "Last backed up …". Recent enough to matter in
+ * minutes; older than today, the day says more than a count of hours.
+ */
+export function formatSince(iso: string, now: Date = new Date()): string {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return '—';
+  const minutes = Math.floor((now.getTime() - then.getTime()) / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const sameDay = then.toDateString() === now.toDateString();
+  if (sameDay) {
+    const hours = Math.floor(minutes / 60);
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  }
+  return formatDayLabel(iso, now).toLowerCase();
+}

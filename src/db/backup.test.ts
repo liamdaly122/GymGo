@@ -90,14 +90,24 @@ describe('backup round trip', () => {
     expect(sets.filter((set) => set.deleted_at !== null)).toHaveLength(1);
   });
 
-  it('clears the outbox, whose queued rows describe a database that is gone', async () => {
+  /**
+   * Restoring an export used to empty the queue and queue nothing, so the
+   * restored history never reached the cloud: backup uploads what the outbox
+   * names, and nothing named it.
+   */
+  it('queues every restored row for backup, in place of the old queue', async () => {
     await logASession();
     const backup = JSON.stringify(await exportAsJson());
-    expect(await db.outbox.count()).toBeGreaterThan(0);
+    // An entry describing a row the import is about to replace.
+    await db.outbox.add({ table_name: 'routines', row_id: 'gone', op: 'put', payload: {}, queued_at: '2026-08-01T00:00:00.000Z' });
 
-    await importFromJson(backup);
+    const result = await importFromJson(backup);
 
-    expect(await db.outbox.count()).toBe(0);
+    const queued = await db.outbox.toArray();
+    expect(queued.some((entry) => entry.row_id === 'gone')).toBe(false);
+    const restored = Object.values(result.counts).reduce((total, count) => total + count, 0);
+    expect(restored).toBeGreaterThan(0);
+    expect(new Set(queued.map((entry) => `${entry.table_name}:${entry.row_id}`)).size).toBe(restored);
   });
 
   it('leaves the database untouched when the file is rejected', async () => {

@@ -1,5 +1,5 @@
 import { db } from './db';
-import { SETTINGS_ID, type Exercise, type Gym, type Settings } from './schema';
+import { FACTORY_DEFAULT, SETTINGS_ID, type Exercise, type Gym, type Settings } from './schema';
 import { newId } from '@/lib/ids';
 import { nowIso } from '@/lib/dates';
 
@@ -21,9 +21,9 @@ async function loadSeedExercises(): Promise<SeedExercise[]> {
   return module.default as unknown as SeedExercise[];
 }
 
+/** Factory defaults lose every conflict: see FACTORY_DEFAULT. */
 function syncFields() {
-  const now = nowIso();
-  return { user_id: null, created_at: now, updated_at: now, deleted_at: null };
+  return { user_id: null, created_at: FACTORY_DEFAULT, updated_at: FACTORY_DEFAULT, deleted_at: null };
 }
 
 /**

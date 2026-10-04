@@ -127,7 +127,7 @@ export async function upsertRows(
 export interface SelectQuery {
   /** `column=gt.value` filters. */
   greaterThan?: Array<[column: string, value: string]>;
-  order?: { column: string; ascending: boolean };
+  order?: Array<{ column: string; ascending: boolean }>;
   offset?: number;
   limit?: number;
 }
@@ -151,11 +151,11 @@ export async function selectRows(
     params.push(value);
     return `${ident(column)} > $${params.length}`;
   });
-  if (query.order && !known.has(query.order.column)) {
-    throw new RestError(`column ${table}.${query.order.column} does not exist`);
+  for (const { column } of query.order ?? []) {
+    if (!known.has(column)) throw new RestError(`column ${table}.${column} does not exist`);
   }
-  const order = query.order
-    ? `order by ${ident(query.order.column)} ${query.order.ascending ? 'asc' : 'desc'}`
+  const order = query.order?.length
+    ? `order by ${query.order.map(({ column, ascending }) => `${ident(column)} ${ascending ? 'asc' : 'desc'}`).join(', ')}`
     : '';
   params.push(query.offset ?? 0);
   const offset = `offset $${params.length}`;

@@ -120,7 +120,7 @@ export async function createFakeSupabase(): Promise<FakeSupabase> {
           return chain;
         },
         order(column: string, options: { ascending?: boolean } = {}) {
-          query.order = { column, ascending: options.ascending ?? true };
+          (query.order ??= []).push({ column, ascending: options.ascending ?? true });
           return chain;
         },
         range(fromIndex: number, toIndex: number) {

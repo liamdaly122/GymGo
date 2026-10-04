@@ -149,11 +149,13 @@ async function resolvePlanSlot(
   const week = schedule.length > 0 ? currentWeek(schedule) : plan.current_week;
 
   if (week !== plan.current_week) {
-    await db.plans.update(plan.id, {
+    const patch = {
       current_week: week,
       phase_name: weekModifier(week, plan.block_weeks).label,
       updated_at: nowIso(),
-    });
+    };
+    await db.plans.update(plan.id, patch);
+    await enqueue('plans', plan.id, 'put', patch);
   }
 
   const slot = slotForRoutine(schedule, routineId);
@@ -293,6 +295,7 @@ export async function finishWorkout(workoutId: string): Promise<void> {
   await assertWorkoutEditable(workoutId);
   const finishedAt = nowIso();
 
+  const tidied: Array<['sets' | 'workout_exercises', string]> = [];
   await db.transaction('rw', db.workouts, db.workout_exercises, db.sets, db.outbox, async () => {
     const workoutExercises = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
     const exerciseIds = workoutExercises.map((we) => we.id);
@@ -301,22 +304,30 @@ export async function finishWorkout(workoutId: string): Promise<void> {
     const abandoned = sets.filter((set) => !set.completed && set.deleted_at === null);
     for (const set of abandoned) {
       await db.sets.update(set.id, { deleted_at: finishedAt, updated_at: finishedAt });
+      tidied.push(['sets', set.id]);
     }
 
     // Drop exercises left with nothing logged against them at all.
     for (const we of workoutExercises) {
       const kept = sets.some((set) => set.workout_exercise_id === we.id && set.completed);
-      if (!kept) {
+      if (!kept && we.deleted_at === null) {
         await db.workout_exercises.update(we.id, {
           deleted_at: finishedAt,
           updated_at: finishedAt,
         });
+        tidied.push(['workout_exercises', we.id]);
       }
     }
 
     await db.workouts.update(workoutId, { finished_at: finishedAt, updated_at: finishedAt });
   });
 
+  // The tidying is queued too. Left out, the backup kept every untouched
+  // planned set as a live row, and a restore brought them back as empty sets
+  // in a finished workout.
+  for (const [table, rowId] of tidied) {
+    await enqueue(table, rowId, 'delete', { deleted_at: finishedAt });
+  }
   await enqueue('workouts', workoutId, 'put', { finished_at: finishedAt });
 }
 
@@ -375,14 +386,18 @@ export async function removeExerciseFromWorkout(workoutExerciseId: string): Prom
   if (!row) return;
   await assertWorkoutEditable(row.workout_id);
   const now = nowIso();
+  const removed: string[] = [];
   await db.transaction('rw', db.workout_exercises, db.sets, db.outbox, async () => {
     await db.workout_exercises.update(workoutExerciseId, { deleted_at: now, updated_at: now });
     const sets = await db.sets.where({ workout_exercise_id: workoutExerciseId }).toArray();
     for (const set of sets) {
+      if (set.deleted_at !== null) continue;
       await db.sets.update(set.id, { deleted_at: now, updated_at: now });
+      removed.push(set.id);
     }
   });
   await enqueue('workout_exercises', workoutExerciseId, 'delete', { deleted_at: now });
+  for (const setId of removed) await enqueue('sets', setId, 'delete', { deleted_at: now });
 }
 
 // ---------------------------------------------------------------------------
@@ -776,17 +791,19 @@ export async function completeSetWith(
 export async function removeSet(setId: string): Promise<void> {
   await assertSetEditable(setId);
   const now = nowIso();
+  const children: string[] = [];
   await db.transaction('rw', db.sets, db.outbox, async () => {
     await db.sets.update(setId, { deleted_at: now, updated_at: now });
     // A child set cannot outlive its parent.
-    const children = await db.sets.toArray();
-    for (const child of children) {
+    for (const child of await db.sets.toArray()) {
       if (child.parent_set_id === setId && child.deleted_at === null) {
         await db.sets.update(child.id, { deleted_at: now, updated_at: now });
+        children.push(child.id);
       }
     }
   });
   await enqueue('sets', setId, 'delete', { deleted_at: now });
+  for (const childId of children) await enqueue('sets', childId, 'delete', { deleted_at: now });
 }
 
 // ---------------------------------------------------------------------------

@@ -214,6 +214,18 @@ export interface Settings extends SyncFields {
 export const SETTINGS_ID = 'settings';
 
 /**
+ * The timestamp first-run rows carry: the start of time.
+ *
+ * The seeded library, the starter gym and default settings are factory
+ * defaults, not anything the user chose, so they must lose every conflict.
+ * Stamped with the moment of install they would have looked newer than a
+ * backup, and a fresh phone signing in would have replaced the cloud's
+ * settings, gym and exercise notes with defaults on the server and on the
+ * phone alike. Stamped at the epoch, any real row outranks them.
+ */
+export const FACTORY_DEFAULT = '1970-01-01T00:00:00.000Z';
+
+/**
  * Every mutation is appended here with a sequence number, so it can be flushed
  * to Supabase in order once a connection exists. Not synced itself.
  */

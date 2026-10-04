@@ -3,19 +3,25 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from './db';
 import {
   ImmutableWorkoutError,
+  addChildSet,
   addExerciseToRoutine,
   addExerciseToWorkout,
   addSet,
   completeSet,
   completeSetWith,
   createRoutine,
+  createRoutinesFromPlan,
   finishWorkout,
   removeExerciseFromRoutine,
+  removeExerciseFromWorkout,
+  removeSet,
   startFreestyleWorkout,
   startWorkoutFromRoutine,
   updateRoutineExercise,
   updateSet,
 } from './mutations';
+import { seedIfEmpty } from './seed';
+import { buildPlan } from '@/domain/programmes/plan';
 
 const EXERCISE_A = 'exercise-a';
 const EXERCISE_B = 'exercise-b';
@@ -227,6 +233,59 @@ describe('the outbox', () => {
       'sets',
     ]);
     expect(entries.every((entry) => entry.op === 'put')).toBe(true);
+  });
+
+  /**
+   * Backup uploads what the outbox names, so a write that skips it is a change
+   * the backup never hears about. Finishing a session used to tidy away its
+   * untouched sets without queueing it, and a restore brought them back as
+   * empty sets in a finished workout.
+   */
+  it('queues every row a session changes, including what finishing tidies away', async () => {
+    await seedIfEmpty();
+    const plan = buildPlan(
+      { goalId: 'build_muscle', splitId: 'upper_lower', days: 4 },
+      await db.exercises.toArray(),
+      {},
+    );
+    const { planId, routineIds } = await createRoutinesFromPlan(plan);
+    // A stale week counter, as a crash or an import can leave one.
+    await db.plans.update(planId, { current_week: 3 });
+    await db.outbox.clear();
+
+    const workoutId = await startWorkoutFromRoutine(routineIds[0]!);
+    const queuedNow = async () =>
+      new Set((await db.outbox.toArray()).map((entry) => `${entry.table_name}:${entry.row_id}`));
+    expect((await queuedNow()).has(`plans:${planId}`), 'the refreshed week counter').toBe(true);
+
+    const [first, second] = (await db.workout_exercises.where({ workout_id: workoutId }).toArray()).sort(
+      (a, b) => a.position - b.position,
+    );
+    const sets = (await db.sets.where({ workout_exercise_id: first!.id }).toArray()).sort(
+      (a, b) => a.set_index - b.set_index,
+    );
+    await completeSetWith(sets[0]!.id, { weight_kg: 100, reps: 5 });
+    await completeSetWith(sets[1]!.id, { weight_kg: 100, reps: 5 });
+    await addChildSet(sets[1]!.id, 'drop');
+
+    // A backup round mid-session, as the two-minute loop runs one: everything
+    // so far is up, and only what changes from here is queued.
+    await db.outbox.clear();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const since = Date.now();
+
+    await removeSet(sets[1]!.id);
+    await removeExerciseFromWorkout(second!.id);
+    await finishWorkout(workoutId);
+
+    const queued = await queuedNow();
+    const missed: string[] = [];
+    for (const table of ['workouts', 'workout_exercises', 'sets'] as const) {
+      for (const row of (await db.table(table).toArray()) as Array<{ id: string; updated_at: string }>) {
+        if (Date.parse(row.updated_at) >= since && !queued.has(`${table}:${row.id}`)) missed.push(`${table}:${row.id}`);
+      }
+    }
+    expect(missed, 'rows changed without telling the backup').toEqual([]);
   });
 });
 

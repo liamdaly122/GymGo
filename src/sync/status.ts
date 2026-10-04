@@ -10,11 +10,16 @@ export type SyncState = 'idle' | 'syncing' | 'error' | 'offline' | 'signed_out' 
 
 export interface SyncStatus {
   state: SyncState;
+  /** When a round last finished with everything on this phone backed up. */
   lastSyncedAt: string | null;
   /** Rows still waiting to go up. */
   pending: number;
   /** Last failure, kept for the settings screen. Never shown mid-workout. */
   message: string | null;
+  /** What a running round is doing: bringing a backup down, or sending one up. */
+  phase: 'restoring' | 'uploading' | null;
+  /** Workouts a restore brought back to this phone, said once in Settings. */
+  restoredWorkouts: number | null;
 }
 
 let status: SyncStatus = {
@@ -22,6 +27,8 @@ let status: SyncStatus = {
   lastSyncedAt: null,
   pending: 0,
   message: null,
+  phase: null,
+  restoredWorkouts: null,
 };
 
 const listeners = new Set<(next: SyncStatus) => void>();
@@ -49,7 +56,7 @@ export function describeSyncStatus(current: SyncStatus): string {
     case 'signed_out':
       return 'Not signed in';
     case 'syncing':
-      return 'Backing up…';
+      return current.phase === 'restoring' ? 'Restoring your data…' : 'Backing up…';
     case 'offline':
       return current.pending > 0 ? `${current.pending} waiting for signal` : 'Offline';
     case 'error':

@@ -65,8 +65,11 @@ export interface ImportResult {
  * Replaces the entire local database with the contents of a backup.
  *
  * Validated first, then applied inside one transaction, so a bad file cannot
- * leave the database half-written. The outbox is cleared too: queued mutations
- * describe rows from a database that no longer exists.
+ * leave the database half-written. The outbox is replaced too: queued entries
+ * describe rows from a database that no longer exists, and every restored row
+ * is queued in their place. Backup uploads what the outbox names, so an import
+ * that queued nothing — as this did — left a restored history on the phone
+ * that would never reach the cloud.
  */
 export async function importFromJson(raw: string): Promise<ImportResult> {
   const backup = parseImport(raw);
@@ -90,6 +93,19 @@ export async function importFromJson(raw: string): Promise<ImportResult> {
     await db.plans.bulkAdd(backup.tables.plans);
     await db.body_metrics.bulkAdd(backup.tables.body_metrics);
     await db.settings.bulkAdd(backup.tables.settings);
+
+    const queuedAt = nowIso();
+    await db.outbox.bulkAdd(
+      EXPORT_TABLE_NAMES.flatMap((name) =>
+        (backup.tables[name] as Array<{ id: string }>).map((row) => ({
+          table_name: name,
+          row_id: row.id,
+          op: 'put' as const,
+          payload: { imported: true },
+          queued_at: queuedAt,
+        })),
+      ),
+    );
   });
 
   return {

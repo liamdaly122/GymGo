@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatClock, formatDayLabel, formatDuration } from './dates';
+import { formatClock, formatDayLabel, formatDuration, formatSince } from './dates';
 
 const NOW = new Date(2026, 7, 19); // Wednesday 19 August 2026
 
@@ -62,5 +62,21 @@ describe('the countdown clock', () => {
 
   it('never goes below zero', () => {
     expect(formatClock(-5_000)).toBe('0:00');
+  });
+});
+
+describe('time since', () => {
+  const now = new Date(2026, 9, 4, 15, 30);
+
+  it('counts minutes and hours on the same day', () => {
+    expect(formatSince(new Date(2026, 9, 4, 15, 29, 40).toISOString(), now)).toBe('just now');
+    expect(formatSince(new Date(2026, 9, 4, 15, 26).toISOString(), now)).toBe('4 min ago');
+    expect(formatSince(new Date(2026, 9, 4, 14, 20).toISOString(), now)).toBe('1 hour ago');
+    expect(formatSince(new Date(2026, 9, 4, 6, 0).toISOString(), now)).toBe('9 hours ago');
+  });
+
+  it('names the day once it is not today', () => {
+    expect(formatSince(new Date(2026, 9, 3, 22, 0).toISOString(), now)).toBe('yesterday');
+    expect(formatSince(new Date(2026, 9, 1, 9, 0).toISOString(), now)).toBe('3 days ago');
   });
 });
