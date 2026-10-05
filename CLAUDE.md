@@ -610,6 +610,27 @@ It shows in three places: Today's strip, once anything has been earned; the
 "XP earned" section on a session's summary, where the bar fills and a level-up
 gets a poster only when `fresh`; and Progress → Awards.
 
+**The badges are drawn** (`BadgeArt.tsx` in `src/features/rewards/`): inline
+SVG on a 120 grid, like the icon set scaled up, so there is nothing to fetch
+or precache and the number uses the bundled display face. Each family has its
+own silhouette, so they read apart at a glance:
+- a hex dumbbell head for sessions;
+- a pennant with a flame for the streak;
+- a rosette for records;
+- a kettlebell for tonnage;
+- a calendar page carrying the block's own five-week shape;
+- an octagon with the bar and its real plate count;
+- a coin for each moment.
+
+Tiers climb by detail, not by colour: an inner ring, then a star, then laurels
+on the top badge of every family. It uses app colours only, the owner's choice
+over bronze, silver and gold, which would have been three colours nothing else
+uses. The art names no colour at all — every one comes from a class in
+`index.css` — and `badgeArt.test.ts` fails if a hex value or a plate colour
+gets in. The next badge in each family wears a blue ring as far round as the
+family has got. A badge earned in the session just finished stamps itself in.
+The art is `aria-hidden`, so the tiles' accessible names are unchanged.
+
 ## Gyms
 
 `gyms.equipment_available` is what plan filling, plan viability warnings, swap

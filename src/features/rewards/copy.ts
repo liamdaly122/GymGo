@@ -1,25 +1,26 @@
 import type { Badge, SessionReward, Streak } from '@/domain/rewards';
 
-/** A badge as a tile: its number in the display face, and what it counts. */
-export function tileText(badge: Badge): { big: string; small: string } {
+/**
+ * The line under a badge's art: what its number counts. The number itself is
+ * in the art; a moment has none, so its line is its name.
+ */
+export function tileCaption(badge: Badge): string {
   const n = badge.threshold;
   switch (badge.family) {
     case 'sessions':
-      return { big: n.toLocaleString('en-GB'), small: n === 1 ? 'session' : 'sessions' };
+      return n === 1 ? 'session' : 'sessions';
     case 'streak':
-      return { big: String(n), small: 'weeks' };
+      return 'weeks';
     case 'records':
-      return { big: String(n), small: n === 1 ? 'record' : 'records' };
+      return n === 1 ? 'record' : 'records';
     case 'lifted':
-      return { big: `${(n / 1000).toLocaleString('en-GB')}t`, small: 'lifted' };
+      return 'lifted';
     case 'blocks':
-      return { big: String(n), small: n === 1 ? 'full block' : 'full blocks' };
-    case 'plates': {
-      const plates = (n - 20) / 40;
-      return { big: String(plates), small: plates === 1 ? 'plate a side' : 'plates a side' };
-    }
+      return n === 1 ? 'full block' : 'full blocks';
+    case 'plates':
+      return 'kg on the bar';
     case 'moments':
-      return { big: badge.name, small: '' };
+      return badge.name;
   }
 }
 

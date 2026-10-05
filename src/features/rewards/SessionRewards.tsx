@@ -58,8 +58,9 @@ export default function SessionRewards({ workoutId, fresh }: { workoutId: string
             {reward.badges.length === 1 ? 'Badge earned' : 'Badges earned'}
           </h3>
           <ul className="badge-tiles">
-            {reward.badges.map(({ badge }) => (
-              <BadgeTile key={badge.id} badge={badge} state="earned" />
+            {reward.badges.map(({ badge }, index) => (
+              // Fresh from the workout, each one stamps itself in, one after another.
+              <BadgeTile key={badge.id} badge={badge} state="earned" stamp={fresh} delay={300 + index * 160} />
             ))}
           </ul>
         </section>

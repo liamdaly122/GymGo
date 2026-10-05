@@ -128,13 +128,35 @@ await step('the Awards show the level, the streak and the badges earned so far',
   const tally = await badges.innerText();
   if (!/5 of 38/.test(tally)) throw new Error(`expected five badges of 38, saw: ${tally.slice(0, 120).replace(/\n/g, ' | ')}`);
   // The tenth session is the next badge in its family, one session away.
-  await badges.getByRole('button', { name: /^10 sessions, next up: 1 more session$/ }).waitFor({ timeout: 3000 });
+  const tenth = badges.getByRole('button', { name: /^10 sessions, next up: 1 more session$/ });
+  await tenth.waitFor({ timeout: 3000 });
   await p.screenshot({ path: 'e2e/shot-awards.png', fullPage: true });
   await badges.getByRole('button', { name: /^Two plates, earned/ }).click();
   const sheet = p.getByRole('dialog', { name: 'Two plates' });
   await sheet.waitFor({ timeout: 3000 });
   if (!/earned/i.test(await sheet.innerText())) throw new Error('the badge sheet should say when it was earned');
+  if ((await sheet.locator('svg.badge-art.earned').count()) !== 1) throw new Error('the badge sheet should open on the badge, drawn large');
   await p.keyboard.press('Escape');
+  await p.goto(BASE + '#/', { waitUntil: 'networkidle' });
+});
+
+await step('every badge is drawn, the earned ones lit and the next one ringed', async () => {
+  await p.goto(BASE + '#/progress/awards', { waitUntil: 'networkidle' });
+  const badges = p.getByRole('region', { name: 'Badges' });
+  await badges.waitFor({ timeout: 10000 });
+  const drawn = await badges.locator('.badge-tile svg.badge-art').count();
+  if (drawn !== 38) throw new Error(`expected all 38 badges drawn, saw ${drawn}`);
+  const lit = await badges.locator('svg.badge-art.earned').count();
+  if (lit !== 5) throw new Error(`expected the five earned badges lit, saw ${lit}`);
+  // How far to the tenth session, as a ring: nine of ten.
+  const ring = badges.getByRole('button', { name: /^10 sessions, next up/ }).locator('.ba-ring');
+  if ((await ring.count()) !== 1) throw new Error('the next badge should wear a progress ring');
+  const dash = await ring.getAttribute('stroke-dasharray');
+  const [reached, whole] = dash.split(' ').map(Number);
+  if (Math.abs(reached / whole - 0.9) > 0.01) throw new Error(`the ring should be nine tenths round, was ${dash}`);
+  // The Plates badges draw the plates they are named for.
+  const two = await badges.getByRole('button', { name: /^Two plates/ }).locator('.ba-plate').count();
+  if (two !== 4) throw new Error(`Two plates should draw two a side, drew ${two}`);
   await p.goto(BASE + '#/', { waitUntil: 'networkidle' });
 });
 
@@ -204,8 +226,12 @@ await step('finishing shows the XP earned, and the level it reached', async () =
     if (!expected.test(text)) throw new Error(`expected ${expected} in the XP earned, saw: ${text.replace(/\n/g, ' | ')}`);
   }
   await earned.getByRole('heading', { name: 'Level 5' }).waitFor({ timeout: 3000 });
-  const badges = await p.getByRole('region', { name: 'Badges earned' }).innerText();
+  const earnedHere = p.getByRole('region', { name: 'Badges earned' });
+  const badges = await earnedHere.innerText();
   if (!/first record/i.test(badges) || !/10 sessions/i.test(badges)) throw new Error(`expected two badges, saw: ${badges.replace(/\n/g, ' | ')}`);
+  // Fresh from the workout, they stamp themselves in.
+  const stamped = await earnedHere.locator('svg.badge-art.earned.stamp').count();
+  if (stamped !== 2) throw new Error(`expected both badges drawn and stamping in, saw ${stamped}`);
   await p.waitForTimeout(1200);
   await p.screenshot({ path: 'e2e/shot-xp-earned.png', fullPage: true });
 });

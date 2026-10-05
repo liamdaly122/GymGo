@@ -4,6 +4,7 @@ import { BADGES, describeRemaining, XP, type Badge, type FamilyProgress, type Re
 import { localIsoDate } from '@/domain/schedule';
 import { Sheet, Stat } from '@/components/ui';
 import { formatShortDate } from '@/lib/dates';
+import BadgeArt from './BadgeArt';
 import { BadgeFace, type TileState } from './BadgeTile';
 import { formatXp } from './copy';
 
@@ -100,11 +101,11 @@ export default function Awards() {
             <h3 className="t-label">{family.name}</h3>
             <ul className="badge-tiles">
               {BADGES.filter((badge) => badge.family === family.family).map((badge) => {
-                const { state, note } = tileState(family, badge);
+                const { state, note, progress } = tileState(family, badge);
                 return (
                   <li key={badge.id} className={`badge-tile ${state}`}>
                     <button type="button" className="badge-btn" onClick={() => setOpen(badge)}>
-                      <BadgeFace badge={badge} state={state} note={note} />
+                      <BadgeFace badge={badge} state={state} note={note} progress={progress} />
                     </button>
                   </li>
                 );
@@ -121,11 +122,15 @@ export default function Awards() {
   );
 }
 
-function tileState(family: FamilyProgress, badge: Badge): { state: TileState; note?: string } {
+function tileState(family: FamilyProgress, badge: Badge): { state: TileState; note?: string; progress?: number } {
   const won = family.earned.find((entry) => entry.badge.id === badge.id);
   if (won) return { state: 'earned', note: earnedOn(won.at) };
   if (family.next?.badge.id === badge.id) {
-    return { state: 'next', note: describeRemaining(family.family, family.next.remaining) };
+    return {
+      state: 'next',
+      note: describeRemaining(family.family, family.next.remaining),
+      progress: family.next.fraction,
+    };
   }
   return { state: 'locked' };
 }
@@ -164,8 +169,12 @@ function BadgeSheet({
 }) {
   const won = family.earned.find((entry) => entry.badge.id === badge.id);
   const session = won ? rewards.sessions.get(won.workoutId) : undefined;
+  const { state, progress } = tileState(family, badge);
   return (
     <Sheet label={badge.name} onClose={onClose}>
+      <div className="badge-sheet-art">
+        <BadgeArt badge={badge} state={state} progress={progress} size={148} />
+      </div>
       <p className="t-label">{family.name}</p>
       <h2>{badge.name}</h2>
       <p className="sheet-note">{badge.description}</p>

@@ -1,28 +1,40 @@
 import type { Badge } from '@/domain/rewards';
-import { tileText } from './copy';
+import BadgeArt, { type TileState } from './BadgeArt';
+import { tileCaption } from './copy';
 
-export type TileState = 'earned' | 'next' | 'locked';
+export type { TileState };
 
 const STATE_WORDS: Record<TileState, string> = { earned: 'earned', next: 'next up', locked: 'not yet' };
 
 /**
- * A badge, typographic like the rest of the app: its number in the display
- * face over what it counts. Earned ones are chalk, the next one in its family
- * is outlined blue, the rest wait in grey. No plate colours: those belong to
- * the plate diagram.
+ * A badge on a tile: its art, what the number counts, and a note — when it
+ * was earned, or how far there is to go. The art carries the number and is
+ * decorative; the name a screen reader hears is the line kept for it here,
+ * the same one the tiles have always had.
  */
-export function BadgeFace({ badge, state, note }: { badge: Badge; state: TileState; note?: string }) {
-  const { big, small } = tileText(badge);
+export function BadgeFace({
+  badge,
+  state,
+  note,
+  progress,
+  stamp,
+  delay,
+}: {
+  badge: Badge;
+  state: TileState;
+  note?: string;
+  /** For the next badge in a family: how far there, 0 to 1. */
+  progress?: number;
+  /** Freshly earned, on the summary: the art stamps itself in. */
+  stamp?: boolean;
+  delay?: number;
+}) {
   return (
     <>
-      <span className={`badge-big ${small ? '' : 'word'}`} aria-hidden="true">
-        {big}
+      <BadgeArt badge={badge} state={state} progress={progress} stamp={stamp} delay={delay} />
+      <span className="badge-small" aria-hidden="true">
+        {tileCaption(badge)}
       </span>
-      {small ? (
-        <span className="badge-small" aria-hidden="true">
-          {small}
-        </span>
-      ) : null}
       {note ? (
         <span className="badge-note" aria-hidden="true">
           {note}
@@ -36,10 +48,22 @@ export function BadgeFace({ badge, state, note }: { badge: Badge; state: TileSta
   );
 }
 
-export default function BadgeTile({ badge, state, note }: { badge: Badge; state: TileState; note?: string }) {
+export default function BadgeTile({
+  badge,
+  state,
+  note,
+  stamp,
+  delay,
+}: {
+  badge: Badge;
+  state: TileState;
+  note?: string;
+  stamp?: boolean;
+  delay?: number;
+}) {
   return (
     <li className={`badge-tile ${state}`}>
-      <BadgeFace badge={badge} state={state} note={note} />
+      <BadgeFace badge={badge} state={state} note={note} stamp={stamp} delay={delay} />
     </li>
   );
 }
