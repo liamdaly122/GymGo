@@ -22,6 +22,7 @@ import { localIsoDate, type ScheduledSession } from '@/domain/schedule';
 import type { SessionRow } from '@/db/queries';
 import SessionListRow from '@/components/SessionListRow';
 import RoutineSwap from '@/features/swap/RoutineSwap';
+import LevelStrip from '@/features/rewards/LevelStrip';
 
 /**
  * Today: what you are doing, as a poster.
@@ -94,6 +95,8 @@ export default function HomeScreen() {
         {trainedToday.map((row) => (
           <DoneTodayRow key={row.workout.id} row={row} />
         ))}
+
+        <LevelStrip />
 
         {planned && next ? (
           <section className="hero" aria-label="Next session">

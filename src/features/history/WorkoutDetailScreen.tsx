@@ -5,6 +5,8 @@ import { formatDayLabel, formatDuration } from '@/lib/dates';
 import { estimate1RMRounded } from '@/domain/epley';
 import { isChildSet } from '@/domain/sets';
 import { MuscleBars } from '@/features/progress/charts';
+import SessionRewards from '@/features/rewards/SessionRewards';
+import { formatLogged } from '@/features/workout/setNames';
 
 /** What each kind of record wears: a heavier set, a better estimated max, more reps with nothing added. */
 const PR_BADGE = { weight: 'PR', e1rm: '1RM', reps: 'REPS' } as const;
@@ -83,6 +85,8 @@ export default function WorkoutDetailScreen() {
           </p>
         ) : null}
 
+        <SessionRewards workoutId={view.workout.id} fresh={fresh} />
+
         {summary.prs.length > 0 ? (
           <section aria-labelledby="records">
             <SectionLabel id="records">{summary.prs.length === 1 ? 'Personal record' : 'Personal records'}</SectionLabel>
@@ -139,7 +143,7 @@ export default function WorkoutDetailScreen() {
                     {done.map((set) => (
                       <li key={set.id} className={set.type === 'warmup' || isChildSet(set) ? 'text-muted' : ''}>
                         {set.type === 'warmup' ? 'W ' : isChildSet(set) ? '↳ ' : ''}
-                        {set.weight_kg}kg × {set.reps}
+                        {formatLogged(set.weight_kg, set.reps)}
                         {isChildSet(set) ? ` ${set.type.replace('_', '-')}` : ''}
                       </li>
                     ))}

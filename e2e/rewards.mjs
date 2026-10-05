@@ -85,10 +85,57 @@ const rest = () => p.getByRole('dialog', { name: 'Rest' });
 await p.goto(BASE, { waitUntil: 'networkidle' });
 await step('app loads', async () => { await p.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 40000 }); });
 
-await step('seed a bench press and some pull-ups to beat', async () => {
-  await seed([{ daysAgo: 3, lifts: [[BENCH, [[100, 5], [100, 5]]], [PULL_UPS, [[0, 10]]]] }]);
+/**
+ * Three full weeks before this one, Monday, Wednesday and Friday: nine
+ * freestyle sessions, three weeks of a streak (no plan asks for three). Each
+ * is a bench press at 100kg × 5 four times and ten pull-ups — 2 tonnes, five
+ * sets — so the session logged below beats both, and is the tenth.
+ *
+ * What the nine earn: 75 XP each (50 + 5 sets), a week hit three times, and
+ * five badges — the first session, a tonne, one and two plates on the first,
+ * ten tonnes on the fifth. 675 + 300 + 500 = 1,475 XP: level 4.
+ */
+const sinceMonday = (new Date().getDay() + 6) % 7;
+const history = [3, 2, 1].flatMap(weeksBack => [0, 2, 4].map(day => ({
+  daysAgo: sinceMonday + 7 * weeksBack - day,
+  lifts: [[BENCH, [[100, 5], [100, 5], [100, 5], [100, 5]]], [PULL_UPS, [[0, 10]]]],
+})));
+
+await step('seed three weeks of training to build on', async () => {
+  await seed(history);
   await p.reload({ waitUntil: 'networkidle' });
   await p.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 20000 });
+});
+
+await step('Today shows the level and the streak, and opens the Awards', async () => {
+  const strip = p.getByRole('link', { name: /^Level \d+/ });
+  await strip.waitFor({ timeout: 10000 });
+  const name = await strip.getAttribute('aria-label');
+  if (!/^Level 4, Rookie: 325 XP to level 5\. 3-week streak, 0 of 3 this week\.$/.test(name)) {
+    throw new Error(`expected level 4 and a three-week streak, saw: ${name}`);
+  }
+  await p.screenshot({ path: 'e2e/shot-level-today.png' });
+  await strip.click();
+  await p.getByRole('region', { name: 'Level' }).waitFor({ timeout: 5000 });
+});
+
+await step('the Awards show the level, the streak and the badges earned so far', async () => {
+  const level = await p.getByRole('region', { name: 'Level' }).innerText();
+  if (!/1,475 XP in all/i.test(level)) throw new Error(`expected 1,475 XP, saw: ${level.replace(/\n/g, ' | ')}`);
+  const streak = await p.getByRole('region', { name: 'Streak' }).innerText();
+  if (!/weeks\s*3/i.test(streak) || !/0 of 3/.test(streak)) throw new Error(`expected a three-week streak, saw: ${streak.replace(/\n/g, ' | ')}`);
+  const badges = p.getByRole('region', { name: 'Badges' });
+  const tally = await badges.innerText();
+  if (!/5 of 38/.test(tally)) throw new Error(`expected five badges of 38, saw: ${tally.slice(0, 120).replace(/\n/g, ' | ')}`);
+  // The tenth session is the next badge in its family, one session away.
+  await badges.getByRole('button', { name: /^10 sessions, next up: 1 more session$/ }).waitFor({ timeout: 3000 });
+  await p.screenshot({ path: 'e2e/shot-awards.png', fullPage: true });
+  await badges.getByRole('button', { name: /^Two plates, earned/ }).click();
+  const sheet = p.getByRole('dialog', { name: 'Two plates' });
+  await sheet.waitFor({ timeout: 3000 });
+  if (!/earned/i.test(await sheet.innerText())) throw new Error('the badge sheet should say when it was earned');
+  await p.keyboard.press('Escape');
+  await p.goto(BASE + '#/', { waitUntil: 'networkidle' });
 });
 
 await step('a heavier set flashes a record on the rest screen', async () => {
@@ -142,11 +189,41 @@ await step('more pull-ups with nothing added is a record too', async () => {
   await p.waitForTimeout(300);
 });
 
-await step('a record in the first half of a superset round gets the toast', async () => {
+/**
+ * The session just logged: 50, three sets for 15, two records for 100 (the
+ * bench, and the pull-ups' reps), and two badges for 200 — the first record
+ * and the tenth session. 365 XP, from 1,475 to 1,840: level 5.
+ */
+await step('finishing shows the XP earned, and the level it reached', async () => {
   await p.getByRole('button', { name: 'Finish', exact: true }).click();
   await p.getByRole('button', { name: 'Finish and save' }).click();
-  await p.waitForTimeout(800);
+  const earned = p.getByRole('region', { name: 'XP earned' });
+  await earned.waitFor({ timeout: 10000 });
+  const text = await earned.innerText();
+  for (const expected of [/\+365 XP/, /3 sets\s*\+15/, /2 records\s*\+100/, /2 badges\s*\+200/, /1 of 3 this week: 2 more keeps your 3-week streak/i]) {
+    if (!expected.test(text)) throw new Error(`expected ${expected} in the XP earned, saw: ${text.replace(/\n/g, ' | ')}`);
+  }
+  await earned.getByRole('heading', { name: 'Level 5' }).waitFor({ timeout: 3000 });
+  const badges = await p.getByRole('region', { name: 'Badges earned' }).innerText();
+  if (!/first record/i.test(badges) || !/10 sessions/i.test(badges)) throw new Error(`expected two badges, saw: ${badges.replace(/\n/g, ' | ')}`);
+  await p.waitForTimeout(1200);
+  await p.screenshot({ path: 'e2e/shot-xp-earned.png', fullPage: true });
+});
+
+await step('the summary lists the bodyweight record as reps', async () => {
+  const records = await p.getByRole('region', { name: 'Personal records' }).innerText();
+  if (!/12 reps \(was 10\)/.test(records)) throw new Error(`expected 12 reps (was 10), saw: ${records.replace(/\n/g, ' | ')}`);
+});
+
+await step('Today moves to the new level', async () => {
   await p.goto(BASE + '#/', { waitUntil: 'networkidle' });
+  const name = await p.getByRole('link', { name: /^Level \d+/ }).getAttribute('aria-label');
+  if (!/^Level 5, Regular: 660 XP to level 6\. 3-week streak, 1 of 3 this week\.$/.test(name)) {
+    throw new Error(`expected level 5 with one of three this week, saw: ${name}`);
+  }
+});
+
+await step('a record in the first half of a superset round gets the toast', async () => {
   await p.getByRole('button', { name: 'Start empty workout' }).click();
   await addExercise('barbell bench press', BENCH);
   await addExercise('pullups', PULL_UPS);

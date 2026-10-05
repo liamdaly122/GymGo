@@ -59,6 +59,7 @@ export default function App() {
           <Route path="/progress" element={<ProgressScreen />} />
           <Route path="/progress/lifts" element={<ProgressScreen />} />
           <Route path="/progress/body" element={<ProgressScreen />} />
+          <Route path="/progress/awards" element={<ProgressScreen />} />
           <Route path="/progress/blocks/:planId" element={<BlockReportScreen />} />
           <Route path="/history/:workoutId" element={<WorkoutDetailScreen />} />
           {/* The A-Z browse still exists, reached from Progress → Lifts. */}

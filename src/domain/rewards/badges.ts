@@ -122,15 +122,15 @@ export const FAMILY_NAMES: Record<BadgeFamily, string> = {
 export const FAMILIES: readonly BadgeFamily[] = ['sessions', 'streak', 'records', 'lifted', 'blocks', 'plates', 'moments'];
 
 /**
- * What is left to earn a badge, in words: "3 more sessions", "2.5 tonnes to
- * go". The value is in the family's own unit.
+ * What is left to earn a badge, in words short enough for a tile: "3 more
+ * sessions", "2.5 tonnes to go". The value is in the family's own unit.
  */
 export function describeRemaining(family: BadgeFamily, remaining: number): string {
   switch (family) {
     case 'sessions':
       return `${plural(remaining, 'more session', 'more sessions')}`;
     case 'streak':
-      return `${plural(remaining, 'more week', 'more weeks')} in a row`;
+      return `${plural(remaining, 'more week', 'more weeks')}`;
     case 'records':
       return `${plural(remaining, 'more record', 'more records')}`;
     case 'lifted': {
@@ -140,7 +140,7 @@ export function describeRemaining(family: BadgeFamily, remaining: number): strin
     case 'blocks':
       return `${plural(remaining, 'more full block', 'more full blocks')}`;
     case 'plates':
-      return `${Math.ceil(remaining * 10) / 10}kg more on a barbell lift`;
+      return `${Math.ceil(remaining * 10) / 10}kg to go`;
     case 'moments':
       return '';
   }

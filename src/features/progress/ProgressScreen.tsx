@@ -15,6 +15,7 @@ import { formatShortDate } from '@/lib/dates';
 import { localIsoDate } from '@/domain/schedule';
 import { MuscleBars, Sparkline } from './charts';
 import BodyWeight from './BodyWeight';
+import Awards from '@/features/rewards/Awards';
 
 /**
  * What you have done: the sessions, and the lifts.
@@ -22,11 +23,17 @@ import BodyWeight from './BodyWeight';
  * History and Progress were two tabs for one question. Sessions leads with the
  * week's sets per muscle and lists every workout; Lifts lists every exercise
  * you have trained with the shape of its top set, and opens its chart; Body is
- * the weight log.
+ * the weight log; Awards is what the training has earned.
  */
 export default function ProgressScreen() {
   const { pathname } = useLocation();
-  const segment = pathname.endsWith('/lifts') ? 'lifts' : pathname.endsWith('/body') ? 'body' : 'sessions';
+  const segment = pathname.endsWith('/lifts')
+    ? 'lifts'
+    : pathname.endsWith('/body')
+      ? 'body'
+      : pathname.endsWith('/awards')
+        ? 'awards'
+        : 'sessions';
   const overview = useProgressOverview();
 
   return (
@@ -43,11 +50,17 @@ export default function ProgressScreen() {
           <Link to="/progress/body" aria-current={segment === 'body' ? 'page' : undefined}>
             Body
           </Link>
+          <Link to="/progress/awards" aria-current={segment === 'awards' ? 'page' : undefined}>
+            Awards
+          </Link>
         </nav>
 
-        {/* Body weight is logged on its own, so it does not wait for a workout. */}
+        {/* Body weight is logged on its own, so it does not wait for a workout;
+            Awards shows what there is to earn before anything is. */}
         {segment === 'body' ? (
           <BodyWeight />
+        ) : segment === 'awards' ? (
+          <Awards />
         ) : overview === undefined ? null : overview.workoutCount === 0 ? (
           <EmptyState
             title="Nothing to show yet."

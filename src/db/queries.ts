@@ -8,6 +8,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { scheduleDay, useToday } from '@/hooks/useToday';
 import { db } from './db';
 import { baseBlockName, blockNumber, defaultGym, nextBlockRotation } from './blocks';
+import { loadRewards } from './rewards';
 import { SETTINGS_ID, type BodyMetric, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
 import { planSwapTargets } from '@/domain/search';
@@ -33,6 +34,7 @@ import { isTopWorkingSet } from '@/domain/sets';
 import { buildBlockReport, type BlockReport, type ReportSession } from '@/domain/blockReport';
 import { changeOver, dailySeries, rollingAverage, type DayValue } from '@/domain/bodyMetrics';
 import type { BodyMetricKind } from '@/domain/types';
+import type { Rewards } from '@/domain/rewards';
 import { roleForPrescription } from '@/domain/programmes/prescribe';
 
 const live = <T extends { deleted_at: string | null }>(rows: T[]) =>
@@ -1343,4 +1345,14 @@ export function useRoutineSwapOptions(routineExerciseId: string | undefined): Ro
       ...(await swapReach(row.routine_id, current)),
     };
   }, [routineExerciseId]);
+}
+
+/**
+ * What training has earned: XP, the level, the weekly streak and the badges,
+ * worked out from every finished workout. Nothing is stored. Today is a
+ * dependency, so the streak's week turns over at midnight like the schedule.
+ */
+export function useRewards(): Rewards | undefined {
+  const today = useToday();
+  return useLiveQuery(() => loadRewards(scheduleDay(today)), [today]);
 }
