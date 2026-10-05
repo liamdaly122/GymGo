@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from './db';
 import {
   ChildOfChildError,
+  addExerciseToRoutine,
+  createRoutine,
+  repeatWorkout,
+  startWorkoutFromRoutine,
   toggleSupersetWithNext,
   ImmutableWorkoutError,
   addBackOffSet,
@@ -295,5 +299,62 @@ describe('supersets', () => {
     await finishWorkout(workoutId);
 
     await expect(toggleSupersetWithNext(first)).rejects.toBeInstanceOf(ImmutableWorkoutError);
+  });
+});
+
+/**
+ * A pyramid is one working top set with back-off sets around it, laid out
+ * when the session starts, so the counting rules and the progression engine
+ * read the top set without a rule of their own.
+ */
+describe('pyramids', () => {
+  async function sessionWith(technique: 'pyramid' | 'reverse_pyramid' | 'straight', sets = 4) {
+    const routineId = await createRoutine('Bench day');
+    await addExerciseToRoutine(routineId, BENCH, { target_sets: sets, technique });
+    const workoutId = await startWorkoutFromRoutine(routineId);
+    const [we] = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
+    return { workoutId, weId: we!.id, technique: we!.technique };
+  }
+
+  it('lays out a reverse pyramid as the top set, then back-off sets', async () => {
+    const { weId, technique } = await sessionWith('reverse_pyramid');
+    expect(technique).toBe('reverse_pyramid');
+    expect((await liveSets(weId)).map((set) => set.type)).toEqual(['working', 'back_off', 'back_off', 'back_off']);
+  });
+
+  it('lays out a pyramid as back-off sets climbing to the top set', async () => {
+    const { weId } = await sessionWith('pyramid', 3);
+    expect((await liveSets(weId)).map((set) => set.type)).toEqual(['back_off', 'back_off', 'working']);
+  });
+
+  it('keeps straight sets straight', async () => {
+    const { weId } = await sessionWith('straight', 3);
+    expect((await liveSets(weId)).map((set) => set.type)).toEqual(['working', 'working', 'working']);
+  });
+
+  it('keeps the shape when a session is repeated', async () => {
+    const { workoutId, weId } = await sessionWith('reverse_pyramid', 3);
+    for (const set of await liveSets(weId)) await updateSet(set.id, { weight_kg: 80, reps: 8 });
+    for (const set of await liveSets(weId)) await completeSet(set.id, true);
+    await finishWorkout(workoutId);
+
+    const again = await repeatWorkout(workoutId);
+
+    const [we] = await db.workout_exercises.where({ workout_id: again }).toArray();
+    expect((await liveSets(we!.id)).map((set) => set.type)).toEqual(['working', 'back_off', 'back_off']);
+  });
+});
+
+describe('what the set sheet adds is backed up', () => {
+  it('queues a back-off set and a cluster', async () => {
+    const { setId } = await topSetOf100kg();
+    await db.outbox.clear();
+
+    const backOff = await addBackOffSet(setId);
+    const cluster = await addChildSet(setId, 'cluster');
+
+    const queued = (await db.outbox.where({ table_name: 'sets' }).toArray()).map((entry) => entry.row_id);
+    expect(queued).toContain(backOff);
+    expect(queued).toContain(cluster);
   });
 });

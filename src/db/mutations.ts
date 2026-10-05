@@ -34,6 +34,7 @@ import { buildSchedule, currentWeek, runningPlan, slotForRoutine } from '@/domai
 import { loadableWeight, loadingProfileFor, nextLoadableBelow, type LoadingProfile } from '@/domain/plates';
 import { warmupRamp } from '@/domain/warmup';
 import { planSwapTargets } from '@/domain/search';
+import { schemeSetTypes } from '@/domain/schemes';
 import { baseBlockName, defaultGym, nextBlockNumber, nextBlockRotation } from './blocks';
 
 /** Thrown when something tries to edit a workout that has already been finished. */
@@ -236,12 +237,14 @@ export async function startWorkoutFromRoutine(
     const source = routineExercises[index];
     const base = Math.max(1, source?.target_sets ?? 1);
     const targetSets = modifier ? setsForWeek(base, modifier) : base;
+    // A pyramid lays out one working top set and back-off sets around it.
+    const types = schemeSetTypes(we.technique, targetSets);
     return Array.from({ length: targetSets }, (_unused, setIndex) => ({
       id: newId(),
       workout_exercise_id: we.id,
       parent_set_id: null,
       set_index: setIndex,
-      type: 'working' as const,
+      type: types[setIndex] ?? ('working' as const),
       weight_kg: 0,
       reps: 0,
       /*
@@ -1254,12 +1257,14 @@ export async function repeatWorkout(
         set.type !== 'warmup',
     ).length;
 
-    return Array.from({ length: Math.max(1, performed) }, (_unused, setIndex) => ({
+    const count = Math.max(1, performed);
+    const types = schemeSetTypes(we.technique, count);
+    return Array.from({ length: count }, (_unused, setIndex) => ({
       id: newId(),
       workout_exercise_id: we.id,
       parent_set_id: null,
       set_index: setIndex,
-      type: 'working' as const,
+      type: types[setIndex] ?? ('working' as const),
       weight_kg: 0,
       reps: 0,
       rir: null,

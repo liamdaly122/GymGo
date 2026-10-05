@@ -29,6 +29,7 @@
     "test:rollover": "node e2e/rollover.mjs",
     "test:planswap": "node e2e/planswap.mjs",
     "test:report": "node e2e/report.mjs",
+    "test:body": "node e2e/body.mjs",
     "test:backup": "node e2e/backup.mjs"
   },
   "dependencies": {

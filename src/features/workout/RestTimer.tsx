@@ -3,7 +3,7 @@ import { formatClock } from '@/lib/dates';
 import { playRestFinishedTone, vibrate } from '@/lib/feedback';
 import { clearRest, readRest, writeRest } from '@/lib/restTimer';
 import { useSettings } from '@/db/queries';
-import { addChildSet, type ChildSetKind } from '@/db/mutations';
+import { addBackOffSet, addChildSet, type ChildSetKind } from '@/db/mutations';
 import { CONTINUATION_REST_SECONDS } from './setNames';
 
 interface RestTimerState {
@@ -128,6 +128,7 @@ const ATTACH: Array<{ kind: ChildSetKind; label: string }> = [
   { kind: 'drop', label: 'Drop' },
   { kind: 'rest_pause', label: 'Rest-pause' },
   { kind: 'myo', label: 'Myo' },
+  { kind: 'cluster', label: 'Cluster' },
 ];
 
 /**
@@ -248,6 +249,14 @@ export function RestTimerView() {
                   + {option.label}
                 </button>
               ))}
+              {/* A back-off is a set of its own after this rest, so the rest runs on. */}
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => void addBackOffSet(afterSetId)}
+              >
+                + Back-off
+              </button>
             </div>
           ) : null}
         </div>

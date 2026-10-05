@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { WorkoutSet } from '@/db/schema';
-import { addChildSet, completeSet, removeSet, updateSet, type ChildSetKind } from '@/db/mutations';
+import { addBackOffSet, addChildSet, completeSet, removeSet, updateSet, type ChildSetKind } from '@/db/mutations';
 import { Button, NumberField, Sheet } from '@/components/ui';
 import { isChildSet } from '@/domain/sets';
 import { formatLogged, setName } from './setNames';
@@ -9,6 +9,7 @@ const ATTACH: Array<{ kind: ChildSetKind; label: string }> = [
   { kind: 'drop', label: 'Drop' },
   { kind: 'rest_pause', label: 'Rest-pause' },
   { kind: 'myo', label: 'Myo' },
+  { kind: 'cluster', label: 'Cluster' },
 ];
 
 /**
@@ -18,18 +19,21 @@ const ATTACH: Array<{ kind: ChildSetKind; label: string }> = [
  * tap on the set's chip. Deleting a set with work on it asks first and names
  * what would be lost; deleting an untouched one does not, because there is
  * nothing to lose and the confirm would be friction for its own sake.
+ *
+ * RIR, AMRAP and the techniques are here in Beginner mode too. The brief wants
+ * a Pro tool reachable "without flipping the whole app over", and a sheet is
+ * already a tap away from the set, so the screen you log on stays as plain as
+ * Beginner promises.
  */
 export default function SetSheet({
   set,
   ordinal,
   exerciseName,
-  pro,
   onClose,
 }: {
   set: WorkoutSet;
   ordinal: number;
   exerciseName: string;
-  pro: boolean;
   onClose: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -86,7 +90,7 @@ export default function SetSheet({
         />
       </div>
 
-      {pro && set.type !== 'warmup' ? (
+      {set.type !== 'warmup' ? (
         <div className="rir">
           <span className="t-label">RIR</span>
           {[0, 1, 2, 3, 4].map((value) => (
@@ -102,10 +106,22 @@ export default function SetSheet({
               {value}
             </button>
           ))}
+          {/* AMRAP: the reps are open-ended, taken as far as they go. */}
+          {!child ? (
+            <button
+              type="button"
+              className="amrap"
+              onClick={() => void updateSet(set.id, { is_amrap: !set.is_amrap })}
+              aria-label={`${name} as many reps as possible`}
+              aria-pressed={set.is_amrap}
+            >
+              AMRAP
+            </button>
+          ) : null}
         </div>
       ) : null}
 
-      {pro && set.completed && !child && set.type === 'working' ? (
+      {set.completed && !child && set.type === 'working' ? (
         <div className="grid grid-cols-3 gap-2" role="group" aria-label="Add a technique to this set">
           {ATTACH.map((option) => (
             <Button
@@ -116,6 +132,11 @@ export default function SetSheet({
               + {option.label}
             </Button>
           ))}
+          {/* Its own set, lighter, after the top set: counts toward volume,
+              never toward a record. */}
+          <Button size="sm" onClick={() => void addBackOffSet(set.id).then(onClose)}>
+            + Back-off
+          </Button>
         </div>
       ) : null}
 

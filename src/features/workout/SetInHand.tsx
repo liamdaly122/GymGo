@@ -6,12 +6,21 @@ import { formatSetSummary, type PreviousPerformance } from '@/domain/previousPer
 import type { Suggestion } from '@/domain/progression';
 import { stepFrom } from '@/domain/plates';
 import { isChildSet } from '@/domain/sets';
+import { schemeTarget, stepsFromTop, SCHEME_LOAD_STEP, SCHEME_REP_STEP } from '@/domain/schemes';
 import { restsAfterSet } from '@/domain/supersets';
 import { formatDayLabel } from '@/lib/dates';
 import { useWriteQueue } from '@/hooks/useWriteQueue';
 import { useRestTimer } from './RestTimer';
 import PlateDiagram from './PlateDiagram';
-import { CHILD_NAMES, CONTINUATION_REST_SECONDS, formatLogged, formatNumber, parseEntry, setName } from './setNames';
+import {
+  CHILD_NAMES,
+  CONTINUATION_REST_SECONDS,
+  describeTempo,
+  formatLogged,
+  formatNumber,
+  parseEntry,
+  setName,
+} from './setNames';
 
 /** The chip beside the plan line: what the engine wants you to do, in a word. */
 const VERB: Record<string, string> = {
@@ -78,6 +87,7 @@ export default function SetInHand({
   const weightInput = useRef<HTMLInputElement>(null);
   const repsInput = useRef<HTMLInputElement>(null);
   const [showReason, setShowReason] = useState(false);
+  const [showTempo, setShowTempo] = useState(false);
 
   const name = setName(set, ordinal);
   const child = isChildSet(set);
@@ -87,10 +97,30 @@ export default function SetInHand({
 
   // Only a top-level working set is something a suggestion or last time's
   // numbers apply to. A warm-up arrives filled in; a drop carries its weight.
-  const hintable = !child && set.type !== 'warmup';
+  const hintable = !child && set.type === 'working';
   const lastTime = hintable ? previous?.working_sets[ordinal] : undefined;
-  const weightHint = hintable ? (suggestion?.weight_kg ?? lastTime?.weight_kg ?? null) : null;
-  const repsHint = hintable ? (suggestion?.reps ?? lastTime?.reps ?? null) : null;
+
+  // A pyramid's other sets aim off its top set: lighter and longer the further
+  // away they sit. One added by hand off a straight set arrives filled in.
+  const technique = entry.workoutExercise.technique;
+  const nonWarmups = entry.sets.filter((candidate) => candidate.parent_set_id === null && candidate.type !== 'warmup');
+  const fromTop = stepsFromTop(
+    technique,
+    nonWarmups.map((candidate) => candidate.type),
+    nonWarmups.findIndex((candidate) => candidate.id === set.id),
+  );
+  // Today's top set once it is done — a reverse pyramid's comes first — else
+  // what it is meant to be.
+  const workingSets = nonWarmups.filter((candidate) => candidate.type === 'working');
+  const topSet = technique === 'reverse_pyramid' ? workingSets[0] : workingSets.at(-1);
+  const topDone = topSet?.completed && (topSet.weight_kg > 0 || topSet.reps > 0) ? topSet : null;
+  const topTarget = topDone ?? suggestion ?? previous?.top_set ?? null;
+  const schemeHint = fromTop !== null && topTarget ? schemeTarget(topTarget, fromTop, entry.loading) : null;
+  const schemeRole = set.type === 'back_off' ? (technique === 'pyramid' ? 'Ramp' : 'Back-off') : null;
+
+  const weightHint = schemeHint?.weight_kg ?? (hintable ? (suggestion?.weight_kg ?? lastTime?.weight_kg ?? null) : null);
+  const repsHint = schemeHint?.reps ?? (hintable ? (suggestion?.reps ?? lastTime?.reps ?? null) : null);
+  const tempo = entry.workoutExercise.tempo;
 
   const [weightText, setWeightText] = useState(() => (set.weight_kg > 0 ? formatNumber(set.weight_kg) : ''));
   const [repsText, setRepsText] = useState(() => (set.reps > 0 ? String(set.reps) : ''));
@@ -100,13 +130,12 @@ export default function SetInHand({
   const reps = parseEntry(repsText) ?? repsHint;
   const steps = stepFrom(weight ?? 0, entry.loading);
 
-  const nonWarmups = entry.sets.filter((candidate) => candidate.parent_set_id === null && candidate.type !== 'warmup');
   const warmups = entry.sets.filter((candidate) => candidate.parent_set_id === null && candidate.type === 'warmup');
   const label = child
     ? `${CHILD_NAMES[set.type] ?? 'Continuation'} · set ${ordinal + 1}`
     : set.type === 'warmup'
       ? `Warm-up ${ordinal + 1} of ${warmups.length}`
-      : `Set ${ordinal + 1} of ${nonWarmups.length}`;
+      : `Set ${ordinal + 1} of ${nonWarmups.length}${schemeRole ? ` · ${schemeRole}` : ''}`;
 
   const ready = weight !== null && reps !== null && reps > 0;
   // "102.5 × 6" on the button, as the draft has it; "102.5kg × 6" when read out.
@@ -197,6 +226,21 @@ export default function SetInHand({
     <>
       <p className="b-setlabel">{label}</p>
 
+      {/* The brief: tempo is "displayed during the set". One tap spells it out. */}
+      {tempo ? (
+        <div className="b-plan">
+          <button
+            type="button"
+            className="chip"
+            aria-expanded={showTempo}
+            onClick={() => setShowTempo((open) => !open)}
+          >
+            Tempo {tempo}
+          </button>
+          {showTempo ? <span className="text-sm text-muted">{describeTempo(tempo) ?? tempo}</span> : null}
+        </div>
+      ) : null}
+
       <div className="b-num">
         <button
           type="button"
@@ -279,6 +323,11 @@ export default function SetInHand({
         </div>
       ) : hintable && previous === null && suggestion === null ? (
         <p className="last">First time logging this one.</p>
+      ) : fromTop !== null ? (
+        <p className="last">
+          {schemeRole}: {Math.round(SCHEME_LOAD_STEP * fromTop * 100)}% lighter than the top set,{' '}
+          {SCHEME_REP_STEP * fromTop} more reps.
+        </p>
       ) : null}
 
       {pro && set.type !== 'warmup' ? (

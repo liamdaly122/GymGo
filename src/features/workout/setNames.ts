@@ -69,3 +69,16 @@ export function parseEntry(text: string): number | null {
   const value = Number.parseFloat(trimmed);
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
+
+/**
+ * A tempo spelled out: "3-1-1-0" is three seconds down, one paused at the
+ * bottom, one up and none at the top. An X is as fast as you can. Null for
+ * anything that is not four parts, which is shown as typed.
+ */
+export function describeTempo(tempo: string): string | null {
+  const parts = tempo.split(/[-/:\s]+/).filter(Boolean);
+  if (parts.length !== 4 || !parts.every((part) => /^(\d+|x)$/i.test(part))) return null;
+  const say = (part: string) => (/^x$/i.test(part) ? 'as fast as you can' : `${part}s`);
+  const [down, bottom, up, top] = parts as [string, string, string, string];
+  return `${say(down)} down, ${say(bottom)} at the bottom, ${say(up)} up, ${say(top)} at the top.`;
+}

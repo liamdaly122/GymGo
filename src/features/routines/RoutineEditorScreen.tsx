@@ -10,9 +10,10 @@ import {
   updateRoutine,
   updateRoutineExercise,
 } from '@/db/mutations';
-import { BackLink, Button, NumberField, Screen, ScreenHeader, SectionLabel, Sheet } from '@/components/ui';
+import { BackLink, Button, NumberField, Screen, ScreenHeader, SectionLabel, Segmented, Sheet } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import { estimateDurationMinutes } from '@/domain/sessionSummary';
+import { isPyramid, type Scheme } from '@/domain/schemes';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
 import RoutineSwap from '@/features/swap/RoutineSwap';
 import { Toast, useToast } from '@/components/Toast';
@@ -194,7 +195,7 @@ export default function RoutineEditorScreen() {
 
                     {/* Pro prescriptions. Every field here already exists in the
                         schema and is stored null in Beginner, so switching modes
-                        never migrates anything or loses what you set. All three
+                        never migrates anything or loses what you set. All of them
                         are copied onto the session by startWorkoutFromRoutine
                         rather than referenced, so editing them later cannot reach
                         a workout already performed. */}
@@ -243,6 +244,22 @@ export default function RoutineEditorScreen() {
                             className="field h-12 text-center"
                           />
                         </Field>
+                        {/* A pyramid's top set is the working set the progression
+                            engine judges; the rest are back-off sets around it. */}
+                        <div className="col-span-3">
+                          <Segmented<Scheme>
+                            label={`${name} set scheme`}
+                            options={[
+                              { value: 'straight', label: 'Straight' },
+                              { value: 'pyramid', label: 'Pyramid' },
+                              { value: 'reverse_pyramid', label: 'Reverse' },
+                            ]}
+                            value={isPyramid(entry.routineExercise.technique) ? entry.routineExercise.technique : 'straight'}
+                            onChange={(technique) =>
+                              void updateRoutineExercise(entry.routineExercise.id, { technique })
+                            }
+                          />
+                        </div>
                       </div>
                     ) : null}
                   </li>

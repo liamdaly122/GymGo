@@ -193,7 +193,6 @@ export default function StationCard({
           set={openSet.set}
           ordinal={setOrdinals(openSet.entry.sets).get(openSet.set.id) ?? 0}
           exerciseName={openSet.entry.exercise?.name ?? 'Exercise'}
-          pro={pro}
           onClose={() => setOpenSetId(null)}
         />
       ) : null}
@@ -210,7 +209,6 @@ export default function StationCard({
             view.exercises[moreFor]!.workoutExercise.superset_group ===
               view.exercises[moreFor + 1]?.workoutExercise.superset_group
           }
-          pro={pro}
           onClose={() => setMoreForId(null)}
         />
       ) : null}

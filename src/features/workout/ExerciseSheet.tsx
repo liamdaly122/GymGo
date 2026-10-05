@@ -15,10 +15,11 @@ import { formatNumber } from './setNames';
 /**
  * Everything about an exercise that is not logging a set.
  *
- * Swap, warm up, move earlier, move later, remove, and in Pro the superset
- * toggle, used to live on the card itself: six controls competing with the
- * two that matter. They are all still here, one tap further away, in a sheet
- * that opens under your thumb.
+ * Swap, warm up, move earlier, move later, remove and the superset toggle
+ * used to live on the card itself: six controls competing with the two that
+ * matter. They are all still here, one tap further away, in a sheet that opens
+ * under your thumb. The superset toggle is a Pro tool offered in Beginner too:
+ * behind the overflow it costs the logging screen nothing.
  */
 export default function ExerciseSheet({
   entry,
@@ -27,7 +28,6 @@ export default function ExerciseSheet({
   canMoveDown,
   canPairWithNext,
   pairedWithNext,
-  pro,
   onClose,
 }: {
   entry: WorkoutExerciseView;
@@ -36,7 +36,6 @@ export default function ExerciseSheet({
   canMoveDown: boolean;
   canPairWithNext: boolean;
   pairedWithNext: boolean;
-  pro: boolean;
   onClose: () => void;
 }) {
   const [confirmingRemove, setConfirmingRemove] = useState(false);
@@ -111,7 +110,7 @@ export default function ExerciseSheet({
         </Button>
       </div>
 
-      {pro && canPairWithNext ? (
+      {canPairWithNext ? (
         <Button
           aria-pressed={pairedWithNext}
           onClick={() => void run(() => toggleSupersetWithNext(entry.workoutExercise.id))}

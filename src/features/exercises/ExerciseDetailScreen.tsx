@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useExercise, useExerciseLoading, useExerciseRecords, useExerciseTrend, useSettings } from '@/db/queries';
 import { updateExercise } from '@/db/mutations';
-import { BackLink, Button, Pill, Screen, ScreenHeader, SectionLabel } from '@/components/ui';
+import { BackLink, Button, Pill, Screen, ScreenHeader, SectionLabel, Segmented } from '@/components/ui';
 import { estimate1RMRounded, loadablePercentageTable } from '@/domain/epley';
+import { incrementFor } from '@/domain/progression';
 import { formatDayLabel, formatShortDate } from '@/lib/dates';
 import { LiftChart, type LiftPoint } from '@/features/progress/charts';
 import { EQUIPMENT_LABELS, PATTERN_LABELS } from './labels';
@@ -215,6 +216,25 @@ export default function ExerciseDetailScreen() {
               <p className="t-meta">Each load is rounded down to what {exercise.equipment === 'barbell' || exercise.equipment === 'ez_bar' ? 'your plates make' : 'the equipment steps in'}.</p>
             </div>
           ) : null}
+        </section>
+
+        {/* The brief: increments are "configurable per exercise". Auto is the
+            brief's default for the lift; a coarse machine or a home rack can
+            need something else, and the suggestion engine already reads this. */}
+        <section aria-labelledby="weight-step">
+          <SectionLabel id="weight-step">Weight step</SectionLabel>
+          <Segmented<number>
+            label="Weight step"
+            options={[0, 1, 1.25, 2, 2.5, 5].map((step) => ({ value: step, label: step === 0 ? 'Auto' : `${step}` }))}
+            value={exercise.increment_kg ?? 0}
+            onChange={(step) => void updateExercise(exercise.id, { increment_kg: step === 0 ? null : step })}
+          />
+          <p className="t-meta mt-2">
+            How far a suggestion goes up when you have hit the top of the rep range.{' '}
+            {exercise.increment_kg === null
+              ? `Auto is ${incrementFor({ ...exercise, increment_kg: null })} kg for this lift.`
+              : `Set to ${exercise.increment_kg} kg.`}
+          </p>
         </section>
 
         {/* The small feature that saves the most time in practice: seat height,
