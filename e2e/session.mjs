@@ -242,6 +242,52 @@ await step('removing an exercise asks first', async () => {
   if (!shows(body, 'Incline Dumbbell Press')) throw new Error('"Keep it" should have kept it');
 });
 
+await step('the next set starts at what the last one did', async () => {
+  // The gym note: every set made you type both numbers again. A lift with no
+  // history has nothing to suggest, so set 1 is typed; after that the fields
+  // start at the last set done, and the stepper nudges from there.
+  // The overflow from the step before is still open.
+  if (await p.getByRole('dialog').count()) await p.keyboard.press('Escape');
+  await p.waitForTimeout(300);
+  await addExercise('dumbbell flyes', /^Dumbbell Flyes/);
+  await p.getByRole('button', { name: 'Add set' }).click();
+  await p.waitForTimeout(300);
+  await p.getByRole('button', { name: 'Add set' }).click();
+  await p.waitForTimeout(300);
+
+  await p.getByLabel('Set 1 weight in kilograms').fill('12.5');
+  await p.getByLabel('Set 1 repetitions').fill('11');
+  await p.getByLabel(/Mark set 1 done/).click();
+  await p.waitForTimeout(500);
+  await skipRest();
+
+  const weight = await p.getByLabel('Set 2 weight in kilograms').getAttribute('placeholder');
+  const reps = await p.getByLabel('Set 2 repetitions').getAttribute('placeholder');
+  if (weight !== '12.5' || reps !== '11') throw new Error(`set 2 should start at 12.5 × 11, it shows ${weight} × ${reps}`);
+
+  // One tap up moves from the carried 12.5, by what the dumbbells allow.
+  const up = p.getByRole('button', { name: /^Set 2 weight up/ });
+  const step = Number(/up ([\d.]+) kilograms/.exec((await up.getAttribute('aria-label')) ?? '')?.[1]);
+  if (!step) throw new Error('the weight stepper should say what one tap adds');
+  await up.click();
+  await p.waitForTimeout(300);
+  const stepped = Math.round((12.5 + step) * 100) / 100;
+  if (Number(await p.getByLabel('Set 2 weight in kilograms').inputValue()) !== stepped) {
+    throw new Error(`one tap up should read ${stepped}`);
+  }
+  await p.getByLabel(/Mark set 2 done/).click();
+  await p.waitForTimeout(500);
+  await skipRest();
+  if (!(await p.getByRole('button', { name: `Edit set 2, ${stepped}kg × 11, done` }).count())) {
+    throw new Error(`set 2 should be logged at ${stepped}kg × 11`);
+  }
+
+  // Set 3 follows set 2, the one just done.
+  const third = await p.getByLabel('Set 3 weight in kilograms').getAttribute('placeholder');
+  if (Number(third) !== stepped) throw new Error(`set 3 should start at ${stepped}, it shows ${third}`);
+  console.log(`       12.5 × 11, then ${stepped} × 11, then set 3 starts at ${third}`);
+});
+
 console.log(errs.length ? '\nBrowser errors:\n' + errs.join('\n') : '\nNo browser errors.');
 await b.close();
 process.exit(errs.length ? 1 : 0);

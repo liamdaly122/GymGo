@@ -6,7 +6,7 @@ import { formatSetSummary, type PreviousPerformance } from '@/domain/previousPer
 import type { Suggestion } from '@/domain/progression';
 import { setBreaksRecord, type RecordMarks } from '@/domain/prs';
 import { stepFrom } from '@/domain/plates';
-import { isChildSet } from '@/domain/sets';
+import { isChildSet, latestWorkingSet } from '@/domain/sets';
 import { schemeTarget, stepsFromTop, SCHEME_LOAD_STEP, SCHEME_REP_STEP } from '@/domain/schemes';
 import { restsAfterSet } from '@/domain/supersets';
 import { formatDayLabel, nowIso } from '@/lib/dates';
@@ -128,8 +128,14 @@ export default function SetInHand({
   const schemeHint = fromTop !== null && topTarget ? schemeTarget(topTarget, fromTop, entry.loading) : null;
   const schemeRole = set.type === 'back_off' ? (technique === 'pyramid' ? 'Ramp' : 'Back-off') : null;
 
-  const weightHint = schemeHint?.weight_kg ?? (hintable ? (suggestion?.weight_kg ?? lastTime?.weight_kg ?? null) : null);
-  const repsHint = schemeHint?.reps ?? (hintable ? (suggestion?.reps ?? lastTime?.reps ?? null) : null);
+  // From the second set on, the fields start at what was just done: the next
+  // set is a nudge of a stepper, not two numbers typed again. The suggestion
+  // and last time are for the first.
+  const carried = hintable ? latestWorkingSet(entry.sets) : null;
+  const weightHint =
+    schemeHint?.weight_kg ??
+    (hintable ? (carried?.weight_kg ?? suggestion?.weight_kg ?? lastTime?.weight_kg ?? null) : null);
+  const repsHint = schemeHint?.reps ?? (hintable ? (carried?.reps ?? suggestion?.reps ?? lastTime?.reps ?? null) : null);
   const tempo = entry.workoutExercise.tempo;
 
   const [weightText, setWeightText] = useState(() => (set.weight_kg > 0 ? formatNumber(set.weight_kg) : ''));

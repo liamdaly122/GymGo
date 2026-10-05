@@ -102,3 +102,25 @@ export function setOrdinals(
 
   return ordinals;
 }
+
+/**
+ * The set to carry forward: the working set done most recently today.
+ *
+ * From the second set on, the fields start at what was just done, so the next
+ * set is a nudge of a stepper rather than two numbers typed again. Only a
+ * completed top-level working set with reps counts. A warm-up, a drop or a
+ * back-off is not the weight you are working at, and an old empty tick
+ * (0kg × 0) is not a number at all.
+ */
+export function latestWorkingSet<
+  T extends Pick<WorkoutSet, 'type' | 'completed' | 'completed_at' | 'deleted_at' | 'parent_set_id' | 'reps'>,
+>(sets: readonly T[]): T | null {
+  const doneAt = (set: T) => (set.completed_at ? Date.parse(set.completed_at) : 0);
+  let latest: T | null = null;
+  for (const set of sets) {
+    if (!isTopWorkingSet(set) || set.reps <= 0) continue;
+    // Ties go to the later set in the session.
+    if (latest === null || doneAt(set) >= doneAt(latest)) latest = set;
+  }
+  return latest;
+}
