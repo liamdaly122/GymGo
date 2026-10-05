@@ -47,19 +47,19 @@ await step('log a set', async () => {
   await page.waitForTimeout(300);
 });
 
-await step('ticking a set starts the rest timer at the compound default', async () => {
+await step('ticking a set starts the rest timer at the big-lift rest', async () => {
   const timer = page.getByRole('timer');
   await timer.waitFor({ timeout: 5000 });
   const text = await timer.innerText();
-  // Barbell Squat is a compound, so the seed gives it 180s.
-  if (!/3:00|2:5\d/.test(text)) throw new Error(`expected a 3:00 rest, timer said: ${text.replace(/\n/g, ' | ')}`);
+  // Barbell Squat is a big lift, so it rests 2:30.
+  if (!/2:30|2:2\d/.test(text)) throw new Error(`expected a 2:30 rest, timer said: ${text.replace(/\n/g, ' | ')}`);
 });
 
 await step('+30s extends the rest', async () => {
   await page.getByRole('button', { name: '+30s' }).click();
   await page.waitForTimeout(200);
   const text = await page.getByRole('timer').innerText();
-  if (!/3:[23]\d/.test(text)) throw new Error(`expected the rest extended past 3:20, saw: ${text.replace(/\n/g, ' | ')}`);
+  if (!/3:00|2:5\d/.test(text)) throw new Error(`expected the rest extended to 3:00, saw: ${text.replace(/\n/g, ' | ')}`);
 });
 
 await step('skip dismisses the rest timer', async () => {

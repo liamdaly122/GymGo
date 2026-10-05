@@ -48,6 +48,11 @@ export interface Exercise extends SyncFields {
   /** Rough systemic cost, 1 (trivial) to 5 (very taxing). Feeds the generator. */
   fatigue_cost: number;
   demo_url: string | null;
+  /**
+   * Written by the seed to match `restSecondsFor`, and read by nothing: a
+   * lift's rest is worked out from its size each time, so a library seeded
+   * under the old rule (180s and 75s) cannot keep it.
+   */
   default_rest_seconds: number;
   /** Seat height, pin position, grip width. Shown during the set. */
   setup_notes: string | null;
@@ -95,6 +100,10 @@ export interface RoutineExercise extends SyncFields {
   target_rir: number | null;
   /** Four-digit string such as "3-1-1-0". */
   tempo: string | null;
+  /**
+   * A rest the lifter set for this slot. Null, as the generator writes it,
+   * means the lift's own (`restSecondsFor`), so a swap rests as the new lift.
+   */
   rest_seconds: number | null;
 }
 
@@ -137,9 +146,8 @@ export interface WorkoutExercise extends SyncFields {
   /**
    * Copied from the routine at workout start, never referenced live.
    *
-   * A strength primary is prescribed 210s and an accessory 75s; without this
-   * the timer fell back to the exercise's generic default and every plan's
-   * prescribed rest was decorative. Null means "use the exercise default".
+   * Without the copy, a rest set on the routine never reached the timer.
+   * Null means the lift's own rest (`restSecondsFor`).
    */
   rest_seconds: number | null;
   /** Four-digit string such as "3-1-1-0". Copied from the routine. */

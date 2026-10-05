@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { restSecondsFor } from '../src/domain/rest.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
@@ -185,6 +186,7 @@ const seed = lifting.map((ex) => {
   if (!pattern) unresolved.push(`${ex.id} (${ex.name})`);
 
   const isCompound = ex.mechanic === 'compound';
+  const fatigueCost = deriveFatigueCost(ex, pattern ?? 'isolation');
   const image = ex.images[0];
 
   return {
@@ -198,10 +200,11 @@ const seed = lifting.map((ex) => {
     is_compound: isCompound,
     is_unilateral: re.unilateral.test(ex.name),
     experience_level: ex.level,
-    fatigue_cost: deriveFatigueCost(ex, pattern ?? 'isolation'),
+    fatigue_cost: fatigueCost,
     demo_url: image ? `${IMAGE_BASE}/${image}` : null,
-    // Brief's rest defaults: compounds 150-180s, isolation 60-90s.
-    default_rest_seconds: isCompound ? 180 : 75,
+    // Kept in step with the rule the app reads, `restSecondsFor`: 2:30 for a
+    // big lift, 2:00 for any other compound, 1:30 for isolation.
+    default_rest_seconds: restSecondsFor({ is_compound: isCompound, fatigue_cost: fatigueCost }),
     setup_notes: null,
     is_custom: false,
     increment_kg: null,

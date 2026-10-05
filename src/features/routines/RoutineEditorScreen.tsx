@@ -12,6 +12,7 @@ import {
 } from '@/db/mutations';
 import { BackLink, Button, NumberField, Screen, ScreenHeader, SectionLabel, Segmented, Sheet } from '@/components/ui';
 import { Icon } from '@/components/icons';
+import { restSecondsFor } from '@/domain/rest';
 import { estimateDurationMinutes } from '@/domain/sessionSummary';
 import { isPyramid, type Scheme } from '@/domain/schemes';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
@@ -57,7 +58,7 @@ export default function RoutineEditorScreen() {
   const minutes = estimateDurationMinutes(
     view.exercises.map((entry) => ({
       sets: entry.routineExercise.target_sets,
-      restSeconds: entry.routineExercise.rest_seconds ?? entry.exercise?.default_rest_seconds ?? 120,
+      restSeconds: entry.routineExercise.rest_seconds ?? (entry.exercise ? restSecondsFor(entry.exercise) : 120),
     })),
   );
 
@@ -218,9 +219,9 @@ export default function RoutineEditorScreen() {
                           <NumberField
                             value={entry.routineExercise.rest_seconds ?? 0}
                             blankWhenZero
-                            // Blank means "use the exercise default", which is why
-                            // this is nullable rather than pre-filled.
-                            placeholder={String(entry.exercise?.default_rest_seconds ?? 120)}
+                            // Blank means the lift's own rest, which is why this
+                            // is nullable rather than pre-filled.
+                            placeholder={String(entry.exercise ? restSecondsFor(entry.exercise) : 120)}
                             suffix="s"
                             onCommit={(value) =>
                               void updateRoutineExercise(entry.routineExercise.id, {

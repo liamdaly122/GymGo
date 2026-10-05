@@ -4,6 +4,7 @@ import { usePreviousPerformance, useRecordMarks, useSetSuggestion } from '@/db/q
 import { addSet } from '@/db/mutations';
 import { Icon } from '@/components/icons';
 import { recordSetIds, type RecordMarks } from '@/domain/prs';
+import { restSecondsFor } from '@/domain/rest';
 import { setOrdinals } from '@/domain/sets';
 import { setInHand, supersetLabel } from '@/domain/supersets';
 import { formatClock } from '@/lib/dates';
@@ -81,8 +82,9 @@ export default function StationCard({
     : undefined;
   const moreFor = moreForId ? view.exercises.findIndex((entry) => entry.workoutExercise.id === moreForId) : -1;
 
+  // A rest set on the routine, else the lift's own: 2:30, 2:00 or 1:30 by its size.
   const restFor = (entry: WorkoutExerciseView) =>
-    entry.workoutExercise.rest_seconds ?? entry.exercise?.default_rest_seconds ?? defaultRest;
+    entry.workoutExercise.rest_seconds ?? (entry.exercise ? restSecondsFor(entry.exercise) : defaultRest);
 
   const header = (entry: WorkoutExerciseView, size: 'big' | 'small') => {
     const name = entry.exercise?.name ?? 'Unknown exercise';

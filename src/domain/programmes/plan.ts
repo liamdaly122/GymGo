@@ -139,10 +139,7 @@ export function buildPlan(
     exercises: result.filled.map((entry) => ({
       exercise: entry.exercise,
       slot: entry.slot,
-      prescription: prescribe(goal.profile, entry.slot.role, {
-        isCompound: entry.exercise.is_compound,
-        restMultiplier: goal.restMultiplier,
-      }),
+      prescription: prescribe(goal.profile, entry.slot.role),
     })),
   }));
 
@@ -200,10 +197,7 @@ export function pinExercises(plan: GeneratedPlan, pins: readonly PlanPin[]): Gen
       const entry: PlannedExercise = {
         exercise: pin.exercise,
         slot,
-        prescription: prescribe(plan.goal.profile, slot.role, {
-          isCompound: pin.exercise.is_compound,
-          restMultiplier: plan.goal.restMultiplier,
-        }),
+        prescription: prescribe(plan.goal.profile, slot.role),
         pinned: true,
       };
 

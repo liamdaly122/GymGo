@@ -12,6 +12,7 @@
  * the same.
  */
 import type { Muscle } from '../types';
+import { restSecondsFor } from '../rest';
 import { estimateDurationMinutes } from '../sessionSummary';
 import { blockWeeks, setsForWeek } from './block';
 import { WEEKLY_SET_TARGET } from './prescribe';
@@ -84,7 +85,7 @@ export function peakMinutes(exercises: readonly PlannedExercise[]): number {
   return estimateDurationMinutes(
     exercises.map((entry) => ({
       sets: setsForWeek(entry.prescription.sets, PEAK),
-      restSeconds: entry.prescription.restSeconds,
+      restSeconds: restSecondsFor(entry.exercise),
     })),
   );
 }

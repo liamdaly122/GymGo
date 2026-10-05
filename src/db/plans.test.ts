@@ -61,7 +61,8 @@ describe('building routines from a plan', () => {
     expect(rows).toHaveLength(expected);
     expect(rows.every((row) => row.target_sets > 0)).toBe(true);
     expect(rows.every((row) => row.rep_range_low <= row.rep_range_high)).toBe(true);
-    expect(rows.every((row) => (row.rest_seconds ?? 0) > 0)).toBe(true);
+    // Rest is not prescribed: each lift rests as its size says.
+    expect(rows.every((row) => row.rest_seconds === null)).toBe(true);
   });
 
   it('records a plan row and links the routines back to it', async () => {

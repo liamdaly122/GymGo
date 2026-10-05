@@ -36,11 +36,6 @@ export interface TrainingGoal {
    * goal shares a profile with another. Null when the goal is its own thing.
    */
   sameProgrammeAs: string | null;
-  /**
-   * Fat-loss goals shorten rest to raise session density. This is a real,
-   * defensible difference; a different split would not be.
-   */
-  restMultiplier: number;
   /** Whether to offer an optional conditioning finisher. */
   conditioningFinisher: boolean;
 }
@@ -52,38 +47,34 @@ export const TRAINING_GOALS: TrainingGoal[] = [
     blurb: 'Moderate reps, plenty of volume, progressive overload.',
     profile: 'hypertrophy',
     sameProgrammeAs: null,
-    restMultiplier: 1,
     conditioningFinisher: false,
   },
   {
     id: 'get_lean',
     label: 'Get lean',
-    blurb: 'Hold onto muscle while you lose fat. Same lifting, shorter rests.',
+    blurb: 'Hold onto muscle while you lose fat. Same lifting; the diet does the work.',
     profile: 'hypertrophy',
     sameProgrammeAs:
       'Same lifting as Build muscle. Keeping muscle while losing fat is a kitchen job — ' +
       'the training just has to protect what you have.',
-    restMultiplier: 0.75,
     conditioningFinisher: true,
   },
   {
     id: 'lose_weight',
     label: 'Lose weight',
-    blurb: 'Lift to keep the muscle, shorter rests to keep the pace up.',
+    blurb: 'Lift to keep the muscle while the diet takes the weight off.',
     profile: 'hypertrophy',
     sameProgrammeAs:
       'Same lifting as Build muscle. The research is blunt about this: in a deficit you ' +
       'train the way you would to grow, and the diet does the fat loss.',
-    restMultiplier: 0.75,
     conditioningFinisher: true,
   },
   {
     id: 'build_strength',
     label: 'Build strength',
-    blurb: 'Heavier, lower reps, longer rests, fewer exercises.',
+    blurb: 'Heavier, lower reps, fewer exercises.',
     profile: 'strength',
     sameProgrammeAs: null,
-    restMultiplier: 1.2,
     conditioningFinisher: false,
   },
   {
@@ -92,7 +83,6 @@ export const TRAINING_GOALS: TrainingGoal[] = [
     blurb: 'Balanced full-body work at a manageable volume.',
     profile: 'general',
     sameProgrammeAs: null,
-    restMultiplier: 1,
     conditioningFinisher: true,
   },
   {
@@ -101,7 +91,6 @@ export const TRAINING_GOALS: TrainingGoal[] = [
     blurb: 'A bit of everything, sustainable week to week.',
     profile: 'general',
     sameProgrammeAs: 'Same programme as Get in shape, framed for keeping it up long term.',
-    restMultiplier: 1,
     conditioningFinisher: true,
   },
 ];

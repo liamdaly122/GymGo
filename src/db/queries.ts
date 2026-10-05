@@ -36,6 +36,7 @@ import { changeOver, dailySeries, rollingAverage, type DayValue } from '@/domain
 import type { BodyMetricKind } from '@/domain/types';
 import type { Rewards } from '@/domain/rewards';
 import { roleForPrescription } from '@/domain/programmes/prescribe';
+import { restSecondsFor } from '@/domain/rest';
 
 const live = <T extends { deleted_at: string | null }>(rows: T[]) =>
   rows.filter((row) => row.deleted_at === null);
@@ -557,6 +558,11 @@ export interface SessionPreview {
   items: SessionPreviewItem[];
 }
 
+/** A routine row's rest: one the lifter set, else the lift's own. */
+function restOf(row: RoutineExercise, exercise: Exercise | undefined): number {
+  return row.rest_seconds ?? (exercise ? restSecondsFor(exercise) : 120);
+}
+
 /**
  * What a planned session holds, shaped by the week of the block it falls in:
  * week 3 adds sets, the deload halves them, so a session three weeks out does
@@ -576,7 +582,7 @@ export function useSessionPreview(
     const groups = new Map<string, number>();
     return {
       minutes: estimateDurationMinutes(
-        rows.map((row) => ({ sets: setsOf(row.target_sets), restSeconds: row.rest_seconds ?? 120 })),
+        rows.map((row, index) => ({ sets: setsOf(row.target_sets), restSeconds: restOf(row, exercises[index]) })),
       ),
       items: rows.map((row, index) => {
         let badge: string | null = null;
@@ -661,7 +667,7 @@ export function useProgramme(): ProgrammeView | undefined {
         label: routine.name.split(' — ').at(-1) ?? routine.name,
         exerciseCount: rows.length,
         estimatedMinutes: estimateDurationMinutes(
-          rows.map((row) => ({ sets: row.target_sets, restSeconds: row.rest_seconds ?? 120 })),
+          rows.map((row, index) => ({ sets: row.target_sets, restSeconds: restOf(row, exercises[index]) })),
         ),
         muscles: muscles.slice(0, 3),
       };

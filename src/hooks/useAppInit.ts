@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { seedIfEmpty } from '@/db/seed';
+import { clearGeneratedRests } from '@/db/mutations';
+import { onceOnThisPhone } from '@/lib/once';
 
 type InitState = 'seeding' | 'ready' | 'failed';
 
@@ -17,6 +19,10 @@ export function useAppInit(): { state: InitState; error: Error | null } {
   useEffect(() => {
     let cancelled = false;
     seedIfEmpty()
+      // Rest follows the lift now: a plan made before that gives its rows'
+      // generated rests back, so the plan already running rests 2:30, 2:00
+      // and 1:30 from the next session on.
+      .then(() => onceOnThisPhone('rests-follow-the-lift', clearGeneratedRests))
       .then(() => {
         if (!cancelled) setState('ready');
       })

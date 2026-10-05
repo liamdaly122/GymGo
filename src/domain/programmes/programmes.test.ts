@@ -5,7 +5,8 @@ import type { Equipment } from '../types';
 import { TRAINING_GOALS, findGoal, goalsSharingProfile } from './goals';
 import { SPLITS, SUPPORTED_DAYS, sessionsFor, splitsForDays } from './splits';
 import { SESSION_TEMPLATES } from './templates';
-import { prescribe } from './prescribe';
+import { prescribe, wasGeneratedRest } from './prescribe';
+import { restSecondsFor } from '../rest';
 import { fillSession } from './fill';
 import {
   InvalidPlanSelectionError,
@@ -61,10 +62,6 @@ describe('goals', () => {
     expect(findGoal('build_muscle')?.sameProgrammeAs).toBeNull();
   });
 
-  it('shortens rest for fat-loss goals rather than inventing a different split', () => {
-    expect(findGoal('lose_weight')!.restMultiplier).toBeLessThan(1);
-    expect(findGoal('build_strength')!.restMultiplier).toBeGreaterThan(1);
-  });
 });
 
 describe('splits', () => {
@@ -128,22 +125,25 @@ describe('prescriptions', () => {
     expect(prescribe('general', 'primary')).toMatchObject({ repLow: 8, repHigh: 12 });
   });
 
-  it('rests compounds long and isolation short', () => {
-    expect(prescribe('hypertrophy', 'primary').restSeconds).toBeGreaterThanOrEqual(150);
-    expect(prescribe('hypertrophy', 'accessory').restSeconds).toBeLessThanOrEqual(90);
+  it('prescribes no rest: that belongs to the lift', () => {
+    for (const role of ['primary', 'secondary', 'accessory'] as const) {
+      expect(prescribe('strength', role)).not.toHaveProperty('restSeconds');
+    }
   });
 
-  it('applies the goal rest multiplier', () => {
-    const normal = prescribe('hypertrophy', 'primary').restSeconds;
-    const dense = prescribe('hypertrophy', 'primary', { restMultiplier: 0.75 }).restSeconds;
-    expect(dense).toBeLessThan(normal);
-    expect(dense).toBeGreaterThanOrEqual(30);
-  });
+  it('recognises every rest the old generator wrote, and nothing typed', () => {
+    // A muscle-building main lift: 3:00 for a compound, 1:50 for an isolation
+    // lift in that slot, and 0.75 of each for the fat-loss goals.
+    for (const seconds of [180, 110, 135, 80]) expect(wasGeneratedRest('hypertrophy', 'primary', seconds)).toBe(true);
+    // A strength main lift under Build strength's 1.2.
+    expect(wasGeneratedRest('strength', 'primary', 250)).toBe(true);
+    expect(wasGeneratedRest('hypertrophy', 'accessory', 75)).toBe(true);
+    expect(wasGeneratedRest('general', 'accessory', 60)).toBe(true);
 
-  it('does not rest an isolation lift like a heavy compound', () => {
-    const compound = prescribe('hypertrophy', 'primary', { isCompound: true }).restSeconds;
-    const isolation = prescribe('hypertrophy', 'primary', { isCompound: false }).restSeconds;
-    expect(isolation).toBeLessThan(compound);
+    expect(wasGeneratedRest('hypertrophy', 'primary', 100)).toBe(false);
+    // 1:15 was an accessory's, never a main lift's.
+    expect(wasGeneratedRest('hypertrophy', 'primary', 75)).toBe(false);
+    expect(wasGeneratedRest('hypertrophy', 'primary', null)).toBe(false);
   });
 });
 
@@ -353,13 +353,12 @@ describe('building a plan', () => {
     expect(primaries.every((entry) => entry.prescription.repHigh <= 5)).toBe(true);
   });
 
-  it('gives fat-loss goals shorter rests than the muscle-building version', () => {
+  it('gives the fat-loss goals Build muscle\'s programme exactly, rest and all', () => {
     const muscle = buildPlan(selection, EXERCISES, { equipment: COMMERCIAL });
-    const lean = buildPlan({ ...selection, goalId: 'get_lean' }, EXERCISES, {
-      equipment: COMMERCIAL,
-    });
-    const firstRest = (plan: typeof muscle) => plan.sessions[0]!.exercises[0]!.prescription.restSeconds;
-    expect(firstRest(lean)).toBeLessThan(firstRest(muscle));
+    for (const goalId of ['get_lean', 'lose_weight'] as const) {
+      const lean = buildPlan({ ...selection, goalId }, EXERCISES, { equipment: COMMERCIAL });
+      expect(lean.sessions).toEqual(muscle.sessions);
+    }
   });
 
   it('builds every goal and split combination the UI can offer', () => {
@@ -444,11 +443,9 @@ describe('swapping exercises in a plan before it is saved', () => {
     const pinned = pinExercises(plan, [{ dayIndex: 2, slotIndex: slotIndexOf(legs, primary), exercise: legExtension }]);
 
     const entry = pinned.sessions[2]!.exercises[0]!;
-    // An isolation lift in a primary slot rests less than the compound did.
-    expect(entry.prescription).toEqual(
-      prescribe('hypertrophy', 'primary', { isCompound: false, restMultiplier: plan.goal.restMultiplier }),
-    );
-    expect(entry.prescription.restSeconds).toBeLessThan(primary.prescription.restSeconds);
+    expect(entry.prescription).toEqual(prescribe('hypertrophy', 'primary'));
+    // And it rests as a leg extension does, not as the lift it replaced.
+    expect(restSecondsFor(entry.exercise)).toBeLessThan(restSecondsFor(primary.exercise));
   });
 
   it('fills a slot the gym left empty, in the template order', () => {

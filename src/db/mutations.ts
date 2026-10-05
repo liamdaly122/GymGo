@@ -27,8 +27,9 @@ import {
 } from './schema';
 import { newId } from '@/lib/ids';
 import { nowIso } from '@/lib/dates';
-import type { BodyMetricKind, Readiness, SetType, Technique } from '@/domain/types';
+import type { BodyMetricKind, Goal, Readiness, SetType, Technique } from '@/domain/types';
 import type { GeneratedPlan } from '@/domain/programmes/plan';
+import { roleForPrescription, wasGeneratedRest } from '@/domain/programmes/prescribe';
 import { DEFAULT_BLOCK_WEEKS, setsForWeek, weekModifier } from '@/domain/programmes/block';
 import { buildSchedule, currentWeek, runningPlan, slotForRoutine } from '@/domain/schedule';
 import { loadableWeight, loadingProfileFor, nextLoadableBelow, type LoadingProfile } from '@/domain/plates';
@@ -1079,7 +1080,9 @@ export async function createRoutinesFromPlan(
         rep_range_high: entry.prescription.repHigh,
         target_rir: entry.prescription.targetRir,
         tempo: null,
-        rest_seconds: entry.prescription.restSeconds,
+        // Rest follows the lift (`restSecondsFor`), so a generated row has none
+        // of its own: a swap or a rotation then rests as the new lift does.
+        rest_seconds: null,
         ...freshSyncFields(),
       });
     }
@@ -1115,6 +1118,54 @@ export async function createRoutinesFromPlan(
   for (const row of routineExercises) await enqueue('routine_exercises', row.id, 'put', row);
 
   return { planId: planRow.id, routineIds: routines.map((routine) => routine.id) };
+}
+
+/**
+ * Hands a plan's rests back to the lift.
+ *
+ * Before rest followed the lift, the generator wrote one onto every row it
+ * made, by goal and role: 3:00 for a muscle-building main lift, 1:15 for an
+ * accessory. Left there, those would read as the lifter's own choice and
+ * outrank the new rule. So a row still exactly as generated
+ * (`roleForPrescription`) loses a rest that generator could have written for
+ * its role. Anything else is the lifter's and stays: a rest typed into the
+ * routine, or a row added by hand.
+ *
+ * Routine rows only. A workout keeps the rest it was performed with. Run once
+ * per phone, from `useAppInit`; returns how many rows it changed.
+ */
+export async function clearGeneratedRests(): Promise<number> {
+  const goalOf = new Map<string, Goal>();
+  for (const plan of await db.plans.toArray()) {
+    if (plan.deleted_at !== null) continue;
+    for (const routineId of plan.routine_ids) goalOf.set(routineId, plan.goal);
+  }
+  const routines = (await db.routines.bulkGet([...goalOf.keys()])).filter(
+    (routine) => routine !== undefined && routine.deleted_at === null,
+  );
+  if (routines.length === 0) return 0;
+
+  const rows = await db.routine_exercises
+    .where('routine_id')
+    .anyOf(routines.map((routine) => routine!.id))
+    .toArray();
+  const generated = rows.filter((row) => {
+    if (row.deleted_at !== null || row.rest_seconds === null) return false;
+    const goal = goalOf.get(row.routine_id)!;
+    const role = roleForPrescription(goal, row);
+    return role !== null && wasGeneratedRest(goal, role, row.rest_seconds);
+  });
+  if (generated.length === 0) return 0;
+
+  const now = nowIso();
+  await db.transaction('rw', db.routine_exercises, db.outbox, async () => {
+    for (const row of generated) {
+      const patch = { rest_seconds: null, updated_at: now };
+      await db.routine_exercises.update(row.id, patch);
+      await enqueue('routine_exercises', row.id, 'put', patch);
+    }
+  });
+  return generated.length;
 }
 
 // ---------------------------------------------------------------------------

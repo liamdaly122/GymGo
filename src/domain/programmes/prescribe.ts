@@ -1,10 +1,12 @@
 /**
- * How many sets, what rep range, how long to rest.
+ * How many sets, what rep range, how far from failure.
  *
  * The figures come straight from the brief, which matches the published volume
  * landmarks: hypertrophy 10-20 working sets per muscle per week at 6-12 reps,
- * strength 8-12 sets at 3-6 on the main lifts, general 8-12 sets at 8-15. Rest
- * is 150-180s for compounds and 60-90s for isolation.
+ * strength 8-12 sets at 3-6 on the main lifts, general 8-12 sets at 8-15.
+ *
+ * Rest is not prescribed here. It follows the lift (`restSecondsFor` in
+ * `../rest`), the same on every goal, so a plan's rows carry none of their own.
  */
 import type { Goal } from '../types';
 import type { SessionSlot } from './templates';
@@ -13,7 +15,6 @@ export interface Prescription {
   sets: number;
   repLow: number;
   repHigh: number;
-  restSeconds: number;
   targetRir: number | null;
 }
 
@@ -21,19 +22,19 @@ type Role = SessionSlot['role'];
 
 const TABLE: Record<Goal, Record<Role, Prescription>> = {
   hypertrophy: {
-    primary: { sets: 4, repLow: 6, repHigh: 10, restSeconds: 180, targetRir: 2 },
-    secondary: { sets: 3, repLow: 8, repHigh: 12, restSeconds: 120, targetRir: 2 },
-    accessory: { sets: 3, repLow: 10, repHigh: 15, restSeconds: 75, targetRir: 1 },
+    primary: { sets: 4, repLow: 6, repHigh: 10, targetRir: 2 },
+    secondary: { sets: 3, repLow: 8, repHigh: 12, targetRir: 2 },
+    accessory: { sets: 3, repLow: 10, repHigh: 15, targetRir: 1 },
   },
   strength: {
-    primary: { sets: 5, repLow: 3, repHigh: 5, restSeconds: 210, targetRir: 2 },
-    secondary: { sets: 3, repLow: 5, repHigh: 8, restSeconds: 150, targetRir: 2 },
-    accessory: { sets: 3, repLow: 8, repHigh: 12, restSeconds: 90, targetRir: 1 },
+    primary: { sets: 5, repLow: 3, repHigh: 5, targetRir: 2 },
+    secondary: { sets: 3, repLow: 5, repHigh: 8, targetRir: 2 },
+    accessory: { sets: 3, repLow: 8, repHigh: 12, targetRir: 1 },
   },
   general: {
-    primary: { sets: 3, repLow: 8, repHigh: 12, restSeconds: 120, targetRir: 2 },
-    secondary: { sets: 3, repLow: 10, repHigh: 15, restSeconds: 90, targetRir: 2 },
-    accessory: { sets: 2, repLow: 12, repHigh: 15, restSeconds: 60, targetRir: 1 },
+    primary: { sets: 3, repLow: 8, repHigh: 12, targetRir: 2 },
+    secondary: { sets: 3, repLow: 10, repHigh: 15, targetRir: 2 },
+    accessory: { sets: 2, repLow: 12, repHigh: 15, targetRir: 1 },
   },
 };
 
@@ -53,7 +54,7 @@ export const WEEKLY_SET_TARGET: Record<Goal, { low: number; high: number }> = {
  * No column records it: a generated row carries the role only as the numbers
  * `prescribe` gave it. Within one goal every role has its own rep range, and
  * only accessories aim for RIR 1, so the range and the RIR together name the
- * role. Rest is no help, because the goal and the lift both stretch it.
+ * role. Rest is no help: it belongs to the lift, not the role.
  *
  * Null for anything else. A row added by hand has no RIR target, and one the
  * lifter has re-prescribed no longer matches. Either way it is the lifter's
@@ -76,27 +77,36 @@ export function roleForPrescription(
   );
 }
 
+/** What a role is given under a goal: sets, rep range and RIR target. */
+export function prescribe(profile: Goal, role: Role): Prescription {
+  return { ...TABLE[profile][role] };
+}
+
 /**
- * `restMultiplier` comes from the goal — fat-loss goals shorten rest to raise
- * session density. That is a real difference; a different split would not be.
+ * The rest the generator wrote onto a row, by goal and role, before rest
+ * followed the lift. Kept only to recognise those rows: `clearGeneratedRests`
+ * hands them back to the lift, and leaves any other figure, which the lifter
+ * typed, alone.
  */
-export function prescribe(
-  profile: Goal,
-  role: Role,
-  options: { isCompound?: boolean; restMultiplier?: number } = {},
-): Prescription {
-  const base = TABLE[profile][role];
-  const multiplier = options.restMultiplier ?? 1;
+const RETIRED_REST: Record<Goal, Record<Role, number>> = {
+  hypertrophy: { primary: 180, secondary: 120, accessory: 75 },
+  strength: { primary: 210, secondary: 150, accessory: 90 },
+  general: { primary: 120, secondary: 90, accessory: 60 },
+};
 
-  // An isolation lift in a primary slot — an arm day, say — does not need the
-  // rest a heavy compound does.
-  const compoundAdjusted =
-    options.isCompound === false && role === 'primary'
-      ? { ...base, restSeconds: Math.round(base.restSeconds * 0.6) }
-      : base;
+/** Fat-loss goals took 0.75 of it, Build strength 1.2. */
+const RETIRED_MULTIPLIERS = [0.75, 1, 1.2];
 
-  return {
-    ...compoundAdjusted,
-    restSeconds: Math.max(30, Math.round((compoundAdjusted.restSeconds * multiplier) / 5) * 5),
-  };
+/**
+ * Whether `seconds` is a rest the old generator could have written for this
+ * role: for a compound, or for an isolation lift in a primary slot (0.6 of the
+ * figure), under any goal's multiplier, rounded to 5s with a 30s floor.
+ */
+export function wasGeneratedRest(profile: Goal, role: Role, seconds: number | null): boolean {
+  if (seconds === null) return false;
+  const base = RETIRED_REST[profile][role];
+  const lifts = role === 'primary' ? [base, Math.round(base * 0.6)] : [base];
+  return lifts.some((rest) =>
+    RETIRED_MULTIPLIERS.some((multiplier) => Math.max(30, Math.round((rest * multiplier) / 5) * 5) === seconds),
+  );
 }

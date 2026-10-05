@@ -60,16 +60,13 @@ describe('reading a row’s role off its prescription', () => {
   it('reads back every role the generator writes, for every goal', () => {
     for (const profile of ['hypertrophy', 'strength', 'general'] as Goal[]) {
       for (const role of ['primary', 'secondary', 'accessory'] as const) {
-        // Rest is stretched by the goal and the lift, and must not matter.
-        for (const options of [{}, { isCompound: false }, { restMultiplier: 0.75 }, { restMultiplier: 1.2 }]) {
-          const written = prescribe(profile, role, options);
-          const row = {
-            rep_range_low: written.repLow,
-            rep_range_high: written.repHigh,
-            target_rir: written.targetRir,
-          };
-          expect(roleForPrescription(profile, row), `${profile} ${role}`).toBe(role);
-        }
+        const written = prescribe(profile, role);
+        const row = {
+          rep_range_low: written.repLow,
+          rep_range_high: written.repHigh,
+          target_rir: written.targetRir,
+        };
+        expect(roleForPrescription(profile, row), `${profile} ${role}`).toBe(role);
       }
     }
   });

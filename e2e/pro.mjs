@@ -169,9 +169,9 @@ await step('and the rest timer runs for the prescribed 210s, not the default', a
   await p.getByLabel(/Mark set 1 done/).first().click();
   await p.waitForTimeout(800);
 
-  // 210s is 3:30. The exercise default for a barbell bench is 180s (3:00), so
-  // a clock reading 3:2x proves the routine's prescription won. Read from the
-  // timer itself: the session clock in the header is m:ss too.
+  // 210s is 3:30. A barbell bench rests 2:30 of its own, so a clock reading
+  // 3:2x proves the rest typed into the routine won. Read from the timer
+  // itself: the session clock in the header is m:ss too.
   const shown = await p.getByRole('timer').innerText();
   if (!/3:2\d|3:30/.test(shown)) throw new Error(`expected a 3:30 rest, the timer says ${shown}`);
   console.log('       timer shows:', shown);
