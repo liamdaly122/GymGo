@@ -71,6 +71,9 @@ Plus:
       priority muscles, lifts to avoid — and a reason for every pick
 - [x] Pyramids, tempo on screen, back-off and cluster sets, and Pro tools
       reachable from Beginner mode
+- [x] Records flash the moment Done logs them, bodyweight lifts included; XP,
+      levels, a weekly streak with banked weeks, and 38 badges — all worked out
+      from the training log, so nothing new is stored or synced
 
 Still to come: progress photos, kept on the phone.
 

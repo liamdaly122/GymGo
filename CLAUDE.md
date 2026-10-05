@@ -71,6 +71,17 @@ These rules live in exactly one place each — `src/domain/volume.ts`,
 `src/domain/prs.ts`, `src/domain/previousPerformance.ts` — and are unit tested in
 both directions. Do not re-derive them per screen.
 
+Whether something **beats what came before** is decided once too: `marksBroken`
+in `prs.ts`, which the finish screen, the session list, the block report, the
+rewards and the flash on Done all ask. It compares three marks — the heaviest
+top set, the best estimated max, and the most reps at 0kg. The third is for
+unloaded bodyweight work: a pull-up with nothing added logs 0kg, which nothing
+is heavier than, and Epley has nothing to multiply, so for most of this
+project's life going from eight pull-ups to twelve was never a record. Reps
+count only where neither side carried any load; anywhere else, more reps at a
+weight already raises the estimated max, and counting both would double every
+rep record. A lift's first session is a first, never a record.
+
 Child sets are created in exactly one place too: `addChildSet` in
 `src/db/mutations.ts`. That is what makes the rules apply rather than merely
 exist — for two years of this file's history they governed nothing, because
@@ -257,10 +268,11 @@ poster-sized condensed numbers and one blue highlight.
 ## Where things live
 
 Three tabs: **Today** (`/`), **Plan** (`/plan`) and **Progress** (`/progress`,
-with `/progress/lifts`). Settings is the gear on Today. Programme and Plans were
-two tabs for one idea, History and Progress two for another; the owner tested
-the merge in the drafts and chose it. A tab stays lit on the screens beneath it
-(`Layout.tsx`), so a session opened from Progress still reads as Progress.
+with `/progress/lifts`, `/progress/body` and `/progress/awards`). Settings is
+the gear on Today. Programme and Plans were two tabs for one idea, History and
+Progress two for another; the owner tested the merge in the drafts and chose
+it. A tab stays lit on the screens beneath it (`Layout.tsx`), so a session
+opened from Progress still reads as Progress.
 
 The plan builder hangs off Plan at `/plan/new`. The old routes — `/routines`,
 `/history` and `/plans/…` — redirect in `App.tsx`, query string and all, so an
@@ -420,6 +432,18 @@ exercise, opened by the `More for …` button. In a superset the other half sits
 under the set in hand with its own chips and overflow, so pairing two exercises
 never hides one of them.
 
+**A record says so the moment Done logs it.** `setBreaksRecord` judges the
+numbers being logged against the lift's history (`useRecordMarks`, finished
+sessions only) and today's earlier sets of it, before the write, so the tone
+plays straight from the tap — iOS makes no sound without one. The rest screen
+leads with it in blue, saying what it beat; its clock shrinks a step to make
+room, which keeps Pro's technique row clear of the buttons on a 375 × 667
+phone. The first half of a superset round has no rest to lead, so it gets a
+blue toast instead. The set's chip turns blue and its name ends `, record` —
+derived from history and the order the sets were ticked (`recordSetIds`), so
+it survives a reload. A first, a tie, a warm-up, a drop and a back-off set
+never flash: the same gate as every record.
+
 Finishing lands on the session's own detail screen with `state: { fresh: true }`,
 which makes it read "Done." with one button back to Today. The summary you see
 in the gym is the record you find later.
@@ -538,6 +562,53 @@ month to measure. Dates are the lifter's own calendar day (`isoDate`), as
 "today" is everywhere else: in UTC, a weigh-in just after midnight in summer was
 filed under yesterday. Only body weight is offered; the functions take the
 metric, so measurements could follow without rework.
+
+## Rewards: XP, levels, a weekly streak and badges
+
+The owner asked for training to feel addictive. What this rewards is what
+makes a lifter stronger — turning up, finishing the plan, beating their own
+numbers — and nothing that works against it.
+
+**Nothing is stored.** `computeRewards` (`src/domain/rewards/`) works it all
+out from the finished workouts, the plans and the date, every time, as the
+schedule is worked out. So there is no column and no migration for the owner
+to run, nothing to sync, a restore or a new phone arrives at exactly the same
+level, and the history from before this existed counted the day it shipped.
+`loadRewards` (`src/db/rewards.ts`) reads the tables in one pass; `useRewards`
+ticks with `useToday`, so the streak's week turns over at midnight. The price
+of deriving it is that changing a constant re-scores everyone's history, which
+is the right trade for a one-user app.
+
+**XP** (`XP` in `rewards.ts`): 50 for a session that counts, 5 a set up to 30,
+25 for a plan session, 50 a record, 100 for the session that hits its week,
+300 for the one that finishes a block with every slot trained, 100 for coming
+back after two weeks away, and 100 a badge. A session counts with three sets
+or more, warm-ups never among them; fewer still pays for its sets and records,
+but not the session or the week. Set XP stops at 30 so junk volume pays
+nothing extra. Records are `recordsBrokenPerSession`'s, so never a first and
+never a drop; a full block is `buildSchedule`'s own rule. Each level asks 100
+XP more than the last, from 300: quick at first, about level 10 after six
+weeks, level 30 after a year.
+
+**The streak is weekly** (`streak.ts`), chosen by the owner over a daily one
+and over "any session that week". A daily streak would make every rest day and
+the deload cost something. A week asks for the running block's own training
+days in it — prorated when a block starts or is closed midweek, never less
+than one; with no block running, the last block's days a week; with none
+ever, three. Any session that counts goes toward it, freestyle included, so a
+missed plan session can be made up. Every fourth week in a row banks a free
+week, two at most, spent by itself on a short week: it keeps the streak going
+without adding to it. The week under way never breaks anything.
+
+**Badges** (`badges.ts`): 38 in seven families — sessions, streak weeks,
+records, tonnes lifted (through `volume.ts`, so drops count), blocks finished
+with every session trained, plates on a barbell (record-eligible sets only: a
+140kg drop is not three plates), and three moments: a comeback, an early bird
+before 7am and a night owl after 9pm, in local time.
+
+It shows in three places: Today's strip, once anything has been earned; the
+"XP earned" section on a session's summary, where the bar fills and a level-up
+gets a poster only when `fresh`; and Progress → Awards.
 
 ## Gyms
 
@@ -724,11 +795,12 @@ Three layers, each earning its place:
 The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
 `test:plans`, `test:swap`, `test:gyms`, `test:pro`, `test:block`,
 `test:programme`, `test:toolkit`, `test:smart`, `test:session`,
-`test:rollover`, `test:planswap`, `test:report` and `test:body`. They expect a
-preview server on `127.0.0.1:5185` — `test:offline` runs its own on 5190. Each
-takes a `BASE_URL` override. `test:backup` is self-contained: it starts the
-stand-in Supabase on 54329, builds a copy of the app pointed at it, and serves
-that on 5191.
+`test:rollover`, `test:planswap`, `test:report`, `test:body` and
+`test:rewards`, which runs at 375 × 667 to prove a record fits the rest screen
+of the smallest phone. They expect a preview server on `127.0.0.1:5185` —
+`test:offline` runs its own on 5190. Each takes a `BASE_URL` override.
+`test:backup` is self-contained: it starts the stand-in Supabase on 54329,
+builds a copy of the app pointed at it, and serves that on 5191.
 
 **Accessible names are this app's test API.** Around 1,700 lines of Playwright
 key on them, so renaming one is a breaking change to the suites even when the
@@ -740,14 +812,15 @@ screen looks identical. These in particular are load-bearing:
 - `Mark set N done` — the Done bar. Its name goes on to say what it will log
   ("Mark set 1 done, 100kg × 5"), so match it with a pattern
 - `Edit set N…` — a set's chip, which opens its sheet; `Delete set N` and
-  `Delete set N for good` live inside
+  `Delete set N for good` live inside. A record set's name ends `, record`
 - `<Exercise>, N of M sets done` — the station strip, and the only handle on
   session order now that one station renders at a time
 - `More for <Exercise>` — the overflow, which everything secondary now sits
   behind
 - `Swap <Exercise> for something else`, `Move <Exercise> earlier` / `later`,
   `Readiness low` — inside it
-- the `timer` role, `Skip rest`, `Show sets` — the rest
+- the `timer` role, `Skip rest`, `Show sets` — the rest; and a `status`
+  inside it, starting "New record", when the set just done was one
 - `Swap <Exercise>`: the swap on a planned exercise, in the builder, the
   session editor and a day's sheet. The panel it opens is a dialog of the same
   name. `Swap for` is the reach, a group holding `Today`, `Every <session>`,
@@ -769,6 +842,11 @@ screen looks identical. These in particular are load-bearing:
   switch)
 - `<Exercise> set scheme` in the routine editor; `Tempo <tempo>` on the set in
   hand; `+ Cluster` and `+ Back-off` with the other techniques
+- Today's level strip, a link whose name starts `Level N`; on a session's
+  summary, the `XP earned` region, `Badge earned` / `Badges earned`, and a
+  `Level N` heading on a level-up; `Awards` on Progress, with the `Level`,
+  `Streak` and `Badges` regions, each badge a button named `<Badge>, earned …`,
+  `<Badge>, next up: …` or `<Badge>, not yet`
 - `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
 
 `Add exercise` names exactly one control at a time: the empty state owns it
