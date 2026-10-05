@@ -647,6 +647,8 @@ input[type='number']::-webkit-outer-spin-button {
     text-align: center;
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   }
+  /* News worth celebrating, not a nudge: a record set with no rest to show it. */
+  .toast.hot { background: var(--color-hot); color: #0a0f24; }
 
   /* ---------- Workout: one set at a time ---------- */
   .wk { max-width: 32rem; margin: 0 auto; min-height: 100dvh; padding-bottom: calc(108px + env(safe-area-inset-bottom)); }
@@ -743,6 +745,9 @@ input[type='number']::-webkit-outer-spin-button {
   }
   .b-chip.done { background: var(--color-raised); color: var(--color-chalk); }
   .b-chip.done svg { width: 14px; height: 14px; color: var(--color-hot); }
+  /* A record: lit blue, and it says so where the tick would be. */
+  .b-chip.done.rec { background: rgba(91, 132, 255, 0.16); color: var(--color-hot); }
+  .b-chip-pr { font-size: 0.6875rem; font-weight: 800; letter-spacing: 0.06em; }
   .b-chip.cur { background: var(--color-chalk); color: var(--color-ink); }
   .b-chip.warm { color: var(--color-warn); }
   .b-chip.child { padding: 0 8px; }
@@ -873,6 +878,29 @@ input[type='number']::-webkit-outer-spin-button {
   .rest-b-bg { position: fixed; inset: 0; z-index: 39; background: var(--color-ink); }
   .rb-top { display: flex; justify-content: space-between; align-items: center; }
   .rb-mid { display: flex; flex-direction: column; gap: 22px; }
+  /* A record set by the set just done: the news, then the countdown. */
+  .rb-record {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    text-align: center;
+    animation: rb-record-in 420ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+  }
+  .rb-record-num {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(2.75rem, 15vw, 3.75rem);
+    font-weight: 800;
+    line-height: 0.95;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-hot);
+  }
+  .rb-record-detail { margin: 0; font-size: 0.9375rem; color: var(--color-chalk); }
+  /* The record takes room the countdown can spare: still readable from a
+     bench, and Pro's technique row still clears the buttons on a small phone. */
+  .rb-record ~ .rb-time { font-size: clamp(5.5rem, 32vw, 8.5rem); }
+  @keyframes rb-record-in { from { opacity: 0; transform: scale(0.8); } }
   .rb-time {
     margin: 0;
     font-family: var(--font-display);

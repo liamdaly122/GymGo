@@ -20,7 +20,7 @@ import type { Exercise, Plan, Workout, WorkoutSet } from '@/db/schema';
 import type { Muscle } from './types';
 import { weekModifier } from './programmes/block';
 import { WEEKLY_SET_TARGET } from './programmes/prescribe';
-import { personalRecords } from './prs';
+import { marksBroken, mergeMarks, personalRecords, recordMarks, type RecordMarks } from './prs';
 import { countsTowardVolume } from './sets';
 import { bestEstimated1RM, setsPerMuscle, totalTonnage, totalWorkingSets } from './volume';
 
@@ -58,6 +58,8 @@ export interface BlockRecord {
   heaviest: { weight: number; reps: number; previous: number } | null;
   /** The best estimated max the block reached, when it beat everything before it. */
   e1rm: { value: number; previous: number } | null;
+  /** Most reps with nothing added, for unloaded bodyweight work, when it beat everything before. */
+  reps: { reps: number; previous: number } | null;
 }
 
 export interface BlockReport {
@@ -182,29 +184,32 @@ function mainLiftChanges(
  * the block's first improvement, so the line reads how far the block moved it.
  */
 function recordsSet(history: ReportSession[], inBlock: (session: ReportSession) => boolean): BlockRecord[] {
-  const best = new Map<string, { weight: number; e1rm: number }>();
+  const best = new Map<string, RecordMarks>();
   const records = new Map<string, BlockRecord>();
 
   for (const session of history) {
-    const updates: Array<[string, { weight: number; e1rm: number }]> = [];
+    const updates: Array<[string, RecordMarks]> = [];
     for (const [id, { exercise, sets }] of setsByExercise(session)) {
-      const during = personalRecords(sets);
-      if (!during.heaviest || !during.bestE1rm) continue;
-      const weight = during.heaviest.weight_kg;
-      const e1rm = during.bestE1rm.value;
-      const before = best.get(id);
+      const during = recordMarks(sets);
+      const top = personalRecords(sets).heaviest;
+      if (!during || !top) continue;
+      const before = best.get(id) ?? null;
+      const broken = inBlock(session) && before ? marksBroken(during, before) : [];
 
-      if (inBlock(session) && before && (weight > before.weight || e1rm > before.e1rm)) {
-        const record = records.get(id) ?? { exercise, heaviest: null, e1rm: null };
-        if (weight > before.weight) {
-          record.heaviest = { weight, reps: during.heaviest.reps, previous: record.heaviest?.previous ?? before.weight };
+      if (before && broken.length > 0) {
+        const record = records.get(id) ?? { exercise, heaviest: null, e1rm: null, reps: null };
+        if (broken.includes('weight')) {
+          record.heaviest = { weight: during.weight, reps: top.reps, previous: record.heaviest?.previous ?? before.weight };
         }
-        if (e1rm > before.e1rm) {
-          record.e1rm = { value: e1rm, previous: record.e1rm?.previous ?? before.e1rm };
+        if (broken.includes('e1rm')) {
+          record.e1rm = { value: during.e1rm, previous: record.e1rm?.previous ?? before.e1rm };
+        }
+        if (broken.includes('reps')) {
+          record.reps = { reps: during.unloadedReps, previous: record.reps?.previous ?? before.unloadedReps };
         }
         records.set(id, record);
       }
-      updates.push([id, { weight: Math.max(weight, before?.weight ?? 0), e1rm: Math.max(e1rm, before?.e1rm ?? 0) }]);
+      updates.push([id, mergeMarks(before, during)!]);
     }
     for (const [id, value] of updates) best.set(id, value);
   }

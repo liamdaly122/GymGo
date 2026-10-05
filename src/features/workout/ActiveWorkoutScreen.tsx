@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSettings, useWorkout } from '@/db/queries';
 import { addExerciseToWorkout, addSet, discardWorkout, finishWorkout } from '@/db/mutations';
@@ -38,7 +38,12 @@ export default function ActiveWorkoutScreen() {
   const [finishing, setFinishing] = useState(false);
   const [dismissedReadiness, setDismissedReadiness] = useState(false);
   const [focusId, setFocusId] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: 'plain' | 'hot' } | null>(null);
+  // Blue only for news worth celebrating — a record — never for a nudge.
+  const showToast = useCallback(
+    (message: string, tone: 'plain' | 'hot' = 'plain') => setToast({ message, tone }),
+    [],
+  );
   const elapsed = useElapsed(view?.workout.started_at);
 
   useEffect(() => {
@@ -169,7 +174,7 @@ export default function ActiveWorkoutScreen() {
               <ReadinessPrompt
                 workoutId={workoutId}
                 onDismiss={() => setDismissedReadiness(true)}
-                onAnswered={setToast}
+                onAnswered={showToast}
               />
             ) : null}
             <StationCard
@@ -184,7 +189,7 @@ export default function ActiveWorkoutScreen() {
               }
               onNext={next ? () => focusStation(focused + 1) : null}
               onFinish={() => setFinishing(true)}
-              onToast={setToast}
+              onToast={showToast}
             />
           </>
         )}
@@ -212,8 +217,8 @@ export default function ActiveWorkoutScreen() {
       ) : null}
 
       {toast ? (
-        <div className="toast" role="status">
-          {toast}
+        <div className={`toast ${toast.tone === 'hot' ? 'hot' : ''}`} role="status">
+          {toast.message}
         </div>
       ) : null}
     </div>

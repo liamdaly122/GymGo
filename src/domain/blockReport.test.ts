@@ -181,6 +181,21 @@ describe('records', () => {
     expect(ids).toEqual([SQUAT.id, BENCH.id, CURL.id]);
   });
 
+  it('records more reps with nothing added for bodyweight work', () => {
+    const PULL_UP = makeExercise({
+      id: 'pull-up',
+      name: 'Pullups',
+      equipment: 'bodyweight',
+      primary_muscle: 'lats',
+      movement_pattern: 'vertical_pull',
+    });
+    const history = [session(null, [[PULL_UP, sets([0, 8])]]), session(1, [[PULL_UP, sets([0, 11])]])];
+    const [pullUps] = report({ history }).records;
+    expect(pullUps!.reps).toEqual({ reps: 11, previous: 8 });
+    expect(pullUps!.heaviest).toBeNull();
+    expect(pullUps!.e1rm).toBeNull();
+  });
+
   it('counts other training as history, but not as the block’s records', () => {
     const history = [
       session(1, [[BENCH, sets([100, 5])]]),

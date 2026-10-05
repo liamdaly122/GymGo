@@ -1,4 +1,5 @@
 import type { WorkoutSet } from '@/db/schema';
+import type { SetRecord } from '@/domain/prs';
 import { isChildSet } from '@/domain/sets';
 
 /**
@@ -81,4 +82,35 @@ export function describeTempo(tempo: string): string | null {
   const say = (part: string) => (/^x$/i.test(part) ? 'as fast as you can' : `${part}s`);
   const [down, bottom, up, top] = parts as [string, string, string, string];
   return `${say(down)} down, ${say(bottom)} at the bottom, ${say(up)} up, ${say(top)} at the top.`;
+}
+
+/** A record, said three ways: on the rest screen, in a toast, and out loud. */
+export interface RecordNews {
+  /** "105 × 5", or "BW × 12" — the set, in the display face. */
+  headline: string;
+  /** "Heaviest ever · was 102.5kg" */
+  detail: string;
+  /** "New record · 105kg × 5", for when no rest follows the set. */
+  toast: string;
+  /** The whole thing as a sentence, for a screen reader. */
+  spoken: string;
+}
+
+/** An estimated max the way the summary prints it: one decimal place. */
+const tenth = (value: number) => formatNumber(Math.round(value * 10) / 10);
+
+export function describeRecord(record: SetRecord, weight: number, reps: number): RecordNews {
+  const detail =
+    record.kind === 'weight'
+      ? `Heaviest ever · was ${record.previous > 0 ? `${formatNumber(record.previous)}kg` : 'bodyweight'}`
+      : record.kind === 'e1rm'
+        ? `Best estimated max ${tenth(record.value)}kg · was ${tenth(record.previous)}kg`
+        : `Most reps · was ${record.previous}`;
+  const logged = formatLogged(weight, reps);
+  return {
+    headline: `${weight > 0 ? formatNumber(weight) : 'BW'} × ${reps}`,
+    detail,
+    toast: `New record · ${logged}`,
+    spoken: `New record: ${logged}. ${detail.replace(' · ', ', ')}.`,
+  };
 }

@@ -6,6 +6,9 @@ import { estimate1RMRounded } from '@/domain/epley';
 import { isChildSet } from '@/domain/sets';
 import { MuscleBars } from '@/features/progress/charts';
 
+/** What each kind of record wears: a heavier set, a better estimated max, more reps with nothing added. */
+const PR_BADGE = { weight: 'PR', e1rm: '1RM', reps: 'REPS' } as const;
+
 /**
  * One finished session — and, straight after Finish, the summary.
  *
@@ -86,16 +89,20 @@ export default function WorkoutDetailScreen() {
             <div>
               {summary.prs.map((pr, index) => (
                 <div key={`${pr.set.id}-${pr.kind}-${index}`} className="pr-row">
-                  <span className="pr-badge">{pr.previous === null ? 'NEW' : pr.kind === 'weight' ? 'PR' : '1RM'}</span>
+                  <span className="pr-badge">{pr.previous === null ? 'NEW' : PR_BADGE[pr.kind]}</span>
                   <span className="list-main">
                     <span className="font-semibold">{pr.exercise_name}</span>
                     <span className="t-meta">
                       {pr.kind === 'weight'
                         ? `${pr.value}kg × ${pr.set.reps}`
-                        : `${estimate1RMRounded(pr.set.weight_kg, pr.set.reps)}kg estimated 1RM`}
-                      {pr.previous !== null
-                        ? ` (was ${pr.kind === 'weight' ? pr.previous : Math.round(pr.previous * 10) / 10}kg)`
-                        : ' (first time)'}
+                        : pr.kind === 'reps'
+                          ? `${pr.value} reps`
+                          : `${estimate1RMRounded(pr.set.weight_kg, pr.set.reps)}kg estimated 1RM`}
+                      {pr.previous === null
+                        ? ' (first time)'
+                        : pr.kind === 'reps'
+                          ? ` (was ${pr.previous})`
+                          : ` (was ${pr.kind === 'weight' ? pr.previous : Math.round(pr.previous * 10) / 10}kg)`}
                     </span>
                   </span>
                 </div>

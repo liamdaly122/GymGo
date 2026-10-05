@@ -11,7 +11,7 @@ import { baseBlockName, blockNumber, defaultGym, nextBlockRotation } from './blo
 import { SETTINGS_ID, type BodyMetric, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
 import { planSwapTargets } from '@/domain/search';
-import { personalRecords, recordsBrokenPerSession } from '@/domain/prs';
+import { personalRecords, recordMarks, recordsBrokenPerSession, type RecordMarks } from '@/domain/prs';
 import { estimateDurationMinutes, summariseSession } from '@/domain/sessionSummary';
 import {
   blockProgress,
@@ -369,6 +369,26 @@ export function useExerciseRecords(exerciseId: string | undefined) {
     const sets = sessions.flatMap((session) => session.sets);
     return { records: personalRecords(sets), sessionCount: sessions.length };
   }, [exerciseId]);
+}
+
+/**
+ * Where each lift's records stood before this session: what a set has to beat
+ * for the flash on Done and the blue chips. Null for a lift never done before,
+ * because a first is not a record. Finished sessions only, this one left out.
+ */
+export function useRecordMarks(
+  exerciseIds: ReadonlyArray<string | undefined>,
+  workoutId: string | undefined,
+): Map<string, RecordMarks | null> | undefined {
+  const key = [...new Set(exerciseIds.filter((id): id is string => Boolean(id)))].join('|');
+  return useLiveQuery(async () => {
+    const marks = new Map<string, RecordMarks | null>();
+    for (const id of key.split('|').filter(Boolean)) {
+      const sessions = (await exerciseSessions(id)).filter((session) => session.workout_id !== workoutId);
+      marks.set(id, recordMarks(sessions.flatMap((session) => session.sets)));
+    }
+    return marks;
+  }, [key, workoutId]);
 }
 
 /**

@@ -9,19 +9,23 @@ import { CHILD_MARKS, formatLogged, setName } from './setNames';
  * The set in hand is the lit one. Done sets show what was logged; the rest
  * show their number — warm-ups on their own W sequence, and a continuation by
  * its mark, so a drop under set 1 never reads as set 2. Every chip but the one
- * in hand opens that set, which is the way back to a rep you mistyped.
+ * in hand opens that set, which is the way back to a rep you mistyped. A set
+ * that was a record when it was ticked is lit blue and says so.
  */
 export default function SetChips({
   sets,
   ordinals,
   inHandId,
   exerciseName,
+  recordIds,
   onOpen,
 }: {
   sets: WorkoutSet[];
   ordinals: Map<string, number>;
   inHandId: string | null;
   exerciseName: string;
+  /** Sets that broke a record when they were done. */
+  recordIds?: ReadonlySet<string>;
   onOpen: (setId: string) => void;
 }) {
   return (
@@ -50,17 +54,18 @@ export default function SetChips({
 
         if (set.completed) {
           const logged = formatLogged(set.weight_kg, set.reps);
+          const record = recordIds?.has(set.id) ?? false;
           return (
             <li key={set.id}>
               <button
                 type="button"
-                className={`b-chip done ${tone}`}
+                className={`b-chip done ${record ? 'rec' : ''} ${tone}`}
                 onClick={() => onOpen(set.id)}
-                aria-label={`Edit ${name.toLowerCase()}, ${logged}, done`}
+                aria-label={`Edit ${name.toLowerCase()}, ${logged}, done${record ? ', record' : ''}`}
               >
                 {child ? `${mark} ` : ''}
                 {logged.replace('kg', '')}
-                <Icon name="check" />
+                {record ? <span className="b-chip-pr">PR</span> : <Icon name="check" />}
               </button>
             </li>
           );

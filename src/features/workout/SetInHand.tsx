@@ -1,20 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import type { WorkoutExerciseView } from '@/db/queries';
+import { useSettings, type WorkoutExerciseView } from '@/db/queries';
 import type { WorkoutSet } from '@/db/schema';
 import { addSet, completeSetWith, updateSet } from '@/db/mutations';
 import { formatSetSummary, type PreviousPerformance } from '@/domain/previousPerformance';
 import type { Suggestion } from '@/domain/progression';
+import { setBreaksRecord, type RecordMarks } from '@/domain/prs';
 import { stepFrom } from '@/domain/plates';
 import { isChildSet } from '@/domain/sets';
 import { schemeTarget, stepsFromTop, SCHEME_LOAD_STEP, SCHEME_REP_STEP } from '@/domain/schemes';
 import { restsAfterSet } from '@/domain/supersets';
-import { formatDayLabel } from '@/lib/dates';
+import { formatDayLabel, nowIso } from '@/lib/dates';
+import { playRecordTone, RECORD_VIBRATION, vibrate } from '@/lib/feedback';
 import { useWriteQueue } from '@/hooks/useWriteQueue';
 import { useRestTimer } from './RestTimer';
 import PlateDiagram from './PlateDiagram';
 import {
   CHILD_NAMES,
   CONTINUATION_REST_SECONDS,
+  describeRecord,
   describeTempo,
   formatLogged,
   formatNumber,
@@ -63,6 +66,8 @@ export default function SetInHand({
   restSeconds,
   suggestion,
   previous,
+  prior,
+  liftSets,
   onToast,
 }: {
   entry: WorkoutExerciseView;
@@ -79,9 +84,14 @@ export default function SetInHand({
   restSeconds: number;
   suggestion: Suggestion | null | undefined;
   previous: PreviousPerformance | null | undefined;
-  onToast: (message: string) => void;
+  /** Where this lift's records stood before today; null for a first, undefined while loading. */
+  prior: RecordMarks | null | undefined;
+  /** Every set of this lift in the session, so today's earlier sets raise the bar. */
+  liftSets: WorkoutSet[];
+  onToast: (message: string, tone?: 'hot') => void;
 }) {
   const rest = useRestTimer();
+  const settings = useSettings();
   const { setUpNext } = rest;
   const run = useWriteQueue();
   const weightInput = useRef<HTMLInputElement>(null);
@@ -184,6 +194,18 @@ export default function SetInHand({
       return;
     }
 
+    // Judged on the numbers being logged, before the write, so the sound comes
+    // straight from the tap — the gesture iOS wants before it plays anything.
+    const record =
+      prior === undefined
+        ? null
+        : setBreaksRecord({ ...set, weight_kg: weight, reps, completed: true, completed_at: nowIso() }, prior, liftSets);
+    const news = record ? describeRecord(record, weight, reps) : null;
+    if (news) {
+      if (settings?.sound_on !== false) playRecordTone();
+      if (settings?.vibrate_on !== false) vibrate(RECORD_VIBRATION);
+    }
+
     // Cleared first, so the rest never opens on the set just done as "up next".
     setUpNext(null);
     await run(() => completeSetWith(set.id, { weight_kg: weight, reps }));
@@ -202,7 +224,11 @@ export default function SetInHand({
       return;
     }
     if (restsAfterSet(after, memberIndex, set.id)) {
-      rest.start(restSeconds, { afterSetId: set.type === 'working' ? set.id : null });
+      rest.start(restSeconds, { afterSetId: set.type === 'working' ? set.id : null, record: news });
+    } else if (news) {
+      // The first half of a superset round goes straight on: no rest screen
+      // to lead with the record, so it gets the toast.
+      onToast(news.toast, 'hot');
     }
   };
 

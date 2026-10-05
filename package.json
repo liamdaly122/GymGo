@@ -30,6 +30,7 @@
     "test:planswap": "node e2e/planswap.mjs",
     "test:report": "node e2e/report.mjs",
     "test:body": "node e2e/body.mjs",
+    "test:rewards": "node e2e/rewards.mjs",
     "test:backup": "node e2e/backup.mjs"
   },
   "dependencies": {

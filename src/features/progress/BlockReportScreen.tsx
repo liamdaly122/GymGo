@@ -196,6 +196,7 @@ function RecordRow({ record }: { record: BlockRecord }) {
       ? `${record.heaviest.weight}kg × ${record.heaviest.reps} (was ${record.heaviest.previous}kg)`
       : null,
     record.e1rm ? `est. max ${kg(record.e1rm.value)}kg (was ${kg(record.e1rm.previous)}kg)` : null,
+    record.reps ? `${record.reps.reps} reps (was ${record.reps.previous})` : null,
   ].filter(Boolean);
   return (
     <div className="pr-row">

@@ -4,7 +4,13 @@ import { playRestFinishedTone, vibrate } from '@/lib/feedback';
 import { clearRest, readRest, writeRest } from '@/lib/restTimer';
 import { useSettings } from '@/db/queries';
 import { addBackOffSet, addChildSet, type ChildSetKind } from '@/db/mutations';
-import { CONTINUATION_REST_SECONDS } from './setNames';
+import { CONTINUATION_REST_SECONDS, type RecordNews } from './setNames';
+
+interface RestOptions {
+  afterSetId?: string | null;
+  /** The set just done was a record: the rest leads with it. */
+  record?: RecordNews | null;
+}
 
 interface RestTimerState {
   /** Epoch ms the rest ends at, or null when no rest is running. */
@@ -16,7 +22,12 @@ interface RestTimerState {
   upNext: string | null;
   /** The working set the rest follows, for Pro's quick drop / rest-pause / myo. */
   afterSetId: string | null;
-  start: (seconds: number, options?: { afterSetId?: string | null }) => void;
+  /**
+   * A record set by the set just done. Held in memory only, like `upNext`: a
+   * rest restored after a reload comes back without it, which costs nothing.
+   */
+  record: RecordNews | null;
+  start: (seconds: number, options?: RestOptions) => void;
   extend: (seconds: number) => void;
   stop: () => void;
   setMinimised: (minimised: boolean) => void;
@@ -47,15 +58,17 @@ export function RestTimerProvider({
   const [minimised, setMinimised] = useState(false);
   const [upNext, setUpNext] = useState<string | null>(null);
   const [afterSetId, setAfterSetId] = useState<string | null>(null);
+  const [record, setRecord] = useState<RecordNews | null>(null);
 
   const start = useCallback(
-    (seconds: number, options: { afterSetId?: string | null } = {}) => {
+    (seconds: number, options: RestOptions = {}) => {
       const ms = Math.max(1, Math.round(seconds)) * 1000;
       const target = Date.now() + ms;
       setTotalMs(ms);
       setEndsAt(target);
       setMinimised(false);
       setAfterSetId(options.afterSetId ?? null);
+      setRecord(options.record ?? null);
       writeRest({ endsAt: target, totalMs: ms, scopeId });
     },
     [scopeId],
@@ -83,12 +96,13 @@ export function RestTimerProvider({
     setTotalMs(0);
     setMinimised(false);
     setAfterSetId(null);
+    setRecord(null);
     clearRest();
   }, []);
 
   const value = useMemo(
-    () => ({ endsAt, totalMs, minimised, upNext, afterSetId, start, extend, stop, setMinimised, setUpNext }),
-    [endsAt, totalMs, minimised, upNext, afterSetId, start, extend, stop],
+    () => ({ endsAt, totalMs, minimised, upNext, afterSetId, record, start, extend, stop, setMinimised, setUpNext }),
+    [endsAt, totalMs, minimised, upNext, afterSetId, record, start, extend, stop],
   );
 
   return <RestTimerContext.Provider value={value}>{children}</RestTimerContext.Provider>;
@@ -140,7 +154,7 @@ const ATTACH: Array<{ kind: ChildSetKind; label: string }> = [
  * when it runs out — the cue says so, and the next set is waiting underneath.
  */
 export function RestTimerView() {
-  const { endsAt, totalMs, minimised, upNext, afterSetId, extend, stop, setMinimised, start } =
+  const { endsAt, totalMs, minimised, upNext, afterSetId, record, extend, stop, setMinimised, start } =
     useRestTimer();
   const settings = useSettings();
   const pro = settings?.mode === 'pro';
@@ -223,6 +237,22 @@ export function RestTimerView() {
         </div>
 
         <div className="rb-mid">
+          {/* The news of the set just done, ahead of the countdown: this is
+              the moment it happened, and the rest is when you can take it in. */}
+          {record ? (
+            <div className="rb-record" role="status">
+              <span className="sr-only">{record.spoken}</span>
+              <p className="kicker" aria-hidden="true">
+                New record
+              </p>
+              <p className="rb-record-num" aria-hidden="true">
+                {record.headline}
+              </p>
+              <p className="rb-record-detail" aria-hidden="true">
+                {record.detail}
+              </p>
+            </div>
+          ) : null}
           {/* Tapping the number skips, as a shortcut for the button below that
               says so; the button is the accessible route. */}
           <p className="rb-time" role="timer" onClick={stop}>

@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { WorkoutExerciseView, WorkoutView } from '@/db/queries';
-import { usePreviousPerformance, useSetSuggestion } from '@/db/queries';
+import { usePreviousPerformance, useRecordMarks, useSetSuggestion } from '@/db/queries';
 import { addSet } from '@/db/mutations';
 import { Icon } from '@/components/icons';
+import { recordSetIds, type RecordMarks } from '@/domain/prs';
 import { setOrdinals } from '@/domain/sets';
 import { setInHand, supersetLabel } from '@/domain/supersets';
 import { formatClock } from '@/lib/dates';
@@ -41,7 +42,7 @@ export default function StationCard({
   nextStationName: string | null;
   onNext: (() => void) | null;
   onFinish: () => void;
-  onToast: (message: string) => void;
+  onToast: (message: string, tone?: 'hot') => void;
 }) {
   const { setUpNext } = useRestTimer();
   const [openSetId, setOpenSetId] = useState<string | null>(null);
@@ -55,6 +56,16 @@ export default function StationCard({
     superset_group: entry.workoutExercise.superset_group,
   }));
   const badge = (index: number) => supersetLabel(sessionMembers, station[index]!);
+
+  // What each lift's records stood at before today, for the flash and the chips.
+  const prior = useRecordMarks(entries.map((entry) => entry.exercise?.id), workoutId);
+  const priorFor = (entry: WorkoutExerciseView): RecordMarks | null | undefined =>
+    entry.exercise ? prior?.get(entry.exercise.id) : null;
+  // A lift entered twice in one session is still one lift: its sets are judged together.
+  const liftSets = (entry: WorkoutExerciseView) =>
+    entry.exercise
+      ? view.exercises.filter((other) => other.exercise?.id === entry.exercise!.id).flatMap((other) => other.sets)
+      : entry.sets;
 
   // With nothing left in hand, the rest screen points at what comes next.
   const doneLabel = nextStationName
@@ -108,6 +119,7 @@ export default function StationCard({
       ordinals={setOrdinals(entry.sets)}
       inHandId={inHandId}
       exerciseName={entry.exercise?.name ?? 'Exercise'}
+      recordIds={recordSetIds(liftSets(entry), priorFor(entry) ?? null)}
       onOpen={setOpenSetId}
     />
   );
@@ -144,6 +156,8 @@ export default function StationCard({
             workoutId={workoutId}
             pro={pro}
             restSeconds={restFor(entries[inHand.member]!)}
+            prior={priorFor(entries[inHand.member]!)}
+            liftSets={liftSets(entries[inHand.member]!)}
             header={header(entries[inHand.member]!, 'big')}
             chips={chips(entries[inHand.member]!, inHand.setId)}
             onToast={onToast}
@@ -229,6 +243,8 @@ function InHand({
   workoutId,
   pro,
   restSeconds,
+  prior,
+  liftSets,
   header,
   chips,
   onToast,
@@ -241,9 +257,11 @@ function InHand({
   workoutId: string;
   pro: boolean;
   restSeconds: number;
+  prior: RecordMarks | null | undefined;
+  liftSets: WorkoutExerciseView['sets'];
   header: ReactNode;
   chips: ReactNode;
-  onToast: (message: string) => void;
+  onToast: (message: string, tone?: 'hot') => void;
 }) {
   const suggestion = useSetSuggestion(workoutId, entry.exercise?.id);
   const previous = usePreviousPerformance(entry.exercise?.id, workoutId);
@@ -267,6 +285,8 @@ function InHand({
         restSeconds={restSeconds}
         suggestion={suggestion}
         previous={previous}
+        prior={prior}
+        liftSets={liftSets}
         onToast={onToast}
       />
     </section>
