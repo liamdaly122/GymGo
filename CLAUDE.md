@@ -498,6 +498,47 @@ frame: the cue fired the moment you pressed Done and whenever a running rest was
 restored — and since it fires once per end time, not again when that rest ran
 out. `test:toolkit` stubs `navigator.vibrate` to hold it to that.
 
+**A pyramid is one working top set and back-off sets around it**, laid out when
+the session starts (`schemeSetTypes` in `src/domain/schemes.ts`): the top set
+first in a reverse pyramid, last in a pyramid. Using the set types the counting
+rules already know is what kept every other rule unchanged. The progression
+engine judges `working` sets only, so it moves the top set against the rep range
+and a back-off set's extra reps cannot read as failure or as a double jump;
+records and last time read the top set; volume counts every set. Each back-off
+set's placeholder is `schemeTarget`: 10% lighter per step from the top set,
+rounded down through the plates, for two more reps, worked out from today's top
+set once it is done. The routine editor's Pro block picks the scheme, and the
+set in hand labels the others "Ramp" or "Back-off". Tempo, set on a routine and
+copied onto the session, shows on the set in hand, and a tap spells it out.
+
+**Beginner reaches Pro tools through sheets, never on the screen you log on.**
+The brief wants one advanced thing usable "without flipping the whole app
+over". RIR, AMRAP, the techniques — drop, rest-pause, myo, cluster, back-off —
+in the set sheet, and the overflow's superset toggle, are there in both modes,
+because a sheet is already a tap away. The set in hand's RIR row and the rest
+screen's technique row stay Pro, which keeps Beginner's logging screen as plain
+as it promises; `test:pro` checks exactly that screen.
+
+Each lift's screen has a **weight step** (`exercise.increment_kg`, which
+`incrementFor` always read and nothing set) and the brief's **percentage
+table**: from the best estimated max or one you type, each row rounded down
+through the default gym's plates (`loadablePercentageTable`), so every load can
+be made and none is heavier than its percentage. A typed max is not stored:
+that would need a column.
+
+## Body weight
+
+The brief: "Bodyweight gets entered manually." Progress → Body logs it to
+`body_metrics`, which had been in the schema, synced and backed up, with nothing
+writing it. One entry per metric per day (`logBodyMetric`, on the `[metric+date]`
+index), so a second weigh-in corrects the first. The chart plots the seven-day
+average (`src/domain/bodyMetrics.ts`), because a day's reading swings by a kilo
+with water and salt, and the change over 30 days says nothing until there is a
+month to measure. Dates are the lifter's own calendar day (`isoDate`), as
+"today" is everywhere else: in UTC, a weigh-in just after midnight in summer was
+filed under yesterday. Only body weight is offered; the functions take the
+metric, so measurements could follow without rework.
+
 ## Gyms
 
 `gyms.equipment_available` is what plan filling, plan viability warnings, swap
@@ -541,6 +582,35 @@ routines, which is what keeps this feature clear of the immutability rule.
 `npm run templates:check` walks all 216 goal/split/day combinations across four
 gym profiles. A commercial gym must fill everything; a constrained gym may rule
 combinations out but must still leave one workable option at every day count.
+
+**Adjust holds the rest of the brief's inputs**, and the order is fill, then
+pins, then tailoring (`tailorPlan` in `tailor.ts`), so a time limit trims the
+week the lifter actually chose:
+
+- **Time per session sizes each day so its hardest week fits** (the owner's
+  choice): the same `estimateDurationMinutes` and `setsForWeek` that Today uses
+  for "about N min", so no screen shows a session over the limit. Cuts run
+  least important first — optional accessories, a set off secondaries and
+  accessories down to two, optional secondaries, a set off main lifts down to
+  three — and a priority muscle's work goes only after all of that. A main
+  lift or a hand-picked swap is never dropped. Each day lists its cuts, and one
+  that still runs over says so.
+- **Experience** reaches the fill's existing ranking.
+- **Priority muscles** (up to two) get one more set on every lift they lead, up
+  to the goal's weekly ceiling (`WEEKLY_SET_TARGET`).
+- **Lifts to avoid** are lift families, so "no deadlifts" means every deadlift.
+  There is deliberately no injury-to-lift table: which movements a bad shoulder
+  tolerates is not for a rules engine to guess. The list reaches rotation too,
+  so a block's end never brings an avoided lift back.
+
+The choices live in localStorage (`src/lib/builderPrefs.ts`). A synced home
+would need a new column, and a new column is a migration the owner runs by hand.
+With nothing set, plans come out exactly as before.
+
+**"Why these exercises?"** gives each pick one line from `explainPick`
+(`explain.ts`), built from what the fill actually weighed: the slot's job, a
+barbell for main lifts, a fallback when the kit ran out, a staple, a priority
+set. It is the brief's "must be able to explain each choice in plain English".
 
 ## Changing exercises
 
@@ -654,7 +724,7 @@ Three layers, each earning its place:
 The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
 `test:plans`, `test:swap`, `test:gyms`, `test:pro`, `test:block`,
 `test:programme`, `test:toolkit`, `test:smart`, `test:session`,
-`test:rollover`, `test:planswap` and `test:report`. They expect a
+`test:rollover`, `test:planswap`, `test:report` and `test:body`. They expect a
 preview server on `127.0.0.1:5185` — `test:offline` runs its own on 5190. Each
 takes a `BASE_URL` override. `test:backup` is self-contained: it starts the
 stand-in Supabase on 54329, builds a copy of the app pointed at it, and serves
@@ -691,6 +761,14 @@ screen looks identical. These in particular are load-bearing:
 - the `Backup` region in Settings: `Email address`, `Password`, `Sign in`,
   `Back up now`, and its `status`, which reads `Backed up` once nothing is
   waiting
+- `Body` on Progress, with `Today's weight in kilograms` and `Save weight`;
+  on a lift's screen, the `Percentage table` region with `Your max in
+  kilograms`, and the `Weight step` group
+- `Adjust plan`, whose sheet holds the `Time per session`, `Experience`,
+  `Priority muscles` and `Lifts to avoid` groups; `Why these exercises?` (a
+  switch)
+- `<Exercise> set scheme` in the routine editor; `Tempo <tempo>` on the set in
+  hand; `+ Cluster` and `+ Back-off` with the other techniques
 - `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
 
 `Add exercise` names exactly one control at a time: the empty state owns it

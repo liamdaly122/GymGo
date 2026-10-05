@@ -66,9 +66,13 @@ Plus:
 - [x] Pro mode and the advanced set techniques — drop sets, rest-pause, myo-reps
       and supersets
 - [x] Accessory rotation between blocks, and a report at the end of each block
+- [x] Body weight log; a percentage table and weight step for every lift
+- [x] Plan builder inputs from the brief — time per session, experience,
+      priority muscles, lifts to avoid — and a reason for every pick
+- [x] Pyramids, tempo on screen, back-off and cluster sets, and Pro tools
+      reachable from Beginner mode
 
-Still to come: a body weight log, a percentage table from your estimated max,
-and progress photos.
+Still to come: progress photos, kept on the phone.
 
 ## Exercise data
 
