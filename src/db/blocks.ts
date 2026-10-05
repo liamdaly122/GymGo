@@ -9,6 +9,7 @@
 import { db } from './db';
 import { SETTINGS_ID, type Gym, type Plan } from './schema';
 import { rotateAccessories, type Rotation } from '@/domain/programmes/rotation';
+import { loadBuilderPrefs } from '@/lib/builderPrefs';
 
 /** The gym plans are built against: the one settings name, else the default. */
 export async function defaultGym(): Promise<Gym | null> {
@@ -63,5 +64,9 @@ export async function nextBlockRotation(plan: Plan): Promise<Rotation[]> {
   );
 
   const gym = await defaultGym();
-  return rotateAccessories(plan.goal, sessions, exercises, { equipment: gym?.equipment_available ?? null });
+  return rotateAccessories(plan.goal, sessions, exercises, {
+    equipment: gym?.equipment_available ?? null,
+    // What the lifter ruled out in the builder stays ruled out.
+    avoidFamilies: loadBuilderPrefs().avoidFamilies,
+  });
 }

@@ -17,6 +17,7 @@ import type { Exercise } from '@/db/schema';
 import type { Equipment, ExperienceLevel, MovementPattern } from '../types';
 import type { SessionSlot, SessionTemplate } from './templates';
 import { STAPLE_SCORE, stapleTier } from './staples';
+import { liftFamily } from '../search';
 
 export interface FillOptions {
   /** Equipment the chosen gym has. Null or empty means "assume everything". */
@@ -24,6 +25,11 @@ export interface FillOptions {
   experience?: ExperienceLevel;
   /** Injuries, dislikes, anything the user has ruled out. */
   excludeExerciseIds?: readonly string[];
+  /**
+   * Whole lifts ruled out, by family (`liftFamily`): "no deadlifts" means the
+   * Romanian and the sumo too, not one exercise id.
+   */
+  avoidFamilies?: readonly string[];
   /** Same seed, same plan. */
   seed?: number;
   /** Exercises already used elsewhere this week, deprioritised for variety. */
@@ -123,6 +129,7 @@ function candidatesFor(
   const equipment = options.equipment;
   const restrictEquipment = Array.isArray(equipment) && equipment.length > 0;
   const excluded = new Set(options.excludeExerciseIds ?? []);
+  const avoided = new Set(options.avoidFamilies ?? []);
   const patterns = patternsFor(slot);
 
   const results: Array<{ exercise: Exercise; patternIndex: number }> = [];
@@ -130,6 +137,7 @@ function candidatesFor(
   for (const exercise of exercises) {
     if (exercise.deleted_at !== null) continue;
     if (taken.has(exercise.id) || excluded.has(exercise.id)) continue;
+    if (avoided.size > 0 && avoided.has(liftFamily(exercise.name) ?? '')) continue;
     if (restrictEquipment && !equipment.includes(exercise.equipment)) continue;
     if (slot.compoundOnly && !exercise.is_compound) continue;
     if (slot.requireMuscle && slot.muscle && exercise.primary_muscle !== slot.muscle) continue;

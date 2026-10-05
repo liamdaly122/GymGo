@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Exercise } from '@/db/schema';
 import { useDefaultGym, useExercises, useSettings } from '@/db/queries';
 import { createRoutinesFromPlan } from '@/db/mutations';
-import { BackLink, Button, Pill, Screen, ScreenHeader, SectionLabel } from '@/components/ui';
+import { BackLink, Button, Pill, Screen, ScreenHeader, SectionLabel, Toggle } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import { Toast, useToast } from '@/components/Toast';
 import { findGoal } from '@/domain/programmes/goals';
@@ -20,7 +20,11 @@ import type { SplitId } from '@/domain/programmes/splits';
 import type { TrainingGoalId } from '@/domain/programmes/goals';
 import SwapPanel, { SwapOverlay, planScopeHint, type SwapScopeOption } from '@/features/swap/SwapPanel';
 import { liftFamily, planSwapTargets } from '@/domain/search';
+import { AVOIDABLE_LIFTS, PRIORITY_MUSCLES, tailorPlan } from '@/domain/programmes/tailor';
+import { explainPick } from '@/domain/programmes/explain';
+import { loadBuilderPrefs, saveBuilderPrefs, type BuilderPrefs } from '@/lib/builderPrefs';
 import BuilderSteps from './BuilderSteps';
+import PlanOptionsSheet from './PlanOptionsSheet';
 
 type Scope = 'day' | 'plan';
 
@@ -35,6 +39,11 @@ type Scope = 'day' | 'plan';
  * reaches each day's version of the lift. A swap is pinned to its slot, so
  * Shuffle re-rolls everything else and keeps what you chose; a lift swapped
  * out of the whole plan stays out of every shuffle after it.
+ *
+ * Adjust holds the rest of the brief's inputs — time per session,
+ * experience, priority muscles, lifts to avoid — and "Why these exercises?"
+ * says what each pick is for. The order is fill, then pins, then tailoring,
+ * so a time limit trims the week you actually chose.
  */
 export default function PlanPreviewScreen() {
   const { goalId, splitId } = useParams<{ goalId: string; splitId: string }>();
@@ -53,6 +62,14 @@ export default function PlanPreviewScreen() {
   const [excluded, setExcluded] = useState<string[]>([]);
   const [swapping, setSwapping] = useState<{ dayIndex: number; slotIndex: number } | null>(null);
   const [toast, showToast] = useToast();
+  const [prefs, setPrefs] = useState<BuilderPrefs>(loadBuilderPrefs);
+  const [adjusting, setAdjusting] = useState(false);
+  const [showWhy, setShowWhy] = useState(false);
+
+  const updatePrefs = (next: BuilderPrefs) => {
+    setPrefs(next);
+    saveBuilderPrefs(next);
+  };
 
   const days = Number.parseInt(search.get('days') ?? '4', 10);
   const goal = goalId ? findGoal(goalId) : undefined;
@@ -63,14 +80,22 @@ export default function PlanPreviewScreen() {
       const generated = buildPlan(
         { goalId: goal.id as TrainingGoalId, splitId: splitId as SplitId, days },
         exercises,
-        { equipment: gym?.equipment_available ?? null, seed, excludeExerciseIds: excluded },
+        {
+          equipment: gym?.equipment_available ?? null,
+          seed,
+          excludeExerciseIds: excluded,
+          experience: prefs.experience,
+          avoidFamilies: prefs.avoidFamilies,
+        },
       );
-      const plan = pinExercises(generated, pins);
-      return { plan, viability: assessPlan(plan) };
+      const pinned = pinExercises(generated, pins);
+      // Viability is about the gym, so it is judged before time trims anything.
+      const plan = tailorPlan(pinned, { priorities: prefs.priorities, minutes: prefs.minutes });
+      return { plan, viability: assessPlan(pinned) };
     } catch {
       return null;
     }
-  }, [goal, splitId, exercises, gym, days, seed, excluded, pins]);
+  }, [goal, splitId, exercises, gym, days, seed, excluded, pins, prefs]);
 
   if (exercises === undefined) {
     return (
@@ -152,9 +177,25 @@ export default function PlanPreviewScreen() {
       <ScreenHeader title={plan.split.label} label={`${goal.label} · ${plan.days} days`} />
 
       <div className="stack">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Pill tone="accent">{plan.days} days a week</Pill>
           {gym ? <Pill>{gym.name}</Pill> : null}
+          {prefs.minutes ? <Pill>{prefs.minutes} min a session</Pill> : null}
+          {prefs.experience !== 'intermediate' ? (
+            <Pill>{prefs.experience === 'beginner' ? 'Beginner' : 'Expert'}</Pill>
+          ) : null}
+          {prefs.priorities.map((muscle) => (
+            <Pill key={muscle}>More {PRIORITY_MUSCLES.find((entry) => entry.muscle === muscle)?.label.toLowerCase() ?? muscle}</Pill>
+          ))}
+          {prefs.avoidFamilies.map((family) => (
+            <Pill key={family}>No {AVOIDABLE_LIFTS.find((entry) => entry.family === family)?.label.toLowerCase() ?? family}</Pill>
+          ))}
+        </div>
+        <div className="stack-sm">
+          <Button block onClick={() => setAdjusting(true)}>
+            Adjust plan
+          </Button>
+          <p className="t-meta">Time per session, experience, priority muscles and lifts to avoid.</p>
         </div>
 
         {!viability.viable && viability.reason ? (
@@ -191,6 +232,12 @@ export default function PlanPreviewScreen() {
         </section>
 
         <p className="t-meta">Don't fancy one? Swap it, on its day or across the whole plan.</p>
+        <Toggle
+          label="Why these exercises?"
+          hint="What each pick is for, and why this one."
+          checked={showWhy}
+          onChange={setShowWhy}
+        />
 
         {plan.sessions.map((session) => (
           <section key={`${session.templateId}-${session.dayIndex}`} className="card" aria-label={`Day ${session.dayIndex + 1}`}>
@@ -198,7 +245,10 @@ export default function PlanPreviewScreen() {
               <h2 className="t-h2">
                 Day {session.dayIndex + 1} · {session.name}
               </h2>
-              <span className="t-meta shrink-0">{session.exercises.length} exercises</span>
+              <span className="t-meta shrink-0">
+                {session.exercises.length} exercises
+                {prefs.minutes && session.peakMinutes ? ` · ${session.peakMinutes} min` : ''}
+              </span>
             </div>
             <ul className="list ex-list">
               {session.exercises.map((entry) => {
@@ -209,6 +259,9 @@ export default function PlanPreviewScreen() {
                     <span className="ex-name flex-1">
                       <span>{entry.exercise.name}</span>
                       {chosen ? <span className="text-xs font-semibold text-hot">Your swap</span> : null}
+                      {showWhy ? (
+                        <span className="text-xs text-muted">{explainPick(entry, { experience: prefs.experience })}</span>
+                      ) : null}
                     </span>
                     <span className="ex-pres">
                       {entry.prescription.sets} × {entry.prescription.repLow}–{entry.prescription.repHigh}
@@ -225,6 +278,7 @@ export default function PlanPreviewScreen() {
                 );
               })}
             </ul>
+            <TrimNote session={session} minutes={prefs.minutes} />
           </section>
         ))}
 
@@ -262,8 +316,40 @@ export default function PlanPreviewScreen() {
         </SwapOverlay>
       ) : null}
 
+      {adjusting ? (
+        <PlanOptionsSheet prefs={prefs} onChange={updatePrefs} onClose={() => setAdjusting(false)} />
+      ) : null}
+
       <Toast message={toast} />
     </Screen>
+  );
+}
+
+/** What a time limit cost this day, and whether it still runs over. */
+function TrimNote({ session, minutes }: { session: GeneratedPlan['sessions'][number]; minutes: number | null }) {
+  if (!minutes) return null;
+  const dropped = (session.trimmed ?? []).filter((lift) => lift.cut === 'dropped');
+  const shortened = (session.trimmed ?? []).filter((lift) => lift.cut === 'shortened');
+  const over = (session.peakMinutes ?? 0) > minutes;
+  if (dropped.length === 0 && shortened.length === 0 && !over) return null;
+  return (
+    <div className="stack-sm border-t border-line pt-3">
+      {dropped.length > 0 ? (
+        <p className="t-meta">
+          Cut to fit {minutes} min: {dropped.map((lift) => lift.exercise.name).join(', ')}.
+        </p>
+      ) : null}
+      {shortened.length > 0 ? (
+        <p className="t-meta">
+          Fewer sets on {shortened.length} {shortened.length === 1 ? 'lift' : 'lifts'}.
+        </p>
+      ) : null}
+      {over ? (
+        <p className="text-sm text-warn">
+          Even trimmed, its hardest week runs about {session.peakMinutes} min. Main lifts are never cut out.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

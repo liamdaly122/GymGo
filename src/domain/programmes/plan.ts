@@ -25,6 +25,10 @@ export interface PlannedExercise {
   exercise: Exercise;
   slot: SessionSlot;
   prescription: Prescription;
+  /** Chosen by hand in the builder, so tailoring never drops it. */
+  pinned?: boolean;
+  /** Sets added because its muscle is a priority (`tailorPlan`). */
+  prioritySets?: number;
 }
 
 export interface PlannedSession {
@@ -35,6 +39,16 @@ export interface PlannedSession {
   exercises: PlannedExercise[];
   /** Slots this gym could not cover. Shown to the user, not swept away. */
   unfilled: SessionSlot[];
+  /** What `tailorPlan` cut to fit a time limit, if one was set. */
+  trimmed?: TrimmedLift[];
+  /** The hardest week's length in minutes, once a time limit is set. */
+  peakMinutes?: number;
+}
+
+export interface TrimmedLift {
+  exercise: Exercise;
+  /** Left out, or kept with fewer sets. */
+  cut: 'dropped' | 'shortened';
 }
 
 export interface GeneratedPlan {
@@ -51,6 +65,8 @@ export interface BuildPlanOptions {
   equipment?: Equipment[] | null;
   experience?: ExperienceLevel;
   excludeExerciseIds?: readonly string[];
+  /** Lift families to leave out of the whole plan: injuries and dislikes. */
+  avoidFamilies?: readonly string[];
   seed?: number;
 }
 
@@ -110,6 +126,7 @@ export function buildPlan(
       ...(options.equipment !== undefined ? { equipment: options.equipment } : {}),
       ...(options.experience ? { experience: options.experience } : {}),
       ...(options.excludeExerciseIds ? { excludeExerciseIds: options.excludeExerciseIds } : {}),
+      ...(options.avoidFamilies ? { avoidFamilies: options.avoidFamilies } : {}),
       seed,
     },
   );
@@ -187,6 +204,7 @@ export function pinExercises(plan: GeneratedPlan, pins: readonly PlanPin[]): Gen
           isCompound: pin.exercise.is_compound,
           restMultiplier: plan.goal.restMultiplier,
         }),
+        pinned: true,
       };
 
       const at = exercises.findIndex((existing) => existing.slot === slot);

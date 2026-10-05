@@ -59,15 +59,21 @@ const CANDIDATES = 60;
  *
  * `sessions` holds each of the plan's routines as its rows in session order.
  * `equipment` is the gym's: null or empty means "assume everything", as when
- * a plan is built. An accessory missing from the result stays as it is.
+ * a plan is built. `avoidFamilies` are lifts the lifter ruled out in the
+ * builder, which a rotation must not bring in. An accessory missing from the
+ * result stays as it is.
  */
 export function rotateAccessories(
   profile: Goal,
   sessions: readonly (readonly RotationRow[])[],
   exercises: Exercise[],
-  options: { equipment?: Equipment[] | null } = {},
+  options: { equipment?: Equipment[] | null; avoidFamilies?: readonly string[] } = {},
 ): Rotation[] {
   const isAccessory = (row: RotationRow) => roleForPrescription(profile, row) === 'accessory';
+  const avoided = new Set(options.avoidFamilies ?? []);
+  const allowed = avoided.size === 0
+    ? exercises
+    : exercises.filter((exercise) => !avoided.has(liftFamily(exercise.name) ?? ''));
 
   // Last block's accessories, the whole week of them.
   const outgoing = new Set(
@@ -83,7 +89,7 @@ export function rotateAccessories(
 
     accessories.forEach((row, index) => {
       const current = row.exercise;
-      const alternatives = exerciseAlternatives(current, exercises, {
+      const alternatives = exerciseAlternatives(current, allowed, {
         availableEquipment: options.equipment ?? null,
         limit: CANDIDATES,
       });
