@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  nextStation,
   restsAfterSet,
   sessionStations,
   setInHand,
@@ -205,5 +206,32 @@ describe('walking the session one stop at a time', () => {
     const visited = sessionStations(list).flat().sort((x, y) => x - y);
 
     expect(visited).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+});
+
+describe('where the session goes next', () => {
+  it('is the next station with work left', () => {
+    expect(nextStation([false, true, true], 0)).toBe(1);
+    expect(nextStation([false, false, true, true], 1)).toBe(2);
+  });
+
+  it('passes over stations already done', () => {
+    expect(nextStation([false, false, false, true], 0)).toBe(3);
+  });
+
+  it('comes back round to one skipped earlier', () => {
+    // Exercise 2 was taken, so 3 went first: finishing 3 goes back for 2.
+    expect(nextStation([false, true, false], 2)).toBe(1);
+  });
+
+  it('is nowhere when nothing else has work left', () => {
+    expect(nextStation([false, false, false], 1)).toBeNull();
+    expect(nextStation([false], 0)).toBeNull();
+    expect(nextStation([], 0)).toBeNull();
+  });
+
+  it('never points back at the station it leaves, even with work in it', () => {
+    expect(nextStation([true, false], 0)).toBeNull();
+    expect(nextStation([true, true], 0)).toBe(1);
   });
 });

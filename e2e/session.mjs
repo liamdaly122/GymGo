@@ -1,7 +1,9 @@
 /**
- * The logging screen after the rework: one station on screen, focus that only
- * ever moves because you moved it, a readiness answer that visibly changes the
- * numbers, and a first-time lift that says it is guessing.
+ * The logging screen after the rework: one station on screen; focus that moves
+ * because you moved it, or once the rest after an exercise's last set is over,
+ * with the rest naming where it goes; a readiness answer that visibly changes
+ * the numbers; a first-time lift that says it is guessing; and each set
+ * starting at what the last one did.
  */
 import { chromium } from 'playwright';
 
@@ -60,9 +62,10 @@ await step('only one exercise is on screen', async () => {
   const fields = await p.getByLabel(/Set \d+ weight in kilograms/).count();
   if (fields !== 1) throw new Error(`expected one set row on screen, found ${fields}`);
 
-  const body = await p.locator('body').innerText();
+  // The station, not the page: the strip in the header names every exercise.
+  const station = await p.locator('main').innerText();
   const named = ['Barbell Bench Press', 'Barbell Squat', 'One-Arm Dumbbell Row']
-    .filter((name) => shows(body, name));
+    .filter((name) => shows(station, name));
   if (named.length !== 1) throw new Error(`expected one exercise named on screen, saw: ${named.join(', ')}`);
 
   const { at, of } = await headerPosition();
@@ -76,41 +79,105 @@ await step('the strip jumps back to the first exercise', async () => {
   await p.waitForTimeout(500);
   const { at } = await headerPosition();
   if (at !== 1) throw new Error(`the strip should have gone to exercise 1, header says ${at}`);
-  const body = await p.locator('body').innerText();
-  if (!shows(body, 'Barbell Bench Press')) throw new Error('the bench should be the station on screen');
-  if (shows(body, 'Barbell Squat')) throw new Error('only one station may render');
+  const station = await p.locator('main').innerText();
+  if (!shows(station, 'Barbell Bench Press')) throw new Error('the bench should be the station on screen');
+  if (shows(station, 'Barbell Squat')) throw new Error('only one station may render');
 });
 
-await step('finishing a station does not move the screen', async () => {
-  // This is the rule the rework turns on: focus is a tap, never a side effect.
-  // If the screen jumped on the last tick, a mistyped rep would be one screen
-  // behind you and the rest dial would belong to something else.
+await step('the rest names the exercise, and after its last set, the next one', async () => {
+  // The gym note: "Up next: Set 1" told the lifter nothing. Every rest names
+  // an exercise now, and the one after an exercise's last set names the next.
   await p.getByRole('button', { name: 'Add set' }).first().click();
   await p.waitForTimeout(400);
 
-  for (const s of [1, 2]) {
-    await p.getByLabel(`Set ${s} weight in kilograms`).fill('100');
-    await p.getByLabel(`Set ${s} repetitions`).fill('8');
-    await p.getByLabel(new RegExp(`Mark set ${s} done`)).click();
-    await p.waitForTimeout(400);
-    await skipRest();
+  await p.getByLabel('Set 1 weight in kilograms').fill('100');
+  await p.getByLabel('Set 1 repetitions').fill('8');
+  await p.getByLabel(/Mark set 1 done/).click();
+  await p.waitForTimeout(400);
+  const mid = await p.locator('.rb-next').innerText();
+  if (!shows(mid, 'Barbell Bench Press') || !/Set 2 of 2 · 100 × 8/i.test(mid)) {
+    throw new Error(`mid-exercise, the rest should name the bench and set 2, it says: ${mid.replace(/\n/g, ' | ')}`);
   }
+  await skipRest();
 
-  const { at } = await headerPosition();
-  if (at !== 1) throw new Error(`the screen moved on its own — header says ${at}, should still say 1`);
-  const body = await p.locator('body').innerText();
-  if (!shows(body, 'Barbell Bench Press')) throw new Error('the finished station should still be on screen');
-  if (!/all sets done/i.test(body)) throw new Error('a finished station should say so');
+  await p.getByLabel('Set 2 weight in kilograms').fill('100');
+  await p.getByLabel('Set 2 repetitions').fill('8');
+  await p.getByLabel(/Mark set 2 done/).click();
+  await p.waitForTimeout(400);
+  const last = await p.locator('.rb-next').innerText();
+  if (!shows(last, 'Barbell Squat')) throw new Error(`the last rest should name the squat, it says: ${last.replace(/\n/g, ' | ')}`);
+  // And what to go and find for it.
+  if (!/Barbell · 1 set/i.test(last)) throw new Error(`the last rest should say what the squat needs, it says: ${last.replace(/\n/g, ' | ')}`);
 });
 
-await step('"Next exercise" is what moves it', async () => {
+await step('under that rest the finished exercise stays, for a mistyped rep', async () => {
+  await p.getByRole('button', { name: 'Show sets' }).click();
+  await p.waitForTimeout(300);
+  const { at } = await headerPosition();
+  if (at !== 1) throw new Error(`the screen moved before the rest was over — header says ${at}`);
+  const station = await p.locator('main').innerText();
+  if (!shows(station, 'Barbell Bench Press')) throw new Error('the bench should still be on screen');
+  if (!/all sets done/i.test(station)) throw new Error('a finished station should say so');
+});
+
+await step('when that rest is over, the next exercise is waiting', async () => {
+  await skipRest();
+  await p.waitForTimeout(300);
+  const { at } = await headerPosition();
+  if (at !== 2) throw new Error(`expected to have moved on to exercise 2, header says ${at}`);
+  if (!shows(await p.locator('main').innerText(), 'Barbell Squat')) throw new Error('the squat should be on screen');
+});
+
+await step('the strip goes back, and "Next exercise" goes on', async () => {
+  await p.getByRole('button', { name: /^Barbell Bench Press - Medium Grip, \d+ of \d+ sets done$/ }).click();
+  await p.waitForTimeout(400);
+  if ((await headerPosition()).at !== 1) throw new Error('the strip should go back to the bench');
+
   await p.getByRole('button', { name: /Next exercise/ }).click();
   await p.waitForTimeout(500);
   const { at } = await headerPosition();
   if (at !== 2) throw new Error(`expected exercise 2, header says ${at}`);
-  const body = await p.locator('body').innerText();
-  if (!shows(body, 'Barbell Squat')) throw new Error('the squat should be the station on screen');
+  if (!shows(await p.locator('main').innerText(), 'Barbell Squat')) throw new Error('the squat should be the station on screen');
 });
+
+await step('the strip names every exercise', async () => {
+  // The gym note: nothing said what was coming, or which machine to go and find.
+  const strip = await p.getByRole('list', { name: 'Exercises in this session' }).innerText();
+  for (const name of ['Barbell Bench Press', 'Barbell Squat', 'One-Arm Dumbbell Row']) {
+    if (!shows(strip, name)) throw new Error(`the strip should name ${name}, it reads: ${strip.replace(/\n/g, ' | ')}`);
+  }
+});
+
+await step('"Exercise N/M" opens the whole session, kit and all', async () => {
+  await p.getByRole('button', { name: /^Exercise 2 of 3, show the whole session$/ }).click();
+  const sheet = p.getByRole('dialog', { name: 'This session' });
+  await sheet.waitFor({ timeout: 5000 });
+  const text = await sheet.innerText();
+  for (const line of [
+    /Barbell Bench Press/i,
+    /Barbell · 2 sets/i,
+    /Barbell Squat/i,
+    /Barbell · 1 set\b/i,
+    /One-Arm Dumbbell Row/i,
+    /Dumbbell · 1 set\b/i,
+  ]) {
+    if (!line.test(text)) throw new Error(`the session list should show ${line}, it shows: ${text.replace(/\n/g, ' | ')}`);
+  }
+  // Where you are, marked; and the bench, done.
+  const here = await sheet.locator('[aria-current="step"]').innerText();
+  if (!shows(here, 'Barbell Squat')) throw new Error(`the squat should be marked as where you are, not ${here}`);
+  if (!(await sheet.getByRole('button', { name: /Barbell Bench Press.*, done$/ }).count())) {
+    throw new Error('the bench should read as done');
+  }
+
+  // A tap goes there, and the list gets out of the way.
+  await sheet.getByRole('button', { name: /One-Arm Dumbbell Row/ }).click();
+  await p.waitForTimeout(400);
+  if (await p.getByRole('dialog', { name: 'This session' }).count()) throw new Error('picking a row should close the list');
+  const { at } = await headerPosition();
+  if (at !== 3) throw new Error(`picking the row should go to exercise 3, header says ${at}`);
+});
+await p.screenshot({ path: 'e2e/shot-session-strip.png' });
 
 await step('finish the session so the bench has history', async () => {
   await p.getByRole('button', { name: 'Finish', exact: true }).click();
@@ -190,6 +257,11 @@ await step('a set you have done asks before it goes', async () => {
   await p.getByLabel(/Mark set 1 done/).click();
   await p.waitForTimeout(500);
   await skipRest();
+  // Its last set done, the screen moved on to the bench, still to do, when
+  // the rest ended. The strip goes back.
+  if ((await headerPosition()).at !== 1) throw new Error('the screen should have moved on to the bench');
+  await p.getByRole('button', { name: /^Incline Dumbbell Press, \d+ of \d+ sets done$/ }).click();
+  await p.waitForTimeout(400);
 
   await p.getByRole('button', { name: 'Edit set 1, 20kg × 10, done' }).click();
   await p.getByRole('button', { name: 'Delete set 1' }).click();

@@ -171,3 +171,22 @@ export function sessionStations(entries: SupersetMember[]): number[][] {
 
   return stations;
 }
+
+/**
+ * Where the session goes after station `from`: the next one with work left,
+ * else one skipped earlier, else nowhere.
+ *
+ * One rule for the three things that point onward: the screen moving on when
+ * the rest after a station's last set ends, the "Next exercise" button, and
+ * the rest screen's "Up next". They must name the same place, or the rest
+ * would announce one exercise and the screen land on another.
+ *
+ * `open[i]` says whether station i has anything left unticked.
+ */
+export function nextStation(open: readonly boolean[], from: number): number | null {
+  for (let step = 1; step < open.length; step += 1) {
+    const index = (from + step) % open.length;
+    if (open[index]) return index;
+  }
+  return null;
+}

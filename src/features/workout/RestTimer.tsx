@@ -6,6 +6,16 @@ import { useSettings } from '@/db/queries';
 import { addBackOffSet, addChildSet, type ChildSetKind } from '@/db/mutations';
 import { CONTINUATION_REST_SECONDS, type RecordNews } from './setNames';
 
+/**
+ * What comes after the rest: always an exercise's name, so the rest screen
+ * never reads just "Set 1". The detail is the set and its numbers, or, at the
+ * end of an exercise, the next one's kit and work.
+ */
+export interface UpNext {
+  name: string;
+  detail: string | null;
+}
+
 interface RestOptions {
   afterSetId?: string | null;
   /** The set just done was a record: the rest leads with it. */
@@ -19,7 +29,7 @@ interface RestTimerState {
   /** Shrunk to a bar across the top so the sets are back on screen. */
   minimised: boolean;
   /** What comes after the rest, published by the logging screen. */
-  upNext: string | null;
+  upNext: UpNext | null;
   /** The working set the rest follows, for Pro's quick drop / rest-pause / myo. */
   afterSetId: string | null;
   /**
@@ -27,11 +37,22 @@ interface RestTimerState {
    * rest restored after a reload comes back without it, which costs nothing.
    */
   record: RecordNews | null;
-  start: (seconds: number, options?: RestOptions) => void;
+  /**
+   * The last rest to run its course, by the id `start` gave it: it ran out, or
+   * the lifter skipped it — not one a drop or Finish cut short. The logging
+   * screen moves on to the next exercise when the rest after an exercise's
+   * last set is this one.
+   */
+  lastRun: number | null;
+  /** Starts a rest and returns its id. */
+  start: (seconds: number, options?: RestOptions) => number;
   extend: (seconds: number) => void;
+  /** Ends the rest: a technique took over, or the session did. */
   stop: () => void;
+  /** Ends the rest as over: it ran out, or the lifter skipped it. */
+  finish: () => void;
   setMinimised: (minimised: boolean) => void;
-  setUpNext: (label: string | null) => void;
+  setUpNext: (next: UpNext | null) => void;
 }
 
 const RestTimerContext = createContext<RestTimerState | null>(null);
@@ -56,12 +77,19 @@ export function RestTimerProvider({
   const [endsAt, setEndsAt] = useState<number | null>(restored?.endsAt ?? null);
   const [totalMs, setTotalMs] = useState(restored?.totalMs ?? 0);
   const [minimised, setMinimised] = useState(false);
-  const [upNext, setUpNext] = useState<string | null>(null);
+  const [upNext, setUpNext] = useState<UpNext | null>(null);
+  // Which rest is running, so finishing it can say which ran its course. A
+  // rest restored after a reload has none, and moves nothing on.
+  const restCount = useRef(0);
+  const running = useRef<number | null>(null);
+  const [lastRun, setLastRun] = useState<number | null>(null);
   const [afterSetId, setAfterSetId] = useState<string | null>(null);
   const [record, setRecord] = useState<RecordNews | null>(null);
 
   const start = useCallback(
     (seconds: number, options: RestOptions = {}) => {
+      restCount.current += 1;
+      running.current = restCount.current;
       const ms = Math.max(1, Math.round(seconds)) * 1000;
       const target = Date.now() + ms;
       setTotalMs(ms);
@@ -70,6 +98,7 @@ export function RestTimerProvider({
       setAfterSetId(options.afterSetId ?? null);
       setRecord(options.record ?? null);
       writeRest({ endsAt: target, totalMs: ms, scopeId });
+      return restCount.current;
     },
     [scopeId],
   );
@@ -92,6 +121,7 @@ export function RestTimerProvider({
   );
 
   const stop = useCallback(() => {
+    running.current = null;
     setEndsAt(null);
     setTotalMs(0);
     setMinimised(false);
@@ -100,9 +130,28 @@ export function RestTimerProvider({
     clearRest();
   }, []);
 
+  const finish = useCallback(() => {
+    if (running.current !== null) setLastRun(running.current);
+    stop();
+  }, [stop]);
+
   const value = useMemo(
-    () => ({ endsAt, totalMs, minimised, upNext, afterSetId, record, start, extend, stop, setMinimised, setUpNext }),
-    [endsAt, totalMs, minimised, upNext, afterSetId, record, start, extend, stop],
+    () => ({
+      endsAt,
+      totalMs,
+      minimised,
+      upNext,
+      afterSetId,
+      record,
+      lastRun,
+      start,
+      extend,
+      stop,
+      finish,
+      setMinimised,
+      setUpNext,
+    }),
+    [endsAt, totalMs, minimised, upNext, afterSetId, record, lastRun, start, extend, stop, finish],
   );
 
   return <RestTimerContext.Provider value={value}>{children}</RestTimerContext.Provider>;
@@ -154,7 +203,7 @@ const ATTACH: Array<{ kind: ChildSetKind; label: string }> = [
  * when it runs out — the cue says so, and the next set is waiting underneath.
  */
 export function RestTimerView() {
-  const { endsAt, totalMs, minimised, upNext, afterSetId, record, extend, stop, setMinimised, start } =
+  const { endsAt, totalMs, minimised, upNext, afterSetId, record, extend, stop, finish, setMinimised, start } =
     useRestTimer();
   const settings = useSettings();
   const pro = settings?.mode === 'pro';
@@ -183,8 +232,8 @@ export function RestTimerView() {
       if (settings?.sound_on !== false) playRestFinishedTone();
       if (settings?.vibrate_on !== false) vibrate();
     }
-    stop();
-  }, [endsAt, remaining, settings?.sound_on, settings?.vibrate_on, stop]);
+    finish();
+  }, [endsAt, remaining, settings?.sound_on, settings?.vibrate_on, finish]);
 
   if (endsAt === null || remaining <= 0) return null;
 
@@ -200,7 +249,7 @@ export function RestTimerView() {
           <button type="button" className="btn btn-sm" aria-label="Show rest" onClick={() => setMinimised(false)}>
             Show
           </button>
-          <button type="button" className="btn btn-sm" aria-label="Skip rest" onClick={stop}>
+          <button type="button" className="btn btn-sm" aria-label="Skip rest" onClick={finish}>
             Skip
           </button>
         </div>
@@ -255,7 +304,7 @@ export function RestTimerView() {
           ) : null}
           {/* Tapping the number skips, as a shortcut for the button below that
               says so; the button is the accessible route. */}
-          <p className="rb-time" role="timer" onClick={stop}>
+          <p className="rb-time" role="timer" onClick={finish}>
             {clock}
           </p>
           <div className="rb-bar" aria-hidden="true">
@@ -263,8 +312,8 @@ export function RestTimerView() {
           </div>
           {upNext ? (
             <p className="rb-next">
-              Up next
-              <strong>{upNext}</strong>
+              <span className="rb-next-detail">Up next{upNext.detail ? ` · ${upNext.detail}` : ''}</span>
+              <strong>{upNext.name}</strong>
             </p>
           ) : null}
           {pro && afterSetId ? (
@@ -309,7 +358,7 @@ export function RestTimerView() {
               </span>
             </button>
           </div>
-          <button type="button" className="btn btn-primary btn-lg" onClick={stop}>
+          <button type="button" className="btn btn-primary btn-lg" onClick={finish}>
             Skip rest
           </button>
         </div>

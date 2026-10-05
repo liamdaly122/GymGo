@@ -690,6 +690,63 @@ input[type='number']::-webkit-outer-spin-button {
   .pill.full { background: var(--color-chalk); color: var(--color-ink); }
   .pill.add { background: transparent; box-shadow: inset 0 0 0 1.5px var(--color-line); }
   .pill svg { width: 18px; height: 18px; }
+  /* A pill carries its exercise's name: what comes next, and which machine
+     to go and find, without leaving the set in hand. Cut short past 11rem. */
+  .pill.named { display: flex; align-items: center; gap: 8px; max-width: 11rem; }
+  /* A finished exercise recedes: its check stays, its name fades. A chalk
+     block the width of a name would read as a button to press. */
+  .pill.named.full { background: var(--color-raised); color: var(--color-faint); }
+  .pill.named.full .pill-state { color: var(--color-chalk); }
+  .pill-state { flex: none; display: grid; place-items: center; }
+  .pill-name {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  /* "Exercise 2/5": the way into the whole session, so it reads as a link. */
+  .wk-where {
+    margin: -10px -4px;
+    padding: 10px 4px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--color-faint);
+    text-underline-offset: 3px;
+  }
+  .session-row { align-items: flex-start; }
+  .session-num {
+    flex: none;
+    width: 1.5rem;
+    font-family: var(--font-display);
+    font-size: 1.375rem;
+    font-weight: 800;
+    line-height: 1.6rem;
+    color: var(--color-faint);
+  }
+  .session-row[aria-current='step'] .session-num { color: var(--color-hot); }
+  .session-row[aria-current='step'] .session-ex strong { color: var(--color-hot); }
+  .session-ex { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .session-ex + .session-ex { margin-top: 8px; }
+  /* The whole name here, wrapped: this is the one place nothing is cut short. */
+  .session-ex strong { white-space: normal; overflow: visible; }
+  .session-ex .ss { margin-right: 8px; vertical-align: 3px; }
+  .session-state {
+    flex: none;
+    min-width: 2rem;
+    display: grid;
+    place-items: center end;
+    line-height: 1.6rem;
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .session-state svg { width: 18px; height: 18px; color: var(--color-chalk); }
   .wk-body { padding: 16px 20px 32px; }
 
   .ready { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
@@ -916,15 +973,17 @@ input[type='number']::-webkit-outer-spin-button {
   .rb-time.over { color: var(--color-hot); }
   .rb-bar { height: 6px; background: var(--color-raised); overflow: hidden; }
   .rb-bar i { display: block; height: 100%; background: var(--color-hot); transition: width 0.25s linear; }
-  .rb-next { margin: 0; text-align: center; font-size: 1rem; color: var(--color-muted); }
+  /* Two lines whatever comes next — the set and its numbers, then the exercise —
+     so a long name cannot push Pro's technique row into the buttons. */
+  .rb-next { margin: 0; min-width: 0; text-align: center; font-size: 1rem; color: var(--color-muted); }
+  .rb-next-detail,
+  .rb-next strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .rb-next strong {
-    display: block;
     color: var(--color-chalk);
     font-family: var(--font-display);
     font-size: 1.5rem;
     font-weight: 800;
     text-transform: uppercase;
-    overflow-wrap: anywhere;
   }
   .rb-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .rb-attach { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }

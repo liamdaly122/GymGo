@@ -9,7 +9,7 @@ import { setOrdinals } from '@/domain/sets';
 import { setInHand, supersetLabel } from '@/domain/supersets';
 import { formatClock } from '@/lib/dates';
 import ExerciseSheet from './ExerciseSheet';
-import { useRestTimer } from './RestTimer';
+import { useRestTimer, type UpNext } from './RestTimer';
 import SetChips from './SetChips';
 import SetInHand from './SetInHand';
 import SetSheet from './SetSheet';
@@ -28,10 +28,11 @@ export default function StationCard({
   workoutId,
   pro,
   defaultRest,
-  nextStationName,
+  next,
   onNext,
   onFinish,
   onToast,
+  onStationDone,
 }: {
   view: WorkoutView;
   /** Indices into `view.exercises`. */
@@ -39,11 +40,13 @@ export default function StationCard({
   workoutId: string;
   pro: boolean;
   defaultRest: number;
-  /** The station after this one, for the rest screen's "up next". */
-  nextStationName: string | null;
+  /** Where the session goes after this station, for the rest screen's "up next". */
+  next: UpNext | null;
   onNext: (() => void) | null;
   onFinish: () => void;
   onToast: (message: string, tone?: 'hot') => void;
+  /** Done ticked this station's last set; the id of the rest that followed. */
+  onStationDone: (restId: number | null) => void;
 }) {
   const { setUpNext } = useRestTimer();
   const [openSetId, setOpenSetId] = useState<string | null>(null);
@@ -68,14 +71,14 @@ export default function StationCard({
       ? view.exercises.filter((other) => other.exercise?.id === entry.exercise!.id).flatMap((other) => other.sets)
       : entry.sets;
 
-  // With nothing left in hand, the rest screen points at what comes next.
-  const doneLabel = nextStationName
-    ? `Next exercise · ${nextStationName}`
-    : 'Last set done. Finish when ready.';
+  // With nothing left in hand, the rest screen names the exercise the screen
+  // will move on to, and what to go and find for it.
   const allDone = inHand === null;
+  const nextName = next?.name ?? 'Finish';
+  const nextDetail = next ? next.detail : 'Last set done';
   useEffect(() => {
-    if (allDone) setUpNext(doneLabel);
-  }, [allDone, doneLabel, setUpNext]);
+    if (allDone) setUpNext({ name: nextName, detail: nextDetail });
+  }, [allDone, nextName, nextDetail, setUpNext]);
 
   const openSet = openSetId
     ? entries.flatMap((entry) => entry.sets.map((set) => ({ entry, set }))).find(({ set }) => set.id === openSetId)
@@ -154,7 +157,6 @@ export default function StationCard({
             setId={inHand.setId}
             memberIndex={inHand.member}
             stationSets={stationSets}
-            superset={entries.length > 1}
             workoutId={workoutId}
             pro={pro}
             restSeconds={restFor(entries[inHand.member]!)}
@@ -163,6 +165,7 @@ export default function StationCard({
             header={header(entries[inHand.member]!, 'big')}
             chips={chips(entries[inHand.member]!, inHand.setId)}
             onToast={onToast}
+            onStationDone={onStationDone}
           />
           {entries.map((entry, member) =>
             member === inHand.member ? null : (
@@ -241,7 +244,6 @@ function InHand({
   setId,
   memberIndex,
   stationSets,
-  superset,
   workoutId,
   pro,
   restSeconds,
@@ -250,12 +252,12 @@ function InHand({
   header,
   chips,
   onToast,
+  onStationDone,
 }: {
   entry: WorkoutExerciseView;
   setId: string;
   memberIndex: number;
   stationSets: WorkoutExerciseView['sets'][];
-  superset: boolean;
   workoutId: string;
   pro: boolean;
   restSeconds: number;
@@ -264,6 +266,7 @@ function InHand({
   header: ReactNode;
   chips: ReactNode;
   onToast: (message: string, tone?: 'hot') => void;
+  onStationDone: (restId: number | null) => void;
 }) {
   const suggestion = useSetSuggestion(workoutId, entry.exercise?.id);
   const previous = usePreviousPerformance(entry.exercise?.id, workoutId);
@@ -282,7 +285,6 @@ function InHand({
         ordinal={ordinal}
         memberIndex={memberIndex}
         stationSets={stationSets}
-        superset={superset}
         pro={pro}
         restSeconds={restSeconds}
         suggestion={suggestion}
@@ -290,6 +292,7 @@ function InHand({
         prior={prior}
         liftSets={liftSets}
         onToast={onToast}
+        onStationDone={onStationDone}
       />
     </section>
   );

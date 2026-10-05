@@ -61,7 +61,6 @@ export default function SetInHand({
   ordinal,
   memberIndex,
   stationSets,
-  superset,
   pro,
   restSeconds,
   suggestion,
@@ -69,6 +68,7 @@ export default function SetInHand({
   prior,
   liftSets,
   onToast,
+  onStationDone,
 }: {
   entry: WorkoutExerciseView;
   set: WorkoutSet;
@@ -78,8 +78,6 @@ export default function SetInHand({
   memberIndex: number;
   /** Every member's sets, for the superset rest rule. */
   stationSets: WorkoutSet[][];
-  /** True when the station is a superset, so "up next" names the exercise. */
-  superset: boolean;
   pro: boolean;
   restSeconds: number;
   suggestion: Suggestion | null | undefined;
@@ -89,6 +87,11 @@ export default function SetInHand({
   /** Every set of this lift in the session, so today's earlier sets raise the bar. */
   liftSets: WorkoutSet[];
   onToast: (message: string, tone?: 'hot') => void;
+  /**
+   * Done ticked the station's last set. Given the id of the rest that followed,
+   * so the screen can move on when that rest runs its course; null if none did.
+   */
+  onStationDone: (restId: number | null) => void;
 }) {
   const rest = useRestTimer();
   const settings = useSettings();
@@ -158,11 +161,13 @@ export default function SetInHand({
   const logged = ready ? `${weight > 0 ? formatNumber(weight) : 'BW'} × ${reps}` : null;
   const spoken = ready ? formatLogged(weight, reps) : null;
 
-  // The rest screen says what comes next; this is it until Done moves on.
-  const upNext = `${superset ? `${exerciseName}, ${name.toLowerCase()}` : name}${logged ? ` · ${logged}` : ''}`;
+  // The rest screen says what comes next — always by the exercise's name, which
+  // "Set 1" on its own never told anyone — until Done moves on. Keyed on the
+  // strings, so publishing it cannot loop.
+  const upNextDetail = `${label}${logged ? ` · ${logged}` : ''}`;
   useEffect(() => {
-    setUpNext(upNext);
-  }, [setUpNext, upNext]);
+    setUpNext({ name: exerciseName, detail: upNextDetail });
+  }, [setUpNext, exerciseName, upNextDetail]);
 
   const stepWeight = (direction: 1 | -1) => {
     const now = stepFrom(weight ?? 0, entry.loading);
@@ -216,26 +221,31 @@ export default function SetInHand({
     setUpNext(null);
     await run(() => completeSetWith(set.id, { weight_kg: weight, reps }));
 
-    if (set.type === 'warmup') return;
     const after = stationSets.map((list) =>
       list.map((candidate) => (candidate.id === set.id ? { ...candidate, completed: true } : candidate)),
     );
-    if (child) {
+    let restId: number | null = null;
+    if (set.type === 'warmup') {
+      // Warm-ups run straight into the next rung.
+    } else if (child) {
       // A continuation rests briefly rather than not at all — 20 seconds is the
       // technique. A drop has no gap: it ends its top set's effort, so the
       // round's rest runs now.
       const gap = CONTINUATION_REST_SECONDS[set.type];
-      if (gap) rest.start(gap);
-      else if (set.parent_set_id && restsAfterSet(after, memberIndex, set.parent_set_id)) rest.start(restSeconds);
-      return;
-    }
-    if (restsAfterSet(after, memberIndex, set.id)) {
-      rest.start(restSeconds, { afterSetId: set.type === 'working' ? set.id : null, record: news });
+      if (gap) restId = rest.start(gap);
+      else if (set.parent_set_id && restsAfterSet(after, memberIndex, set.parent_set_id)) {
+        restId = rest.start(restSeconds);
+      }
+    } else if (restsAfterSet(after, memberIndex, set.id)) {
+      restId = rest.start(restSeconds, { afterSetId: set.type === 'working' ? set.id : null, record: news });
     } else if (news) {
       // The first half of a superset round goes straight on: no rest screen
       // to lead with the record, so it gets the toast.
       onToast(news.toast, 'hot');
     }
+
+    // The screen moves on when the rest that followed runs its course.
+    if (after.every((list) => list.every((candidate) => candidate.completed))) onStationDone(restId);
   };
 
   /**
