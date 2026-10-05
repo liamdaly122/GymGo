@@ -48,7 +48,9 @@ ids. `rest_seconds` and `tempo` were left off the copy at first, and because
 each exercise's generic default — so a strength primary prescribed 210s and an
 accessory prescribed 75s both rested the same, and the plan generator's rest
 values were decorative. If a prescription field is added to `routine_exercises`,
-it needs a home on `workout_exercises` too, or it does nothing.
+it needs a home on `workout_exercises` too, or it does nothing. Rest has since
+moved to the lift (see "Rest follows the lift"), so a generated row carries
+none. A rest typed into a routine is an override, and it is still copied.
 
 Every chart, PR and progression suggestion reads from the **workout** tables,
 never from the routine tables. If this gets collapsed into one table to save
@@ -400,19 +402,63 @@ page, only 40 of which were the weight and reps fields the task actually needs,
 and one exercise card rendered taller than the window.
 
 **Done logs the numbers on screen.** The big fields show what was typed or,
-while empty, the suggestion as a placeholder, and Done logs exactly that through
+while empty, a placeholder, and Done logs exactly that through
 `completeSetWith` — values and tick in one write. An empty tick used to save
 0kg × 0. With nothing to show — no suggestion and nothing typed — Done asks for
 the number rather than logging zero. The button says what it will log
 ("Done · 102.5 × 6"), and its accessible name reads it out.
 
-**Focus never moves on its own.** The station is seeded from the first one with
-anything unticked, and after that it only moves because you tapped the strip or
-"Next exercise", which is what the Done bar becomes once a station is finished.
-If it followed the session, the last Done of a station would teleport the screen
-while you are about to correct a mistyped rep — and every `.first()` in the
-browser suites would quietly retarget. The set in hand does move on Done; that
-is inside the station, and it is the point.
+**From the second set on, the placeholder is the set just done.** In order:
+- a pyramid's scheme target;
+- the working set done most recently today (`latestWorkingSet` in
+  `src/domain/sets.ts`);
+- the suggestion;
+- last time.
+
+So set 1 starts at the suggestion, and every set after it starts at what you
+actually did. The next set is then a nudge of a stepper, not two numbers typed
+again. That was the owner's first note from the gym: a lift with no history
+showed "–" on every set. Warm-ups, drops, back-offs and old 0 × 0 ticks are
+never carried.
+
+**Focus moves on when the last rest is over, and never on a tick.**
+- **On arrival** focus is pinned to the first station with anything unticked.
+- **After that it moves** for one of two reasons:
+  - you moved it: the strip, the session list, "Next exercise" (what the Done bar becomes once a station is finished), or adding an exercise;
+  - the rest after a station's last set ran its course.
+- **How the move works.** Done hands the screen the id of the rest that followed (`start` returns it). The screen moves only when `lastRun` says that rest ran out or was skipped.
+- **What holds it back.**
+  - A drop stops the rest without running it.
+  - A set added during that rest keeps the screen where it is: a back-off, a rest-pause, or one more.
+  - So does any tap.
+- **Where it goes:** `nextStation` in `src/domain/supersets.ts`, the next station with work left, else one skipped earlier. "Next exercise" and the rest's "Up next" use the same rule, so all three name the same place.
+
+The owner chose this from the gym, and their note is why: the last rest of an
+exercise said "Up next: Set 1", because the screen had already jumped to the
+next station under it.
+
+Following "first unticked" instead would jump the screen on the last tick. That
+is a bad moment to move: Show sets is how you fix a rep you just mistyped, and
+waiting for the rest keeps the finished station there. The set in hand does
+move on Done; that is inside the station, and it is the point.
+
+**Every rest names an exercise.** `upNext` is `{ name, detail }`:
+- mid-exercise it is the set coming up ("Set 3 of 4 · 100 × 5");
+- after a station's last set it is the next station, with its kit and work from `stationOutline` ("Machine · 3 × 10–15").
+
+Both lines are clamped to one, so a long name cannot push Pro's technique row
+into the buttons.
+
+**The strip names every station, and "Exercise N/M" opens the whole session.**
+- Pills carry their state and the exercise's name, cut short past 11rem.
+- A finished pill recedes to a check and a faint name. A chalk block the width of a name would read as a button to press.
+- The focused pill scrolls itself into view.
+- The header button opens `SessionSheet`:
+  - every station in order, with each exercise's kit and sets × reps (`exerciseOutline`);
+  - how far along each one is;
+  - where you are, in blue.
+- Tapping a row goes there.
+- Knowing what is coming means knowing which machine to go and claim. That was the owner's fourth note.
 
 **At most one border between you and the background.** The station sits on the
 ground colour; the only bordered things are the chips, the sheets and the
@@ -470,6 +516,42 @@ press after every single set. Add set carries forward what was typed into the
 set in hand, never its placeholder: the new set gets the same suggestion as its
 own.
 
+## Rest follows the lift
+
+These are the owner's numbers from a first evening in the gym, the same on
+every goal:
+- **big lifts rest 2:30**;
+- **medium lifts rest 2:00**;
+- **light and isolation work rests 1:30**.
+
+`restSecondsFor` in `src/domain/rest.ts` reads the tier off the exercise:
+- **Big** is a compound at `fatigue_cost` 4 or 5, meaning a squat or hinge, or a barbell or dumbbell compound. Squats, deadlifts, hip thrusts, bench, overhead press, rows, lunges, the leg press.
+- **Medium** is any other compound: machines, cables, pull-ups, dips, pulldowns.
+- **Light** is isolation and core.
+
+This departs from the brief on purpose. The brief gives "compounds 150 to 180
+seconds, isolation 60 to 90"; the owner trained with that and asked for these.
+
+**How it used to work.** Rest came from the plan:
+- a role's figure in the prescription table;
+- stretched by the goal (fat loss 0.75, strength 1.2);
+- written onto every generated row, with the seed's 180s and 75s behind it.
+
+So a muscle-building main lift rested 3:00 and a strength one 4:10. A leg
+extension swapped into a squat's slot kept the squat's rest.
+
+**Now it is worked out each time, not stored,** like the schedule:
+- A generated row writes no rest of its own, so a swap or a rotation rests as the new lift does.
+- A rest typed into the routine editor is an override, copied onto the session like any prescription.
+- Everything that shows a rest asks `restSecondsFor`: the timer, the station header, the routine editor's placeholder, "about N min", and the builder's time limit.
+- The exercise column `default_rest_seconds` is written by the seed to match, and read by nothing. A library seeded under the old rule therefore cannot keep it.
+
+**Plans made before the change gave their rests back, once per phone.**
+- `clearGeneratedRests` runs from `useAppInit` through `onceOnThisPhone` (`src/lib/once.ts`, a localStorage flag).
+- It clears only rows still exactly as generated (`roleForPrescription`) whose rest the old generator could have written for that role. `wasGeneratedRest` keeps the retired figures for that alone. A rest the lifter typed stays.
+- Every row it changes is queued. Workouts keep the rest they were performed with.
+- It runs once per phone, not every launch, because a 3:00 typed later is one of the old generator's figures and must not be cleared again.
+
 ## The in-gym toolkit
 
 The app is used one-handed, on a phone, under a bar. Three rules came out of
@@ -508,8 +590,8 @@ both `/workout/:id` and its swap child. They used to sit inside
 `ActiveWorkoutScreen`, so tapping "Swap" mid-rest unmounted both: the countdown
 vanished and the screen was free to sleep. The rest fills the screen while it
 runs, with the page beneath it `inert`; "Show sets" shrinks it to a bar across
-the top, and it closes itself when it runs out. Its "up next" line is published
-by the logging screen. In Pro it offers a drop, rest-pause or myo on the set
+the top, and it closes itself when it runs out. Its "up next" lines, always an
+exercise's name, are published by the logging screen. In Pro it offers a drop, rest-pause or myo on the set
 just done: a drop stops the rest, the others restart it at the technique's own
 short gap. The countdown persists to `localStorage` — deliberately not Dexie,
 since it is ephemeral interface state with nothing to sync — and the
@@ -657,7 +739,8 @@ routines, which is what keeps this feature clear of the immutability rule.
 - **Six goals, three engines.** Build muscle, Get lean and Lose weight run the
   same programme. Training in a deficit uses the same lifting; the diet does the
   fat loss. The app says so on screen rather than inventing a different split.
-  Fat-loss goals shorten rest, which is a real difference.
+  Rest is not a goal's either: it follows the lift, the same on every plan (see
+  "Rest follows the lift"), so the three now produce identical weeks.
 - **Splits are gated by days per week.** There is no such thing as a two-day bro
   split. `daysSupported` decides what the selector may offer.
 - **Templates are movement-pattern slots, never named exercises.** One template
@@ -734,7 +817,9 @@ would have done nothing.
 
 Swaps write routine tables only, so neither a finished workout nor one under way
 can be reached. The replacement takes the row over: its place, its superset and
-its prescription. The sets and rest were written for the slot, not the lift.
+its prescription, because the sets were written for the slot, not the lift.
+Rest is the exception. It follows the lift, so the replacement rests as itself
+unless the lifter typed a rest for that slot.
 
 **In the builder a swap is a pin on a template slot** (`pinExercises`). It is
 applied after the week is filled, because refilling with the old lift left out
@@ -868,6 +953,10 @@ screen looks identical. These in particular are load-bearing:
   `Level N` heading on a level-up; `Awards` on Progress, with the `Level`,
   `Streak` and `Badges` regions, each badge a button named `<Badge>, earned …`,
   `<Badge>, next up: …` or `<Badge>, not yet`
+- `Exercise N of M, show the whole session`, the header button, which opens
+  the `This session` dialog: one row per station, a superset's members inside
+  it, each row named by its exercises, kit and work, ending `, done` when
+  finished
 - `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
 
 `Add exercise` names exactly one control at a time: the empty state owns it
