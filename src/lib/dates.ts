@@ -8,9 +8,16 @@ export function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** Date-only ISO string (YYYY-MM-DD) in UTC, for body metrics. */
+/**
+ * Date-only ISO string (YYYY-MM-DD) for body metrics: the lifter's own
+ * calendar day, as "today" is everywhere else. In UTC, a weigh-in at 00:30
+ * in summer would be filed under yesterday, and today's weight would read as
+ * missing.
+ */
 export function isoDate(date: Date = new Date()): string {
-  return date.toISOString().slice(0, 10);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 /** Milliseconds between two ISO instants. Negative if `to` precedes `from`. */

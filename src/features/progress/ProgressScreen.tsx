@@ -14,17 +14,19 @@ import { describeBlockProgress } from '@/features/plan/blockCopy';
 import { formatShortDate } from '@/lib/dates';
 import { localIsoDate } from '@/domain/schedule';
 import { MuscleBars, Sparkline } from './charts';
+import BodyWeight from './BodyWeight';
 
 /**
  * What you have done: the sessions, and the lifts.
  *
  * History and Progress were two tabs for one question. Sessions leads with the
  * week's sets per muscle and lists every workout; Lifts lists every exercise
- * you have trained with the shape of its top set, and opens its chart.
+ * you have trained with the shape of its top set, and opens its chart; Body is
+ * the weight log.
  */
 export default function ProgressScreen() {
   const { pathname } = useLocation();
-  const segment = pathname.endsWith('/lifts') ? 'lifts' : 'sessions';
+  const segment = pathname.endsWith('/lifts') ? 'lifts' : pathname.endsWith('/body') ? 'body' : 'sessions';
   const overview = useProgressOverview();
 
   return (
@@ -38,9 +40,15 @@ export default function ProgressScreen() {
           <Link to="/progress/lifts" aria-current={segment === 'lifts' ? 'page' : undefined}>
             Lifts
           </Link>
+          <Link to="/progress/body" aria-current={segment === 'body' ? 'page' : undefined}>
+            Body
+          </Link>
         </nav>
 
-        {overview === undefined ? null : overview.workoutCount === 0 ? (
+        {/* Body weight is logged on its own, so it does not wait for a workout. */}
+        {segment === 'body' ? (
+          <BodyWeight />
+        ) : overview === undefined ? null : overview.workoutCount === 0 ? (
           <EmptyState
             title="Nothing to show yet."
             hint="Finish a workout or two and your sessions, volume and lifts will appear here."

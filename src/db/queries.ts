@@ -8,7 +8,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { scheduleDay, useToday } from '@/hooks/useToday';
 import { db } from './db';
 import { baseBlockName, blockNumber, defaultGym, nextBlockRotation } from './blocks';
-import { SETTINGS_ID, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
+import { SETTINGS_ID, type BodyMetric, type Exercise, type Gym, type Plan, type Routine, type RoutineExercise, type Settings, type Workout, type WorkoutExercise, type WorkoutSet } from './schema';
 import { previousPerformance, type ExerciseSession, type PreviousPerformance } from '@/domain/previousPerformance';
 import { planSwapTargets } from '@/domain/search';
 import { personalRecords, recordsBrokenPerSession } from '@/domain/prs';
@@ -31,6 +31,8 @@ import { loadableWeight, loadingProfileFor, type LoadingProfile } from '@/domain
 import { bestEstimated1RM, setsPerMuscle, totalTonnage, totalWorkingSets } from '@/domain/volume';
 import { isTopWorkingSet } from '@/domain/sets';
 import { buildBlockReport, type BlockReport, type ReportSession } from '@/domain/blockReport';
+import { changeOver, dailySeries, rollingAverage, type DayValue } from '@/domain/bodyMetrics';
+import type { BodyMetricKind } from '@/domain/types';
 import { roleForPrescription } from '@/domain/programmes/prescribe';
 
 const live = <T extends { deleted_at: string | null }>(rows: T[]) =>
@@ -426,6 +428,46 @@ export function useSessionSummary(workoutId: string | undefined) {
 /** The gym plans are built against. Its equipment filters every suggestion. */
 export function useDefaultGym(): Gym | undefined | null {
   return useLiveQuery(() => defaultGym(), []);
+}
+
+/**
+ * What an exercise loads in at the gym plans are built against, so a number
+ * shown away from a session — a percentage table — is one the bar can make.
+ */
+export function useExerciseLoading(exerciseId: string | undefined): LoadingProfile | undefined {
+  return useLiveQuery(async () => {
+    const exercise = exerciseId ? await db.exercises.get(exerciseId) : undefined;
+    if (!exercise) return undefined;
+    return loadingProfileFor(exercise.equipment, (await defaultGym()) ?? {});
+  }, [exerciseId]);
+}
+
+export interface BodyMetricView {
+  /** Every entry, newest first, for the list. */
+  entries: BodyMetric[];
+  /** One value a day, oldest first. */
+  series: DayValue[];
+  /** The seven-day average for each of those days: the trend worth reading. */
+  average: DayValue[];
+  latest: DayValue | null;
+  /** How far the average moved in 30 days, once there is that much history. */
+  change30: number | null;
+}
+
+export function useBodyMetric(metric: BodyMetricKind): BodyMetricView | undefined {
+  return useLiveQuery(async () => {
+    const entries = live(await db.body_metrics.where({ metric }).toArray()).sort(
+      (a, b) => b.date.localeCompare(a.date),
+    );
+    const series = dailySeries(entries, metric);
+    return {
+      entries,
+      series,
+      average: rollingAverage(series),
+      latest: series.at(-1) ?? null,
+      change30: changeOver(series, 30),
+    };
+  }, [metric]);
 }
 
 /**

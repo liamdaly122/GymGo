@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useExercise, useExerciseRecords, useExerciseTrend, useSettings } from '@/db/queries';
+import { useExercise, useExerciseLoading, useExerciseRecords, useExerciseTrend, useSettings } from '@/db/queries';
 import { updateExercise } from '@/db/mutations';
 import { BackLink, Button, Pill, Screen, ScreenHeader, SectionLabel } from '@/components/ui';
-import { estimate1RMRounded } from '@/domain/epley';
+import { estimate1RMRounded, loadablePercentageTable } from '@/domain/epley';
 import { formatDayLabel, formatShortDate } from '@/lib/dates';
 import { LiftChart, type LiftPoint } from '@/features/progress/charts';
 import { EQUIPMENT_LABELS, PATTERN_LABELS } from './labels';
@@ -24,6 +24,10 @@ export default function ExerciseDetailScreen() {
   const settings = useSettings();
   const pro = settings?.mode === 'pro';
   const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  const loading = useExerciseLoading(exerciseId);
+  const [maxText, setMaxText] = useState('');
+  // Null until tapped: open in Pro, folded away in Beginner.
+  const [tableOpen, setTableOpen] = useState<boolean | null>(null);
 
   if (exercise === undefined) {
     return (
@@ -50,6 +54,13 @@ export default function ExerciseDetailScreen() {
     detail: `${formatShortDate(point.date)}${pro ? ` · top set ${point.topWeight}kg` : ''}`,
   }));
   const change = points.length > 1 ? Math.round((points.at(-1)!.value - points[0]!.value) * 10) / 10 : 0;
+
+  // The table works off the max you type, else your best estimate.
+  const typedMax = Number.parseFloat(maxText.replace(',', '.'));
+  const estimatedMax = records?.bestE1rm ? Math.round(records.bestE1rm.value * 10) / 10 : null;
+  const max = Number.isFinite(typedMax) && typedMax > 0 ? typedMax : estimatedMax;
+  const percentages = max !== null && loading ? loadablePercentageTable(max, loading) : [];
+  const tableShown = tableOpen ?? pro;
 
   return (
     <Screen>
@@ -145,6 +156,65 @@ export default function ExerciseDetailScreen() {
               </p>
             </div>
           )}
+        </section>
+
+        {/* The brief: "Percentage table from an estimated or entered 1RM." Every
+            row rounds DOWN through the gym's plates, so each one can be loaded
+            and none is heavier than its percentage. */}
+        <section aria-labelledby="percentages">
+          <div className="card-head">
+            <SectionLabel id="percentages">Percentage table</SectionLabel>
+            <button
+              type="button"
+              className="btn-text"
+              aria-expanded={tableShown}
+              aria-controls="percentage-rows"
+              onClick={() => setTableOpen(!tableShown)}
+            >
+              {tableShown ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {tableShown ? (
+            <div id="percentage-rows" className="stack-sm">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={maxText}
+                onChange={(event) => setMaxText(event.target.value)}
+                placeholder={estimatedMax !== null ? String(estimatedMax) : '1-rep max, kg'}
+                aria-label="Your max in kilograms"
+                className="field h-12 text-center"
+              />
+              <p className="t-meta">
+                {Number.isFinite(typedMax) && typedMax > 0
+                  ? `From the max you typed, ${typedMax} kg.`
+                  : estimatedMax !== null
+                    ? `From your best estimated max, ${estimatedMax} kg. Type your own to use that instead.`
+                    : 'Type a max to see the table. Once you have logged this lift, your best estimate fills in.'}
+              </p>
+              {percentages.length > 0 ? (
+                <div className="tbl-wrap">
+                  <table aria-label={`Percentages of ${max} kilograms`}>
+                    <thead>
+                      <tr>
+                        <th>Percent</th>
+                        <th>Load</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {percentages.map((row) => (
+                        <tr key={row.percent}>
+                          <td>{row.percent}%</td>
+                          <td>{row.weight_kg} kg</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+              <p className="t-meta">Each load is rounded down to what {exercise.equipment === 'barbell' || exercise.equipment === 'ez_bar' ? 'your plates make' : 'the equipment steps in'}.</p>
+            </div>
+          ) : null}
         </section>
 
         {/* The small feature that saves the most time in practice: seat height,

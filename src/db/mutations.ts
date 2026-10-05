@@ -13,6 +13,7 @@
 import { db } from './db';
 import {
   SETTINGS_ID,
+  type BodyMetric,
   type Exercise,
   type Gym,
   type Plan,
@@ -26,7 +27,7 @@ import {
 } from './schema';
 import { newId } from '@/lib/ids';
 import { nowIso } from '@/lib/dates';
-import type { Readiness, SetType, Technique } from '@/domain/types';
+import type { BodyMetricKind, Readiness, SetType, Technique } from '@/domain/types';
 import type { GeneratedPlan } from '@/domain/programmes/plan';
 import { DEFAULT_BLOCK_WEEKS, setsForWeek, weekModifier } from '@/domain/programmes/block';
 import { buildSchedule, currentWeek, runningPlan, slotForRoutine } from '@/domain/schedule';
@@ -909,6 +910,56 @@ export async function removeExerciseFromRoutine(routineExerciseId: string): Prom
   const now = nowIso();
   await db.routine_exercises.update(routineExerciseId, { deleted_at: now, updated_at: now });
   await enqueue('routine_exercises', routineExerciseId, 'delete', { deleted_at: now });
+}
+
+// ---------------------------------------------------------------------------
+// Body metrics
+//
+// The brief: "Bodyweight gets entered manually." One entry per metric per day,
+// so weighing in twice in a morning corrects the first rather than adding a
+// second point to the trend.
+// ---------------------------------------------------------------------------
+
+export async function logBodyMetric(metric: BodyMetricKind, value: number, date: string): Promise<string> {
+  if (!(value > 0)) throw new Error('A body measurement has to be more than zero.');
+
+  const sameDay = (await db.body_metrics.where('[metric+date]').equals([metric, date]).toArray()).filter(
+    (entry) => entry.deleted_at === null,
+  );
+  const now = nowIso();
+
+  const [kept, ...extra] = sameDay;
+  if (kept) {
+    const patch = { value, updated_at: now };
+    await db.body_metrics.update(kept.id, patch);
+    await enqueue('body_metrics', kept.id, 'put', patch);
+    // Two phones can each have logged the day; one entry per day is the rule.
+    for (const entry of extra) {
+      const tombstone = { deleted_at: now, updated_at: now };
+      await db.body_metrics.update(entry.id, tombstone);
+      await enqueue('body_metrics', entry.id, 'delete', tombstone);
+    }
+    return kept.id;
+  }
+
+  const row: BodyMetric = {
+    id: newId(),
+    date,
+    metric,
+    value,
+    unit: metric === 'bodyweight' ? 'kg' : 'cm',
+    ...freshSyncFields(),
+  };
+  await db.body_metrics.add(row);
+  await enqueue('body_metrics', row.id, 'put', row);
+  return row.id;
+}
+
+export async function removeBodyMetric(id: string): Promise<void> {
+  const now = nowIso();
+  const patch = { deleted_at: now, updated_at: now };
+  await db.body_metrics.update(id, patch);
+  await enqueue('body_metrics', id, 'delete', patch);
 }
 
 // ---------------------------------------------------------------------------

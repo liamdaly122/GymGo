@@ -3,6 +3,7 @@
  *
  *   1RM = weight x (1 + reps / 30)
  */
+import { loadableWeight, type LoadingProfile } from './plates';
 
 /** Returns 0 for a set that was not actually performed. */
 export function estimate1RM(weightKg: number, reps: number): number {
@@ -28,5 +29,21 @@ export function percentageTable(
   return percentages.map((percent) => ({
     percent,
     weight_kg: Math.round(oneRepMax * (percent / 100) * 10) / 10,
+  }));
+}
+
+/**
+ * The percentage table as the bar can actually be loaded: each row rounded
+ * DOWN through the gym's plates. 80% of 117.5 is 94, which no bar makes, and
+ * rounding up would put a heavier weight under a lighter percentage.
+ */
+export function loadablePercentageTable(
+  oneRepMax: number,
+  loading: LoadingProfile,
+  percentages?: number[],
+): Array<{ percent: number; weight_kg: number }> {
+  return percentageTable(oneRepMax, percentages).map((row) => ({
+    percent: row.percent,
+    weight_kg: loadableWeight((oneRepMax * row.percent) / 100, loading, { direction: 'down' }),
   }));
 }
