@@ -4,7 +4,7 @@ Author: Liam Daly
 Date: 7 October 2026
 Status: Agreed, nothing built yet. Decisions are recorded at the end.
 Builds on: `docs/build-brief.md` (version 3) and `CLAUDE.md`
-Step-by-step guide: `docs/ios-guide.md`
+Step-by-step guide for doing it: `docs/ios-guide.md`
 
 ## The short version
 
@@ -12,22 +12,24 @@ Step-by-step guide: `docs/ios-guide.md`
   native shell (Capacitor).** It runs the same React code, the same Dexie
   database and the same screens, so it is identical because it is the same
   code. Nothing gets rewritten.
-- **The watch app has to be written in Swift (SwiftUI).** watchOS has no web
-  view, so no web app can run on a watch. It is a companion: it shows the set
-  in hand and the rest, logs sets from the wrist, and hands everything to the
-  phone, which stays the single source of truth.
+- **The watch app is written in Swift (SwiftUI).** watchOS has no web view, so
+  no web app can run on a watch. It is a companion: it shows the set in hand
+  and the rest, logs sets from the wrist (including from the Ultra's Action
+  button), and hands everything to the phone, which stays the single source of
+  truth.
 - **Personal use means TestFlight internal testing.** You are the only tester.
   There is no App Store listing and no App Review, and nobody else can install
   it. A build lasts 90 days, so a scheduled rebuild keeps it alive.
-- **You need a Mac with Xcode** for the setup and for the watch work. There is
-  a Plan B below if that is a problem.
+- **The work happens in a Claude Code session on your Mac,** because only a
+  Mac can run Xcode. The guide covers moving this cloud chat across.
 
 ## Where this starts from
 
 What exists today, from reading the repo:
 
-- About 19,600 lines of TypeScript, 8,600 lines of unit tests and 17 browser
-  suites (about 3,700 lines of Playwright, keyed on accessible names).
+- About 19,600 lines of TypeScript, 8,600 lines of unit tests (676 tests, all
+  passing) and 17 browser suites (about 3,700 lines of Playwright, keyed on
+  accessible names).
 - There are 21 routes and 3 tabs, plus a full-screen workout area with the set
   in hand, the station strip, its sheets and the rest takeover. There is one
   Recharts chart; the other charts are hand-drawn SVG and CSS.
@@ -37,10 +39,15 @@ What exists today, from reading the repo:
 - `HashRouter`, every asset bundled (fonts, 345 exercise photos, the seed), no
   `fetch` outside `src/sync/`. This already behaves like an app packaged with
   everything it needs, which is what makes the wrap cheap.
+- **The GitHub repo is public, and it has no `main` branch.** The default
+  branch is `claude/markdown-instructions-review-e0rk5v`, and this roadmap
+  lives on `claude/wonderful-galileo-6td7bh`. Public is fine as long as no
+  secret is ever committed (`.env.local` is already gitignored). Phase 0 makes
+  a `main` branch so that "push to main" means something.
 
 ## The decision: wrap the web app, write the watch app
 
-| | Capacitor shell (recommended) | React Native | SwiftUI rewrite |
+| | Capacitor shell (chosen) | React Native | SwiftUI rewrite |
 |---|---|---|---|
 | iPhone screens identical | Yes, it is the same code | No, every screen redrawn | No, every screen redrawn |
 | Domain rules reused | All of them, unchanged | Most, the TS can be shared | None, all ported to Swift |
@@ -58,101 +65,110 @@ Capacitor runs the bundle in WKWebView, which is the same WebKit engine that
 runs the home-screen app now. So the look, the fonts, the gestures and the
 type all carry across as they are.
 
-The watch is the one piece that has to be native whatever the route, so it
-gets its own design, set out below.
+## The setup
 
-## Before starting
-
-What you need:
-
-- **A Mac with Xcode 26.** It is needed to create the project and sign it,
-  add the watch target, run on your own devices and debug the watch.
-- **Your iPhone and Apple Watch**, paired, with Developer Mode switched on.
-- **Your Apple Developer account** (you have this).
-- **The Supabase project you already use.** Nothing changes server side.
-
-Set the minimum OS to whatever your own phone and watch run. Nobody else has
-to be supported, and the newest versions give every API in this plan with no
-fallbacks: mirrored workouts arrived in iOS 17 and watchOS 10, and HealthKit
-workouts on the iPhone itself in iOS 26.
-
-**Plan B, without a Mac.** Xcode Cloud can build, sign and upload to
-TestFlight from the repo with no Mac involved after the first setup. The
-first setup (the project, the watch target, capabilities, first signing) is
-far easier with Xcode open, so a borrowed Mac or a rented cloud Mac for a day
-or two would do it. Every change after that would be tried through TestFlight
-builds, which is slow for watch work (about 20 to 40 minutes per attempt).
-
-**What Claude Code can do here.** In this cloud sandbox (Linux) it can write
-all of the TypeScript, the Capacitor config, the Swift for the plugins and
-the watch app, the tests and the CI scripts. It cannot compile Swift or run a
-simulator here. So the native phases are best run with Claude Code on your
-Mac (desktop app or CLI), where it can build with `xcodebuild`, run the
-simulators and read the errors itself. The TypeScript slices (`src/platform/`,
-`src/domain/watch.ts`, fixtures) can still be done in cloud sessions.
+- **Mac:** Apple silicon with Xcode 27.
+- **iPhone 14 Pro** (Dynamic Island, no Action button) and **Apple Watch
+  Ultra 2** (Action button, double tap), both on 26.6.x today.
+- **Minimum versions: iOS 26.0 and watchOS 26.0.** The app runs on what the
+  devices have now and keeps working when they move to 27. Xcode 27 builds
+  for both, and Apple's current documentation describes Xcode 27's screens,
+  so the help pages match what you see.
+- **Toolchain:** Node 24 LTS (the project needs at least 22.12, and never 23),
+  Capacitor 8.5 with Swift Package Manager (no CocoaPods).
+- **Where Claude works:** a local Claude Code session in `~/Developer/GymGo`
+  on the Mac. It builds with `xcodebuild`, drives the simulators and reads the
+  errors itself. You do the few things only a person can do: your Apple ID,
+  your devices' screens, Apple's websites, and approving what Claude asks to
+  run. Xcode 27 can also hand Claude its own build tools (the Xcode MCP bridge).
 
 ## Phases at a glance
 
-| Phase | What you get | Size | Needed for "identical"? |
-|---|---|---|---|
-| 0 | Brief and rules updated, Apple accounts set up | S | Yes |
-| 1 | GymGo on your iPhone as a real app, identical | L | Yes |
-| 2 | Push to main reaches your phone by TestFlight, history moved across | M | Yes |
-| 3 | Rest alerts with the phone locked, Lock Screen countdown | M | No, recommended |
-| 4 | Watch app: the set in hand and the rest on your wrist | M | Watch |
-| 5 | Log whole sessions from the watch with the phone in your bag | L | Watch |
-| 6 | Apple Health, complications, starting from the watch | M to L | Optional |
+| Phase | What you get | Size |
+|---|---|---|
+| 0 | The repo works on the Mac, a `main` branch, the brief updated | S |
+| 1 | GymGo on your iPhone as a real app, identical | L |
+| 2 | TestFlight and Xcode Cloud; history moved across; Vercel retired | M |
+| 3 | Rest alerts with the phone locked; the countdown on the Lock Screen and in the Dynamic Island | M |
+| 4 | Watch app: the set in hand and the rest on your wrist | M |
+| 5 | Log whole sessions from the watch, Action button included, with the phone in your bag | L |
+| 6 | Apple Health: every workout saved, body weight read | M |
+| 7 | Extras: complications, starting a session from the watch | M to L |
 
 Sizes are rough: S is an evening, M is a few evenings, L is a week or more of
 evenings.
 
-## Phase 0: Change the brief, set up the accounts (S)
+## Phase 0: Groundwork (S)
 
-The brief rules this out as it stands: "No feature that requires an app store
-submission or a paid developer account", and "Apple Watch app" is listed under
-out of scope. So it changes first.
-
-1. **Brief version 4.** Replace the store rule with "Distributed by TestFlight
-   to my own devices only; never listed on the App Store." Move the Apple
-   Watch out of "Out of scope". Rewrite "Known limits": the watch, Apple
-   Health and background timers are all possible in a native app.
-2. **CLAUDE.md** gains the rules in "Rules to add to CLAUDE.md" below, as each
+1. **Make the repo work on a Mac.** Three things found while checking it:
+   - All 17 browser suites hard-code a Linux Chromium path
+     (`/opt/pw-browsers/...`), so none of them launch on a Mac. Fall back to
+     Playwright's own browser when that path is missing (`npx playwright
+     install chromium`).
+   - One unit test (`src/db/plans.test.ts:140`) fails between midnight and
+     1am in British Summer Time, because the tests run in local time. Pin
+     the test clock or the time zone.
+   - CLAUDE.md's description of the suites' ports is out of date (two suites
+     default to 5180, `test:offline` reads `PREVIEW_URL` and starts no
+     server). Correct it.
+2. **A `main` branch.** Push the roadmap branch to `main` and make it the
+   default branch on GitHub. Xcode Cloud will build from `main`. Vercel keeps
+   deploying from its own branch until it is retired, so the home-screen app
+   is untouched in the meantime.
+3. **Brief version 4.** The brief currently says "No feature that requires an
+   app store submission or a paid developer account", and lists the Apple
+   Watch as out of scope. Replace the store rule with "Distributed by
+   TestFlight to my own devices only; never listed on the App Store." Move the
+   Apple Watch out of "Out of scope", and rewrite "Known limits": the watch,
+   Apple Health and background timers are all possible in a native app.
+4. **CLAUDE.md** gains the rules in "Rules to add to CLAUDE.md" below, as each
    phase lands.
-3. **Identifiers.** Pick a bundle ID prefix, for example
-   `com.liamdaly.gymgo` for the phone, `com.liamdaly.gymgo.watchkitapp` for
-   the watch and the App Group `group.com.liamdaly.gymgo`.
-4. **App Store Connect.** Create the app record. The name has to be unique
-   across the whole store even though it will never be released, so use
-   something like "GymGo Liam". The name on your home screen is set separately
-   and stays "GymGo". Create an internal testing group with only your Apple ID
-   in it.
-5. **Decide what happens to the website** (see Phase 2, step 7).
+5. **Apple's agreements.** Apple updated the Developer Program License
+   Agreement on 18 August 2026. Accept it at developer.apple.com/account,
+   and anything pending in App Store Connect under Business, or the first
+   upload fails with "PLA Update available".
 
-Done when: the brief and CLAUDE.md say what is being built, and the app
-record and tester group exist.
+Done when: `npm test` and the browser suites pass on the Mac, `main` exists
+and is the default, and the brief and CLAUDE.md say what is being built.
 
 ## Phase 1: GymGo on the iPhone, identical (L)
 
 ### 1.1 Add the shell
 
-- Add Capacitor 8 (`@capacitor/core`, `@capacitor/cli`, `@capacitor/ios`).
-  It uses Swift Package Manager, so there is no CocoaPods.
-- `capacitor.config.ts`: app ID, app name "GymGo", `webDir: 'dist'`,
-  background `#0c0c0b`. The web view draws edge to edge (`contentInset:
-  'never'`), so the safe-area CSS the app already has does the work, as it does
-  in the home-screen app.
-- `npx cap add ios` creates `ios/App/`. Commit it: it is source code from here
-  on.
+- Install Capacitor 8.5 (`@capacitor/core`, `@capacitor/ios`, and
+  `@capacitor/cli` as a dev dependency), all on the same version.
+- `npx cap init GymGo com.liamdaly.gymgo --web-dir dist`. The `--web-dir`
+  matters: run without a terminal attached, which is how Claude runs
+  commands, the CLI otherwise picks `www`.
+- `capacitor.config.ts`: background `#0c0c0b` (unset, the web view is white
+  and flashes on launch and overscroll), `ios.contentInset: 'never'` (the
+  default; the app's safe-area CSS does the work, as it does now),
+  `ios.allowsLinkPreview: false`, and a dark status bar through the core
+  `SystemBars` plugin (`style: 'DARK'` means light text on a dark ground).
+  Never set `server.url`, which is for live reload only.
+- Build the web app, then `npx cap add ios` once. That creates `ios/App/`
+  with `App.xcodeproj`, the Swift Package `CapApp-SPM` and a UIScene
+  `SceneDelegate.swift`. Commit `ios/`; its own `.gitignore` already leaves
+  out the generated parts. Never delete it to add it again.
+- In Xcode: Display Name "GymGo", iPhone only, **portrait only** (the
+  template allows landscape), minimum iOS 26.0.
+- **Launch screen and icon.** The template launches on Capacitor's own logo
+  on a white background. Replace both: a near-black launch screen, and a
+  1024 × 1024 app icon made from `assets/icon-apple.svg` (add it to
+  `scripts/build-icons.ts`).
+- **Privacy manifest.** Using `@capacitor/preferences` and
+  `@capacitor/filesystem` means adding `PrivacyInfo.xcprivacy` with their
+  required reasons (UserDefaults `CA92.1`, file timestamps `C617.1`).
 
 ### 1.2 A native build
 
 - `npm run build:ios` runs `vite build --mode ios`. In that mode
-  `vite.config.ts` leaves out `VitePWA`. WKWebView does not run service workers
-  on an app's own scheme, and the app doesn't need one: every file ships
-  inside the app, so it is offline by construction.
-- `npm run ios` runs `build:ios`, then `cap sync ios`, then opens Xcode.
-- The web build is untouched. `npm run build`, Vercel and `test:offline` stay
-  exactly as they are.
+  `vite.config.ts` leaves out `VitePWA`. WKWebView does not run service
+  workers in an app (Apple confirms it), and the app doesn't need one: every
+  file ships inside the app, so it is offline by construction.
+- `npm run ios` runs `build:ios`, then `npx cap sync ios`. Claude builds and
+  installs from there with `xcodebuild`, or you press Run in Xcode.
+- The web build is untouched until the website is retired.
 
 ### 1.3 `src/platform/`: the only place that knows it is in an app
 
@@ -161,12 +177,24 @@ suites and the website keep working unchanged:
 
 | Today | File | In the app |
 |---|---|---|
-| Screen Wake Lock | `src/hooks/useWakeLock.ts` | Native keep-awake plugin, on for the whole `WorkoutShell` as now |
+| Screen Wake Lock | `src/hooks/useWakeLock.ts` | `@capacitor-community/keep-awake` 8.x (or a ten-line local plugin; on iOS it only sets `isIdleTimerDisabled`), on for the whole `WorkoutShell` as now |
 | `navigator.vibrate` | `src/lib/feedback.ts:64` | `@capacitor/haptics`. Safari has no vibration API, so the Vibrate toggle has never done anything on your iPhone. In the app it works, and its hint ("Ignored on iOS Safari…") changes to match |
 | Web Audio tones | `src/lib/feedback.ts` | Kept as they are. The app sets its audio session to mix with other audio, so the rest beep plays over your music instead of stopping it |
 | `<a download>` export | `src/db/backup.ts:134` | That does nothing inside a web view. Write the file with `@capacitor/filesystem` and open the share sheet (`@capacitor/share`): Save to Files, AirDrop or Mail |
 | `<input type="file">` import | `SettingsScreen.tsx:169` | Already opens the Files picker in WKWebView. Test it |
 | `visibilitychange` (5 listeners) | wake lock, elapsed clock, `useToday`, rest timer, sync | Fires in WKWebView too. Check all five, and back them with `@capacitor/app`'s resume event if any misbehave |
+
+**Local plugins** (the watch bridge, the Live Activity, HealthKit) are Swift
+classes in the app target. With Capacitor 8.5's UIScene template they are
+registered from a `CAPBridgeViewController` subclass that
+`SceneDelegate.swift` creates; the storyboard method in older guides no longer
+applies.
+
+**Leave `@capacitor/keyboard` out.** It hides the bar above the keyboard by
+default, and that bar holds the Done key: the weight and reps keypads have no
+return key, so there would be no way to close the keyboard. It also replaces
+WKWebView's own Safari-like keyboard handling. Add it only if testing shows a
+problem, with `resize: 'none'` and the bar switched back on.
 
 A boundary test, in the same style as `scripts/boundaries.test.ts`: only
 `src/platform/` imports `@capacitor/*`; `src/domain/` never imports
@@ -177,31 +205,30 @@ A boundary test, in the same style as `scripts/boundaries.test.ts`: only
 Go through every route and overlay in the app, on the phone, next to the
 current home-screen app:
 
-- **Status bar:** light text over the near-black ground, drawn over the web
-  view (what `black-translucent` does now).
-- **Launch:** launch screen and web view background in `#0c0c0b`, so it never
-  flashes white.
+- **Status bar:** light text over the near-black ground.
+- **Launch:** no white flash and no Capacitor logo.
 - **Safe areas:** the 12 `env(safe-area-inset-*)` uses: the tab bar, resume
-  bar, sheets, toast, done bar and the rest takeover.
+  bar, sheets, toast, done bar and the rest takeover, around the Dynamic
+  Island.
 - **Keyboard:** the set-in-hand fields, the number fields in sheets, the
-  sign-in form. Pick the Capacitor keyboard resize mode that matches Safari, so
-  the done bar does not jump.
+  sign-in form. The Done bar should not jump.
+- **Focus:** Capacitor lets `autoFocus` raise the keyboard without a tap,
+  which Safari does not. Three screens use it (`GymsScreen.tsx:97`,
+  `ExercisePicker.tsx:44`, `PlanScreen.tsx:216`). Decide on the phone whether
+  each should keep it.
 - **Scrolling and touch:** rubber-banding (the body already sets
-  `overscroll-behavior-y: none`), the calendar swipe, long-press link
-  previews, and the tap-to-skip on the rest clock.
+  `overscroll-behavior-y: none`), the calendar swipe, and the tap-to-skip on
+  the rest clock.
 - **Type:** every input is at least 16px, so focusing one never zooms.
-  Upper-casing stays in CSS.
 - **Offline:** aeroplane mode from a cold start. Fonts, photos and the seed
   all load from inside the app.
-- **Small phone:** the record still fits the rest screen at 375 × 667, as
-  `test:rewards` proves on the web.
 
 ### 1.5 Keep the data safe
 
 This is the one place where the native app is weaker by default. Capacitor's
-own docs say iOS can reclaim a web view's IndexedDB and localStorage when the
-phone runs low on space. The home-screen app has a version of the same risk
-already (the brief's "iOS can evict local browser storage"). There are three
+storage guide says iOS can reclaim a web view's IndexedDB and localStorage
+when the phone runs low on space. The home-screen app has a version of the
+same risk already (the brief's "iOS can evict local browser storage"). Three
 layers of protection:
 
 1. **The Supabase backup, unchanged.** A wiped app restores everything on the
@@ -209,15 +236,15 @@ layers of protection:
 2. **A snapshot on the phone itself.** After every Finish, and once a day,
    write the same JSON as "Export everything" into the app's Documents folder
    with `@capacitor/filesystem`, and keep the last seven. iOS does not reclaim
-   those files. They go into your iPhone's iCloud backup, and with file sharing
-   switched on in `Info.plist` they show up in Files under On My iPhone →
-   GymGo.
+   those files. They go into the iPhone's iCloud backup, and with
+   `UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` they show in
+   Files under On My iPhone → GymGo.
 3. **Restore on an empty launch.** If the database is empty but a snapshot
    exists, offer to restore it. `importFromJson` already does the work, and it
    queues every row for backup.
 
-Also move the small localStorage keys that matter onto native storage
-(`@capacitor/preferences`):
+Also move the small localStorage keys that matter onto `@capacitor/preferences`,
+which iOS does not reclaim:
 
 - the Supabase session;
 - the backup ledger (`gymgo.backup.*`);
@@ -226,15 +253,19 @@ Also move the small localStorage keys that matter onto native storage
 
 The once-per-phone flags matter most. If localStorage were cleared while the
 database survived, `clearGeneratedRests` would run a second time and could
-clear a 3:00 rest you typed in yourself, which CLAUDE.md says must never
-happen. The running rest (`gymgo.rest`) can stay where it is, because it is
-throwaway by design.
+clear a 3:00 rest you typed in yourself, then back that up, which CLAUDE.md
+says must never happen. The running rest (`gymgo.rest`) can stay where it is,
+because it is throwaway by design.
 
 ### 1.6 First install
 
-Plug the phone into the Mac, choose it in Xcode and press Run. A paid
-account's development signing lasts a year, which is fine while building.
-TestFlight takes over in Phase 2.
+Claude builds; you pick your team in Xcode, connect the iPhone and press Run
+(the guide walks through it). The first run also registers the bundle ID and
+the phone with your developer account.
+
+**While testing, stay signed out of backup,** or test workouts would be
+uploaded into your real history. Phase 2 wipes the test data before the first
+sign-in.
 
 **Done when:**
 
@@ -245,72 +276,105 @@ TestFlight takes over in Phase 2.
   existing behaviour).
 - Every route and overlay matches the home-screen app side by side.
 - Export opens the share sheet, and importing from Files restores.
-- Backup and restore work from inside the app.
-- `npm test` and all 17 browser suites still pass on the web build.
+- `npm test` and all 17 browser suites still pass.
 
-## Phase 2: Shipping it to your phone (M)
+## Phase 2: TestFlight, Xcode Cloud, moving across, retiring Vercel (M)
 
-1. **Info.plist:** set `ITSAppUsesNonExemptEncryption` to `NO`. The app only
-   uses HTTPS, which is exempt, and this stops every upload pausing at the
-   export compliance question.
-2. **Version numbers:** the version comes from `package.json` and the build
-   number from CI.
-3. **Xcode Cloud** (25 compute hours a month come with your membership):
-   - `ios/App/ci_scripts/ci_post_clone.sh` installs Node, then runs `npm ci`,
-     `npm test`, `npm run build:ios` and `npx cap sync ios`. It has to run
-     first, because the Swift packages point into `node_modules`.
-   - The Supabase URL and anon key are Xcode Cloud environment variables. They
-     are the public key only, never the service role key.
-   - **Workflow one:** a push to `main` archives the app and sends it to your
-     internal TestFlight group.
-   - **Workflow two:** a monthly scheduled build, so a quiet spell never lets
-     the 90-day expiry lock you out of your own app.
-   - The alternative is GitHub Actions on a macOS runner with fastlane. It
-     works, but on a private repo macOS minutes count ten times, so Xcode Cloud
-     is the cheaper fit.
-4. **TestFlight on the phone**, with automatic updates on.
-5. **The update speed changes.** Today a push reaches the phone at the next
-   launch, through the service worker. Now it is a build plus processing,
-   about 20 to 40 minutes. For one person that is fine. Live web-bundle
-   updates exist, but they mean a third-party service, which the brief rules
-   out, so park them.
-6. **Move your history across.**
-   - In the home-screen app, Settings → Back up now, until the status reads
-     "Backed up". Also export everything as JSON and keep the file.
-   - Sign in on the new app. Its first round restores before it uploads
-     anything (step 1 of `syncNow`), and it drops its own starter gym.
+1. **Info.plist:** `ITSAppUsesNonExemptEncryption` = `NO`. The app only uses
+   HTTPS, which is exempt. Without it, every build waits in "Missing
+   Compliance" until the questions are answered.
+2. **App Store Connect record.** Name must be unique across the whole store
+   even for an app that is never released, so "GymGo" may be taken; a variant
+   works, and the name under the icon stays "GymGo". Bundle ID
+   `com.liamdaly.gymgo` (permanent after the first upload), SKU of your
+   choosing. Then an internal testing group with only you in it.
+3. **First upload by hand** from Xcode (Archive, then Distribute App,
+   TestFlight Internal Only), to prove the record, signing and TestFlight
+   work before automating anything.
+4. **Xcode Cloud** (25 compute hours a month come with your membership):
+   - `ios/App/ci_scripts/ci_post_clone.sh` (executable, `#!/bin/sh`) installs
+     Node with Homebrew, then runs `npm ci`, `npm test`, `npm run build:ios`
+     and `npx cap sync ios`. It runs before Xcode resolves Swift packages,
+     which is exactly when it has to, because `CapApp-SPM` points into
+     `node_modules`.
+   - `Package.resolved` and the shared scheme are committed; Xcode Cloud
+     will not resolve packages on its own.
+   - The Supabase URL and publishable (anon) key are workflow environment
+     variables. Never the secret or service-role key.
+   - Start conditions: changes to `main`, a **weekly** schedule (so a quiet
+     spell never lets the 90-day expiry lock you out), and manual.
+   - Archive action set to TestFlight (Internal Testing Only), with a
+     TestFlight Internal Testing post-action that adds your group. The
+     group's own automatic distribution does not pick up Xcode Cloud builds.
+   - The alternative is GitHub Actions: free on a public repo, but signing
+     is harder to set up, so Xcode Cloud stays the choice.
+5. **TestFlight on the phone**, with automatic updates on. Installing from
+   TestFlight replaces the Xcode-installed copy and keeps its data.
+6. **Update speed.** A push now reaches the phone in about 20 to 40 minutes
+   (build plus processing), instead of at the next launch.
+7. **Move your history across.** The new app cannot see the home-screen
+   app's data: it lives at a different origin, in a different sandbox.
+   - In the home-screen app: Back up now, until it reads "Backed up", and
+     Export everything as JSON. Keep the file.
+   - Save your Supabase password in the Passwords app first. The save
+     prompt may not appear inside the app.
+   - In the new app: **wipe the test data first** (Settings, Wipe and reseed),
+     then sign in. Its first round restores before it uploads anything (step
+     1 of `syncNow`). Without the wipe, the test sessions from Phase 1 would
+     be uploaded into your history.
    - Check that Settings → On this device shows the same counts in both apps.
-7. **Then remove the home-screen icon.** Two logging apps on one phone keep
-   two databases, and a workout open in one is not in the other until both
-   have synced. Keeping the website on Vercel is still worth it, because it
-   costs nothing and works on a laptop. Since both sync through the same
-   account, it is a second device rather than a second history.
+8. **Retire Vercel**, after at least one real session in the new app:
+   - remove the home-screen icon;
+   - delete the Vercel project;
+   - delete `vercel.json`, rewrite `docs/deploy.md`, and correct the Vercel
+     mentions in README, `supabase/README.md`, CLAUDE.md, the brief and
+     `.env.local.example`;
+   - the PWA plugin, `test:offline` and the PWA icons can go too, or stay as
+     a web build for development (decide then);
+   - **keep** `.github/workflows/keepalive.yml`. It keeps Supabase awake and
+     has nothing to do with Vercel. GitHub switches scheduled workflows off
+     in a public repo after 60 days without a commit, so check it every
+     couple of months.
 
 **Done when:** a push to `main` reaches your phone through TestFlight without
-you touching a Mac, and every count matches the old app.
+you touching the Mac, every count matches the old app, and Vercel is gone.
 
-## Phase 3: What the app can do that Safari could not (M, recommended)
+## Phase 3: Rest alerts when locked, the Lock Screen countdown (M)
 
 The screens don't change. Each item fixes a limit the brief had to accept.
 
 1. **Rest alerts with the phone locked.** When Done starts a rest, schedule a
-   local notification for the rest's end time. Move it on ±30s, and cancel it
-   on Skip, on a drop, on Finish and on Discard. While the app is open the
-   in-app tone plays instead, so you never get both. This replaces "keep the
-   timer on screen rather than relying on a background notification". A bonus:
-   with the phone locked, iPhone notifications go to your watch, so you get a
-   tap on the wrist before any watch code exists.
-2. **The rest on the Lock Screen and the Dynamic Island** (a Live Activity):
-   the countdown, "Up next" and the set count. It needs a small Swift widget
-   extension, fed by a plugin when Done is pressed. The system draws the
-   countdown from the end time, so nothing has to run while the phone is
-   locked.
-3. **Optional: a home screen widget** showing the next session ("Push ·
-   Today · 5 exercises"), from a snapshot the app writes into the App Group
-   whenever the schedule changes.
+   time-sensitive local notification for the rest's end time. Move it on
+   ±30s, and cancel it on Skip, on a drop, on Finish and on Discard. While the
+   app is open the in-app tone plays instead, so you never get both. With the
+   phone locked and the watch on your wrist, iOS shows the notification on
+   the watch, so you get a tap on the wrist before any watch code exists.
+2. **A Live Activity: the rest on the Lock Screen and in the Dynamic Island.**
+   - A widget extension target (`com.liamdaly.gymgo.restactivity`) with
+     "Include Live Activity", and `NSSupportsLiveActivities` on the app. No
+     push notifications needed.
+   - A Live Activity can only be **started** while the app is open, so it
+     starts with the workout and each Done updates it with the new rest's end
+     time. `Text(timerInterval:)` counts down on its own with nothing
+     running.
+   - It lasts up to 8 hours, which covers any session; Finish and Discard end
+     it.
+   - It also appears on the watch's Smart Stack automatically (watchOS 11
+     and later), so it should have a small watch layout.
+   - The App Group `group.com.liamdaly.gymgo` is shared by the app and the
+     widget. It does not reach the watch, which is a separate device.
+   - Keep the app and the widget extension on the same minimum iOS, or
+     Capacitor's `CapApp-SPM` can quietly change its platform version on the
+     next sync.
+3. **Optional: a home screen widget** showing the next session, from a
+   snapshot the app writes into the App Group whenever the schedule changes.
 
-**Done when:** with the phone locked in your pocket, the end of a rest buzzes
-and beeps, and the Lock Screen shows the countdown.
+**One cue per rest.** Once the watch app runs the session (Phase 4), the watch
+gives the rest cue itself, so the phone stops scheduling its notification and
+the Live Activity updates stop alerting. Otherwise both devices would buzz.
+
+**Done when:** with the phone locked in your pocket, the end of a rest buzzes,
+and the Lock Screen and Dynamic Island show the countdown.
 
 ## Phase 4: Watch app, the set and the rest on your wrist (M)
 
@@ -326,7 +390,9 @@ Everything below follows from that.
 
 ### 4.2 The pieces
 
-- **A watchOS target** in the Xcode project (SwiftUI).
+- **A watchOS app target**, "Watch App for Existing iOS App", bundle ID
+  `com.liamdaly.gymgo.watchkitapp`, minimum watchOS 26.0. One target, no
+  extension. It does not run without the phone app installed.
 - **`GymGoKit`, a Swift package** shared by phone and watch. It holds:
   - the snapshot and event types (`Codable`);
   - the Bold design tokens: ground, chalk, blue (`hot`) and muted;
@@ -334,10 +400,10 @@ Everything below follows from that.
   The watch is not the web app, but it should look like the same app:
   near-black, poster-sized chalk numbers and one blue highlight.
 - **`WatchBridge`, a local Capacitor plugin** in the iPhone app:
-  - starts the WatchConnectivity session;
+  - starts the WatchConnectivity session at launch, in native code;
   - sends the latest snapshot (`updateApplicationContext`: newest wins);
-  - receives events from the watch into an inbox file in the App Group
-    container, even while the web view is frozen.
+  - receives events from the watch into an inbox file, even while the web
+    view is frozen.
 - **`src/domain/watch.ts`** (pure, unit tested): `buildWatchSnapshot` turns the
   active workout into what the watch shows. See "The session snapshot" below.
 - **`src/platform/watch.ts`:** watches the active workout and the rest, and
@@ -346,18 +412,28 @@ Everything below follows from that.
 ### 4.3 A workout session keeps the watch app on your wrist
 
 Without one, a watch app drops into the background as soon as you lower your
-wrist and stops running. Every strength app on the watch uses an `HKWorkoutSession`
-(Traditional Strength Training) for this:
+wrist and stops running. Strength apps on the watch use an `HKWorkoutSession`
+(`traditionalStrengthTraining`) for this:
 
-- the app comes back on screen when you raise your wrist;
+- the app comes back on screen when you raise your wrist, and stays on the
+  always-on display (the countdown keeps ticking at the lower rate);
 - timers and haptics keep running;
 - you get heart rate and elapsed time;
-- it shows on the always-on display.
+- if the watch app crashes, watchOS relaunches it and the session is
+  recovered.
 
-Whether the workout is saved to Apple Health at the end is a separate choice
-(Phase 6). It can be thrown away instead. Starting a workout on the phone
-opens the watch app on its own (`startWatchApp(with:)`), and finishing on the
-phone ends it.
+**The watch is the primary session, and the phone mirrors it.** That is
+Apple's own advice when there is a watch app. Starting a workout on the phone
+opens the watch app on its own (`startWatchApp(with:)`); the watch starts the
+session and mirrors it to the phone (`startMirroringToCompanionDevice`),
+which keeps the two in step. The phone's mirroring handler is set in native
+launch code, because the web view may be frozen. With no watch, the phone runs
+its own session (possible since iOS 26).
+
+Capabilities: HealthKit on both targets, Background Modes on the watch
+(Workout processing, plus Audio for the haptic), and Health usage strings on
+both. Starting Apple's own Workout app during a GymGo session ends GymGo's,
+because the watch runs one workout at a time.
 
 ### 4.4 What the watch shows in this phase
 
@@ -366,9 +442,16 @@ The phone does the logging; the watch shows the same state:
 - **The set in hand:** the exercise, "Set 2 of 4" (from `setOrdinals`) and
   the weight × reps, poster-sized.
 - **The rest:** the countdown from the end time, "Up next" and a "New record"
-  in blue when there is one. A firm tap on the wrist when it ends. The watch
-  counts down by itself, so this works with the phone locked.
+  in blue when there is one. **One firm tap on the wrist when it ends.** The
+  watch counts down by itself, so this works with the phone locked. (A haptic
+  briefly pauses heart-rate collection, which is why it is one tap and not a
+  pattern.)
 - **After the rest:** the next set, which is already in the snapshot.
+
+**Testing reality:** watch installs from Xcode are slow, and WatchConnectivity
+does not work in the Simulator. Screens are built in the Simulator; the link
+with the phone, HealthKit and the workout session are tested on the real
+devices; and day-to-day use comes from TestFlight.
 
 **Done when:** you start a session on the phone and the watch app opens on its
 own. You press Done on the phone, lock it and pocket it. The watch counts the
@@ -380,6 +463,11 @@ rest down, taps your wrist at the end and shows the next set.
 
 - **Done** logs the set in hand, the way the phone's Done bar does
   ("Done · 102.5 × 6").
+- **The Action button logs the set too.** While GymGo's workout is running,
+  the app donates "log this set" as the Action button's next action, so one
+  press means Done. You choose GymGo as the Action button's workout app once,
+  in the watch's Settings. **Double tap** does the same while the app is on
+  screen.
 - **The Digital Crown** moves the weight through the weights your gym can
   actually load: the same steps as the phone's steppers, from a ladder the
   snapshot carries. Tap the reps to put the Crown on reps.
@@ -438,12 +526,12 @@ test fails.
 - The watch writes each action to its own log first, so a crash or a relaunch
   mid-session keeps its place. The actions are: complete set X with W × R at
   time T, skip rest, and finish.
-- It sends them with `sendMessage` when the phone is reachable (this wakes the
-  phone app's native code, which writes them to the inbox and acknowledges
-  them), and with `transferUserInfo` when it is not (queued, and delivered
-  for certain once the phone app runs). Every event carries its own UUID, so a
-  duplicate is dropped.
-- On the phone, the React app drains the inbox in order:
+- Each event goes by `transferUserInfo` (queued, in order, delivered for
+  certain), and by `sendMessage` as well when the phone is reachable, which
+  is faster and wakes the phone app's native code. Every event carries its
+  own UUID, so the copy that arrives second is dropped.
+- On the phone, the native side writes events to the inbox; the React app
+  drains it in order:
   - on launch and on resume, before anything else;
   - straight away if the app is already open.
 
@@ -454,31 +542,58 @@ test fails.
   the wrist at 18:42 is stamped 18:42, not when you next opened the phone.
   That matters because records (`recordSetIds`) and the early bird and night
   owl badges read those times.
-- **Finish on the phone drains the inbox first.** `finishWorkout` tidies away
-  untouched sets, and a finished workout is immutable, so sets the watch
+- **The drain skips a set the phone has deleted.** `completeSetWith` checks
+  only that the workout is unfinished, not that the set still exists, so the
+  drain has to.
+- **Finish on the phone drains the inbox first.** `finishWorkout` soft-deletes
+  every unticked set, and a finished workout is immutable, so sets the watch
   logged but the phone had not yet applied would otherwise be lost.
 - **If the same set is logged on both,** the later time wins. That is the
   same last-write-wins rule as everywhere else.
 
 **Done when:**
 
-- A whole session (a superset, a pyramid and a record) is logged on the watch
-  with the phone locked in a bag.
+- A whole session (a superset, a pyramid and a record) is logged on the watch,
+  some of it with the Action button, with the phone locked in a bag.
 - Opening the phone shows every set with the right times, the right records
   and the right session list, and it backs up.
 - The reverse also works: log on the phone and the watch keeps up.
 
-## Phase 6: Apple Health and extras (M to L, each one optional)
+## Phase 6: Apple Health (M)
 
-1. **Save each workout to Apple Health** at Finish, as Traditional Strength
-   Training, with the duration, heart rate and active energy from the watch.
-   Opt in. That means one more switch in Settings, under Sound and Vibrate.
-2. **Complications and the Smart Stack:** the next session and its day, and
+1. **Every workout saved to Apple Health** as Traditional Strength Training,
+   with the duration, heart rate and active energy.
+   - With the watch: the watch's primary session saves it at Finish
+     (`finishWorkout` on the builder), so it counts towards your Activity
+     rings. Only the primary session saves, so there is no duplicate.
+   - Without the watch: the phone saves it.
+   - Either way the workout carries GymGo's workout ID as its sync
+     identifier, so saving again replaces rather than duplicates.
+   - `finishWorkout` can report nothing even when it worked (when the watch
+     is locked), so that is not treated as a failure.
+2. **Body weight read from Apple Health** into Progress → Body, one entry a
+   day through `logBodyMetric`, read when the app opens.
+   - **A weight you typed in GymGo is never overwritten.** Health fills the
+     days you have no entry for.
+   - HealthKit does not say when you have refused access: refused looks like
+     "no data". So an empty list says so and points to Health's settings,
+     rather than claiming there are no weigh-ins.
+   - On iOS 27 you can grant access to only recent history, so an import
+     after updating may come back shorter. The app checks for that.
+3. **One more switch in Settings** for each (save workouts, read weight), under
+   Sound and Vibrate. That is the only change to the iPhone screens.
+4. **A privacy policy.** Apple requires one for any app using HealthKit. TestFlight
+   internal testing may not enforce it, but it costs a paragraph:
+   `docs/privacy.md`, with a public URL because the repo is public.
+
+**Done when:** a finished session appears in the Health and Fitness apps once,
+with heart rate, and a weigh-in from your scales appears in Progress → Body.
+
+## Phase 7: Extras (M to L, each optional)
+
+1. **Complications and the Smart Stack:** the next session and its day, and
    during a session the rest countdown.
-3. **Body weight from Apple Health** into Progress → Body, one entry a day
-   through `logBodyMetric`, instead of typing it in (one of the brief's
-   "known limits").
-4. **Start the next planned session from the watch** with the phone in a
+2. **Start the next planned session from the watch** with the phone in a
    locker. The phone sends ahead what Today would show. The watch starts it
    with IDs it makes itself, and the phone replays the start through
    `startWorkoutFromRoutine` with those IDs. This touches the immutability
@@ -493,24 +608,27 @@ test fails.
 | JavaScript frozen while the phone is locked | The watch cannot reach the app's logic | The watch walks a precomputed list; events wait in a native inbox (4.1, 5.2, 5.4) |
 | Logging on both devices at once | Two versions of one set | Event IDs, last write wins on time, the inbox drained before Finish (5.4) |
 | The Swift rules drift from the TypeScript | The watch shows a different number | Only three small rules are ported, held by shared fixtures (5.3) |
-| A TestFlight build expires after 90 days | The app stops opening | A monthly scheduled build (Phase 2) |
-| No Mac | Setup and watch debugging are painful | Plan B: Xcode Cloud plus a borrowed or rented Mac for setup |
-| Updates are no longer instant | A fix takes 20 to 40 minutes to arrive | Xcode Cloud on every push; the website stays as a fallback |
-| Web view differences (wake lock, vibration, download) | Something quietly stops working | Each goes through `src/platform/` with a web fallback, and is checked in 1.4 |
+| Test sessions uploaded into real history | Fake workouts in your records | Stay signed out while testing; wipe before the first sign-in (Phase 2) |
+| Both devices buzz at the end of a rest | Two cues for one rest | One cue per rest: the watch takes over once it runs the session (Phase 3) |
+| A TestFlight build expires after 90 days | The app stops opening | A weekly scheduled Xcode Cloud build (Phase 2) |
+| Watch debugging is slow and flaky | Slow progress on the watch | Simulator for screens, devices for HealthKit and the link, TestFlight for daily use |
+| Updates are no longer instant | A fix takes 20 to 40 minutes to arrive | Xcode Cloud on every push to `main` |
+| Web view differences (wake lock, vibration, download, keyboard, focus) | Something quietly behaves differently | Each goes through `src/platform/` with a web fallback, and is checked in 1.4 |
+| A secret committed to a public repo | Anyone can read it | Only the publishable Supabase key ever goes into a build; `.env.local` stays gitignored |
 | Two copies of the app on one phone | History split across two databases | Remove the home-screen icon after moving across (Phase 2) |
 
 ## Testing
 
 - **Everything that exists stays valid.** The app runs the same bundle, so
-  `npm test` and the 17 browser suites still prove its behaviour. Running them
-  once in Playwright's WebKit on the Mac is a cheap way to get closer to
-  WKWebView.
+  `npm test` and the 17 browser suites still prove its behaviour, once Phase 0
+  makes them run on the Mac.
 - **New unit tests:** the `src/platform/` fallbacks, `buildWatchSnapshot`, the
-  inbox drain (idempotent, in order, refused on a finished workout) and the
-  fixture generator.
+  inbox drain (idempotent, in order, refused on a finished workout, skipping
+  deleted sets) and the fixture generator.
 - **XCTest:** `GymGoKit` decoding every fixture, the three ported rules, and
   the bridge's inbox file.
-- **A short device checklist** in `docs/ios.md`, run before a release:
+- **A short device checklist** in `docs/ios-guide.md`, run before relying on a
+  build:
   - a cold start in aeroplane mode;
   - a rest that ends with the phone locked;
   - a session logged on the watch with the phone in a bag;
@@ -523,8 +641,8 @@ Draft wording, to be added as each phase lands:
 
 - **The native shell.** The iPhone app is the web build inside Capacitor.
   Nothing outside `src/platform/` may import `@capacitor/*`, and every module
-  there has a web fallback, so the website and the browser suites keep
-  working. `scripts/boundaries.test.ts` enforces this.
+  there has a web fallback, so the browser suites keep working.
+  `scripts/boundaries.test.ts` enforces this.
 - **The watch walks a list.** The phone works out the order, the rests and
   the targets (`buildWatchSnapshot`). The watch keeps exactly three rules of
   its own (carry forward, the back-off target, the record check), held to the
@@ -533,8 +651,11 @@ Draft wording, to be added as each phase lands:
 - **Watch events are taps.** They go through `src/db/mutations.ts` like any
   other write, with the time they happened on the wrist. The inbox is drained
   before anything else, and always before Finish.
-- **Distribution.** TestFlight internal testing only. Only the anon key goes
-  into a build, as now.
+- **One cue per rest.** Whichever device runs the session gives the cue; the
+  other stays quiet.
+- **Distribution.** TestFlight internal testing only. Only the publishable
+  Supabase key goes into a build, as now; the repo is public, so nothing
+  secret is ever committed.
 
 ## Found while reading (these carry across as they are)
 
@@ -554,19 +675,20 @@ because the app moves across unchanged, they come with it:
 
 ## Decisions (7 October 2026)
 
-1. **Mac:** yes, with Xcode 26. Plan B is not needed. The native work runs
-   in a local Claude Code session on the Mac (see `docs/ios-guide.md`).
-2. **Devices:** iPhone 14 Pro and Apple Watch Ultra 2, both on 26.6.2. The
-   minimum versions are **iOS 26 and watchOS 26**. Nothing older needs
-   supporting.
+1. **Mac:** yes, Apple silicon with **Xcode 27**. The native work runs in a
+   local Claude Code session on the Mac (see `docs/ios-guide.md`).
+2. **Devices:** iPhone 14 Pro and Apple Watch Ultra 2, on 26.6.x. The
+   minimum versions are **iOS 26.0 and watchOS 26.0**, so the app works now
+   and after the devices move to 27.
 3. **The website:** retired once the app is working and your history has
    moved across (end of Phase 2). The Supabase keepalive in GitHub Actions
    stays, because it has nothing to do with Vercel.
 4. **Phase 3:** yes.
-5. **Apple Health:** yes to both. Save every workout, and read body weight.
-   Both move out of "optional" into the plan (Phase 6, items 1 and 3).
+5. **Apple Health:** yes to both. Save every workout, and read body weight
+   (Phase 6).
 6. **Bundle IDs:** `com.liamdaly.gymgo` for the phone,
-   `com.liamdaly.gymgo.watchkitapp` for the watch, and the App Group
+   `com.liamdaly.gymgo.watchkitapp` for the watch,
+   `com.liamdaly.gymgo.restactivity` for the Live Activity, and the App Group
    `group.com.liamdaly.gymgo`.
-7. **The three gaps:** still open. Each is queued as a separate task, and none
-   of them blocks the port.
+7. **The three gaps:** still open. The first two are queued as separate
+   tasks, and none of them blocks the port.
