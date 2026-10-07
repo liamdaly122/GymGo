@@ -73,7 +73,14 @@ type all carry across as they are.
 - **Minimum versions: iOS 26.0 and watchOS 26.0.** The app runs on what the
   devices have now and keeps working when they move to 27. Xcode 27 builds
   for both, and Apple's current documentation describes Xcode 27's screens,
-  so the help pages match what you see.
+  so the help pages match what you see. APIs new in 27 (such as HealthKit's
+  limited-history check) sit behind availability checks.
+- **Devices in Xcode 27** are managed in Device Hub, which replaced the
+  Simulator app and the Devices window. While the iPhone is on iOS 26 it is
+  paired by cable, and it has to stay plugged in to run the watch app. On iOS
+  and watchOS 27 the watch pairs with the Mac directly over Wi-Fi, which Apple
+  calls more reliable, so updating both devices before Phase 4 is worth
+  considering. Each OS update means pairing again.
 - **Toolchain:** Node 24 LTS (the project needs at least 22.12, and never 23),
   Capacitor 8.5 with Swift Package Manager (no CocoaPods).
 - **Where Claude works:** a local Claude Code session in `~/Developer/GymGo`
@@ -111,8 +118,11 @@ evenings.
    - CLAUDE.md's description of the suites' ports is out of date (two suites
      default to 5180, `test:offline` reads `PREVIEW_URL` and starts no
      server). Correct it.
-2. **A `main` branch.** Push the roadmap branch to `main` and make it the
-   default branch on GitHub. Xcode Cloud will build from `main`. Vercel keeps
+2. **`main` and `dev` branches.** Push the roadmap branch to `main` and to
+   `dev`, and make `main` the default branch on GitHub. `main` means "what is
+   on the phone": Xcode Cloud builds every change to it. Day-to-day work
+   happens on `dev` and is merged into `main` when a change is ready for the
+   phone, so a burst of commits doesn't become a burst of builds. Vercel keeps
    deploying from its own branch until it is retired, so the home-screen app
    is untouched in the meantime.
 3. **Brief version 4.** The brief currently says "No feature that requires an
@@ -168,6 +178,12 @@ and is the default, and the brief and CLAUDE.md say what is being built.
   file ships inside the app, so it is offline by construction.
 - `npm run ios` runs `build:ios`, then `npx cap sync ios`. Claude builds and
   installs from there with `xcodebuild`, or you press Run in Xcode.
+- **Not `npx cap run ios`.** Xcode 27 replaced the Simulator app with Device
+  Hub, and Capacitor's runner cannot find simulators until its fix ships
+  (Capacitor issue 8620).
+- **Never convert the project to Xcode 27.2's new JSON project format.**
+  `cap sync` then stops updating the Swift packages without reporting an
+  error (Capacitor issue 8607). Keep `App.xcodeproj/project.pbxproj`.
 - The web build is untouched until the website is retired.
 
 ### 1.3 `src/platform/`: the only place that knows it is in an app
@@ -409,6 +425,14 @@ Everything below follows from that.
 - **`src/platform/watch.ts`:** watches the active workout and the rest, and
   sends a new snapshot whenever either changes.
 
+**Swift settings for the new targets.** Xcode 27's new targets default to
+Swift 5 language mode with the main actor as the default isolation. Keep
+that, but mark every WatchConnectivity and HealthKit delegate method
+`nonisolated`: both frameworks call them on background threads, which
+quietly misbehaves in Swift 5 mode and crashes in Swift 6 mode. Copy the
+values out and hop to the main actor for the UI. The watch app uses
+`WKApplicationDelegate`; `WKExtensionDelegate` is deprecated in watchOS 27.
+
 ### 4.3 A workout session keeps the watch app on your wrist
 
 Without one, a watch app drops into the background as soon as you lower your
@@ -615,6 +639,8 @@ with heart rate, and a weigh-in from your scales appears in Progress → Body.
 | Updates are no longer instant | A fix takes 20 to 40 minutes to arrive | Xcode Cloud on every push to `main` |
 | Web view differences (wake lock, vibration, download, keyboard, focus) | Something quietly behaves differently | Each goes through `src/platform/` with a web fallback, and is checked in 1.4 |
 | A secret committed to a public repo | Anyone can read it | Only the publishable Supabase key ever goes into a build; `.env.local` stays gitignored |
+| Capacitor's prebuilt framework is still built with the iOS 26 SDK | From April 2027 Apple requires the iOS 27 SDK; one user reports an upload rejected over it | Uploads with Xcode 27 are accepted today. Watch for Capacitor 9 (due by the end of 2026) and move to it before April |
+| Xcode Cloud's "Latest Release" might not be Xcode 27 | A build on the wrong toolchain | Pick Xcode 27.0 or 27.1 by name in the workflow's Environment |
 | Two copies of the app on one phone | History split across two databases | Remove the home-screen icon after moving across (Phase 2) |
 
 ## Testing
