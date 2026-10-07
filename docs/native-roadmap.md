@@ -155,6 +155,9 @@ and is the default, and the brief and CLAUDE.md say what is being built.
   default; the app's safe-area CSS does the work, as it does now),
   `ios.allowsLinkPreview: false`, and a dark status bar through the core
   `SystemBars` plugin (`style: 'DARK'` means light text on a dark ground).
+  Capacitor's config docs call that option Android-only, though the 8.5.3 iOS
+  source reads it; if the status bar stays dark on dark, use
+  `@capacitor/status-bar` with `Style.Dark` instead.
   Never set `server.url`, which is for live reload only.
 - Build the web app, then `npx cap add ios` once. That creates `ios/App/`
   with `App.xcodeproj`, the Swift Package `CapApp-SPM` and a UIScene
@@ -194,10 +197,10 @@ suites and the website keep working unchanged:
 | Today | File | In the app |
 |---|---|---|
 | Screen Wake Lock | `src/hooks/useWakeLock.ts` | `@capacitor-community/keep-awake` 8.x (or a ten-line local plugin; on iOS it only sets `isIdleTimerDisabled`), on for the whole `WorkoutShell` as now |
-| `navigator.vibrate` | `src/lib/feedback.ts:64` | `@capacitor/haptics`. Safari has no vibration API, so the Vibrate toggle has never done anything on your iPhone. In the app it works, and its hint ("Ignored on iOS Safari…") changes to match |
+| `navigator.vibrate` | `src/lib/feedback.ts:66` | `@capacitor/haptics`. Safari has no vibration API, so the Vibrate toggle has never done anything on your iPhone. In the app it works, and its hint ("Ignored on iOS Safari…") changes to match |
 | Web Audio tones | `src/lib/feedback.ts` | Kept as they are. The app sets its audio session to mix with other audio, so the rest beep plays over your music instead of stopping it |
 | `<a download>` export | `src/db/backup.ts:134` | That does nothing inside a web view. Write the file with `@capacitor/filesystem` and open the share sheet (`@capacitor/share`): Save to Files, AirDrop or Mail |
-| `<input type="file">` import | `SettingsScreen.tsx:169` | Already opens the Files picker in WKWebView. Test it |
+| `<input type="file">` import | `src/features/settings/SettingsScreen.tsx:169` | Already opens the Files picker in WKWebView. Test it |
 | `visibilitychange` (5 listeners) | wake lock, elapsed clock, `useToday`, rest timer, sync | Fires in WKWebView too. Check all five, and back them with `@capacitor/app`'s resume event if any misbehave |
 
 **Local plugins** (the watch bridge, the Live Activity, HealthKit) are Swift
@@ -226,12 +229,15 @@ current home-screen app:
 - **Safe areas:** the 12 `env(safe-area-inset-*)` uses: the tab bar, resume
   bar, sheets, toast, done bar and the rest takeover, around the Dynamic
   Island.
-- **Keyboard:** the set-in-hand fields, the number fields in sheets, the
-  sign-in form. The Done bar should not jump.
+- **Keyboard:** the set-in-hand fields, the number fields in sheets, and the
+  sign-in form (typed in, but Sign in not pressed until Phase 2). The Done bar
+  should not jump.
 - **Focus:** Capacitor lets `autoFocus` raise the keyboard without a tap,
-  which Safari does not. Three screens use it (`GymsScreen.tsx:97`,
-  `ExercisePicker.tsx:44`, `PlanScreen.tsx:216`). Decide on the phone whether
-  each should keep it.
+  which Safari does not. Three screens use it
+  (`src/features/gyms/GymsScreen.tsx:97`,
+  `src/features/exercises/ExercisePicker.tsx:44`,
+  `src/features/plan/PlanScreen.tsx:216`). Decide on the phone whether each
+  should keep it.
 - **Scrolling and touch:** rubber-banding (the body already sets
   `overscroll-behavior-y: none`), the calendar swipe, and the tap-to-skip on
   the rest clock.
@@ -257,7 +263,8 @@ layers of protection:
    Files under On My iPhone → GymGo.
 3. **Restore on an empty launch.** If the database is empty but a snapshot
    exists, offer to restore it. `importFromJson` already does the work, and it
-   queues every row for backup.
+   queues every row for backup. **Wipe and reseed deletes the snapshots too**,
+   so a deliberate wipe (such as Phase 2's) is never offered back.
 
 Also move the small localStorage keys that matter onto `@capacitor/preferences`,
 which iOS does not reclaim:
@@ -313,15 +320,20 @@ sign-in.
      and `npx cap sync ios`. It runs before Xcode resolves Swift packages,
      which is exactly when it has to, because `CapApp-SPM` points into
      `node_modules`.
-   - `Package.resolved` and the shared scheme are committed; Xcode Cloud
-     will not resolve packages on its own.
+   - `Package.resolved`, the shared scheme and Xcode Cloud's
+     `xcshareddata/xcodecloud/manifest.json` are committed; Xcode Cloud will
+     not resolve packages on its own.
+   - Xcode Cloud counts build numbers from 1, so before its first build the
+     next build number is set (App Store Connect, Xcode Cloud settings) above
+     the one uploaded by hand.
    - The Supabase URL and publishable (anon) key are workflow environment
      variables. Never the secret or service-role key.
    - Start conditions: changes to `main`, a **weekly** schedule (so a quiet
      spell never lets the 90-day expiry lock you out), and manual.
    - Archive action set to TestFlight (Internal Testing Only), with a
      TestFlight Internal Testing post-action that adds your group. The
-     group's own automatic distribution does not pick up Xcode Cloud builds.
+     group's own automatic distribution does not pick up Xcode Cloud builds,
+     so the first cloud build is checked by hand.
    - The alternative is GitHub Actions: free on a public repo, but signing
      is harder to set up, so Xcode Cloud stays the choice.
 5. **TestFlight on the phone**, with automatic updates on. Installing from
@@ -338,7 +350,12 @@ sign-in.
      then sign in. Its first round restores before it uploads anything (step
      1 of `syncNow`). Without the wipe, the test sessions from Phase 1 would
      be uploaded into your history.
-   - Check that Settings → On this device shows the same counts in both apps.
+   - When the new app reads "Backed up", check that Settings → On this device
+     shows the same Exercises, Workouts and Sets in both apps.
+   - The plan builder's choices (`gymgo.builder`: time, experience,
+     priorities, lifts to avoid) live in the old app's localStorage, not in
+     the backup or the export, so they are set again by hand. The end of a
+     block reads Lifts to avoid, so this matters.
 8. **Retire Vercel**, after at least one real session in the new app:
    - remove the home-screen icon;
    - delete the Vercel project;
@@ -360,7 +377,9 @@ you touching the Mac, every count matches the old app, and Vercel is gone.
 The screens don't change. Each item fixes a limit the brief had to accept.
 
 1. **Rest alerts with the phone locked.** When Done starts a rest, schedule a
-   time-sensitive local notification for the rest's end time. Move it on
+   time-sensitive local notification for the rest's end time (the App target
+   needs the Time Sensitive Notifications capability, added before the first
+   permission prompt). Move it on
    ±30s, and cancel it on Skip, on a drop, on Finish and on Discard. While the
    app is open the in-app tone plays instead, so you never get both. With the
    phone locked and the watch on your wrist, iOS shows the notification on
@@ -425,9 +444,10 @@ Everything below follows from that.
 - **`src/platform/watch.ts`:** watches the active workout and the rest, and
   sends a new snapshot whenever either changes.
 
-**Swift settings for the new targets.** Xcode 27's new targets default to
-Swift 5 language mode with the main actor as the default isolation. Keep
-that, but mark every WatchConnectivity and HealthKit delegate method
+**Swift settings for the new targets.** Xcode 27's new targets most likely
+default to Swift 5 language mode with the main actor as the default
+isolation (check each new target's Build Settings: Swift Language Version,
+Default Actor Isolation). Keep that, but mark every WatchConnectivity and HealthKit delegate method
 `nonisolated`: both frameworks call them on background threads, which
 quietly misbehaves in Swift 5 mode and crashes in Swift 6 mode. Copy the
 values out and hop to the main actor for the UI. The watch app uses
@@ -471,9 +491,14 @@ The phone does the logging; the watch shows the same state:
   briefly pauses heart-rate collection, which is why it is one tap and not a
   pattern.)
 - **After the rest:** the next set, which is already in the snapshot.
+- **Heart rate** from the workout session, small, under the clock.
 
-**Testing reality:** watch installs from Xcode are slow, and WatchConnectivity
-does not work in the Simulator. Screens are built in the Simulator; the link
+From this phase the watch gives the rest cue whenever it runs the session, so
+the phone's notification stands down (one cue per rest, Phase 3).
+
+**Testing reality:** watch installs from Xcode are slow, `transferUserInfo`
+(which the inbox relies on) does not work in the Simulator, and workout
+mirroring needs real devices. Screens are built in the Simulator; the link
 with the phone, HealthKit and the workout session are tested on the real
 devices; and day-to-day use comes from TestFlight.
 
@@ -490,8 +515,13 @@ rest down, taps your wrist at the end and shows the next set.
 - **The Action button logs the set too.** While GymGo's workout is running,
   the app donates "log this set" as the Action button's next action, so one
   press means Done. You choose GymGo as the Action button's workout app once,
-  in the watch's Settings. **Double tap** does the same while the app is on
-  screen.
+  in the watch's Settings. To be listed there at all, the watch app must adopt
+  `StartWorkoutIntent` (in the watch app itself, not an extension), whose
+  `perform()` has to start a workout session. Phase 5 adds it and decides
+  what a press does with no session running (for example, start the watch's
+  session and say "Start the session on your iPhone"). Starting the planned
+  session from the watch stays in Phase 7. **Double tap** does the same as
+  Done while the app is on screen.
 - **The Digital Crown** moves the weight through the weights your gym can
   actually load: the same steps as the phone's steppers, from a ladder the
   snapshot carries. Tap the reps to put the Crown on reps.
@@ -632,7 +662,7 @@ with heart rate, and a weigh-in from your scales appears in Progress → Body.
 | JavaScript frozen while the phone is locked | The watch cannot reach the app's logic | The watch walks a precomputed list; events wait in a native inbox (4.1, 5.2, 5.4) |
 | Logging on both devices at once | Two versions of one set | Event IDs, last write wins on time, the inbox drained before Finish (5.4) |
 | The Swift rules drift from the TypeScript | The watch shows a different number | Only three small rules are ported, held by shared fixtures (5.3) |
-| Test sessions uploaded into real history | Fake workouts in your records | Stay signed out while testing; wipe before the first sign-in (Phase 2) |
+| Test sessions uploaded into real history | Fake workouts in your records, which can never be deleted | Phase 1: stay signed out. Phase 2: wipe before the first sign-in. After that: test in real sessions, or in an empty workout that is discarded |
 | Both devices buzz at the end of a rest | Two cues for one rest | One cue per rest: the watch takes over once it runs the session (Phase 3) |
 | A TestFlight build expires after 90 days | The app stops opening | A weekly scheduled Xcode Cloud build (Phase 2) |
 | Watch debugging is slow and flaky | Slow progress on the watch | Simulator for screens, devices for HealthKit and the link, TestFlight for daily use |
@@ -659,7 +689,9 @@ with heart rate, and a weigh-in from your scales appears in Progress → Body.
   - a rest that ends with the phone locked;
   - a session logged on the watch with the phone in a bag;
   - killing the app mid-rest;
-  - restoring from a snapshot.
+  - a snapshot from the last Finish in Files, under On My iPhone → GymGo.
+  Restoring from a snapshot is checked by Claude in the simulator, since it
+  needs an emptied database.
 
 ## Rules to add to CLAUDE.md
 
