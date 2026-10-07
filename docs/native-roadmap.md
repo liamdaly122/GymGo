@@ -2,8 +2,9 @@
 
 Author: Liam Daly
 Date: 7 October 2026
-Status: Proposal, nothing built yet
+Status: Agreed, nothing built yet. Decisions are recorded at the end.
 Builds on: `docs/build-brief.md` (version 3) and `CLAUDE.md`
+Step-by-step guide: `docs/ios-guide.md`
 
 ## The short version
 
@@ -551,13 +552,21 @@ because the app moves across unchanged, they come with it:
 - **`settings.units` and `settings.week_starts_on` have no control in
   Settings.** The week start does drive the calendar.
 
-## Decisions needed from you
+## Decisions (7 October 2026)
 
-1. **Do you have a Mac with Xcode 26?** If not, which Plan B?
-2. **Which iPhone and Apple Watch models**, on which OS versions? These set the
-   minimums.
-3. **The website:** keep it on Vercel as a second device, or retire it?
-4. **Phase 3** (rest alerts when locked, the Lock Screen countdown): yes or no?
-5. **Apple Health:** save workouts? Read body weight?
-6. **The bundle ID prefix** (for example `com.liamdaly`).
-7. **The three gaps above:** fix them before porting, or after?
+1. **Mac:** yes, with Xcode 26. Plan B is not needed. The native work runs
+   in a local Claude Code session on the Mac (see `docs/ios-guide.md`).
+2. **Devices:** iPhone 14 Pro and Apple Watch Ultra 2, both on 26.6.2. The
+   minimum versions are **iOS 26 and watchOS 26**. Nothing older needs
+   supporting.
+3. **The website:** retired once the app is working and your history has
+   moved across (end of Phase 2). The Supabase keepalive in GitHub Actions
+   stays, because it has nothing to do with Vercel.
+4. **Phase 3:** yes.
+5. **Apple Health:** yes to both. Save every workout, and read body weight.
+   Both move out of "optional" into the plan (Phase 6, items 1 and 3).
+6. **Bundle IDs:** `com.liamdaly.gymgo` for the phone,
+   `com.liamdaly.gymgo.watchkitapp` for the watch, and the App Group
+   `group.com.liamdaly.gymgo`.
+7. **The three gaps:** still open. Each is queued as a separate task, and none
+   of them blocks the port.
