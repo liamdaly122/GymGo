@@ -13,10 +13,13 @@ Step-by-step guide for doing it: `docs/ios-guide.md`
   database and the same screens, so it is identical because it is the same
   code. Nothing gets rewritten.
 - **The watch app is written in Swift (SwiftUI).** watchOS has no web view, so
-  no web app can run on a watch. It is a companion: it shows the set in hand
-  and the rest, logs sets from the wrist (including from the Ultra's Action
-  button), and hands everything to the phone, which stays the single source of
-  truth.
+  no web app can run on a watch. It runs the session: the set in hand, the
+  weight and reps, Done (including from the Ultra's Action button), the rest
+  and the record flash, and it can start a session. Everything it logs goes to
+  the phone, which stays the single source of truth. During a session the
+  phone is the companion you pick up between stations: the session list,
+  setup notes, swaps and what is coming. It does not log sets while the watch
+  runs the session.
 - **Personal use means TestFlight internal testing.** You are the only tester.
   There is no App Store listing and no App Review, and nobody else can install
   it. A build lasts 90 days, so a scheduled rebuild keeps it alive.
@@ -96,11 +99,11 @@ type all carry across as they are.
 | 0 | The repo works on the Mac, a `main` branch, the brief updated | S |
 | 1 | GymGo on your iPhone as a real app, identical | L |
 | 2 | TestFlight and Xcode Cloud; history moved across; Vercel retired | M |
-| 3 | Rest alerts with the phone locked; the countdown on the Lock Screen and in the Dynamic Island | M |
-| 4 | Watch app: the set in hand and the rest on your wrist | M |
-| 5 | Log whole sessions from the watch, Action button included, with the phone in your bag | L |
+| 3 | Rest alerts with the phone locked; the countdown on the Lock Screen and in the Dynamic Island. The phone-only fallback once the watch runs the session | M |
+| 4 | The watch runs the session: the set, Done, the rest and the record on your wrist, Action button included, with the phone in your bag | L |
+| 5 | The phone as the companion while the watch logs; a session started from either device | L |
 | 6 | Apple Health: every workout saved, body weight read | M |
-| 7 | Extras: complications, starting a session from the watch | M to L |
+| 7 | Extras: complications and the Smart Stack | M |
 
 Sizes are rough: S is an evening, M is a few evenings, L is a week or more of
 evenings.
@@ -112,12 +115,17 @@ evenings.
      (`/opt/pw-browsers/...`), so none of them launch on a Mac. Fall back to
      Playwright's own browser when that path is missing (`npx playwright
      install chromium`).
-   - One unit test (`src/db/plans.test.ts:140`) fails between midnight and
-     1am in British Summer Time, because the tests run in local time. Pin
-     the test clock or the time zone.
-   - CLAUDE.md's description of the suites' ports is out of date (two suites
-     default to 5180, `test:offline` reads `PREVIEW_URL` and starts no
-     server). Correct it.
+   - One unit test (`src/db/plans.test.ts`, "stamps the block, week and
+     session") started its block "a week ago". Week 1 holds only the sessions
+     on or after the start, so on a Thursday, Friday or Saturday it had no
+     week-1 slot for the routine it starts and failed at any hour; the
+     midnight failure first seen was the same test across a clock change. It
+     now starts the block on its own first training day, built on the local
+     calendar at noon.
+   - CLAUDE.md's description of the suites' ports was out of date: two suites
+     defaulted to 5180, and `test:offline` reads `PREVIEW_URL` and starts
+     no server. The two now default to 5185 with the rest, and CLAUDE.md says
+     what each suite expects.
 2. **`main` and `dev` branches.** Push the roadmap branch to `main` and to
    `dev`, and make `main` the default branch on GitHub. `main` means "what is
    on the phone": Xcode Cloud builds every change to it. Day-to-day work
@@ -375,15 +383,17 @@ you touching the Mac, every count matches the old app, and Vercel is gone.
 ## Phase 3: Rest alerts when locked, the Lock Screen countdown (M)
 
 The screens don't change. Each item fixes a limit the brief had to accept.
+All of it is the **phone-only fallback**: once the watch runs the session
+(Phase 4) the watch gives the rest cue, and these stand down for the session.
 
 1. **Rest alerts with the phone locked.** When Done starts a rest, schedule a
    time-sensitive local notification for the rest's end time (the App target
    needs the Time Sensitive Notifications capability, added before the first
-   permission prompt). Move it on
-   ±30s, and cancel it on Skip, on a drop, on Finish and on Discard. While the
-   app is open the in-app tone plays instead, so you never get both. With the
-   phone locked and the watch on your wrist, iOS shows the notification on
-   the watch, so you get a tap on the wrist before any watch code exists.
+   permission prompt). Move it on ±30s, and cancel it on Skip, on a drop, on
+   Finish and on Discard. While the app is open the in-app tone plays
+   instead, so you never get both. With the phone locked and the watch on
+   your wrist, iOS shows the notification on the watch, so you get a tap on
+   the wrist before any watch code exists.
 2. **A Live Activity: the rest on the Lock Screen and in the Dynamic Island.**
    - A widget extension target (`com.liamdaly.gymgo.restactivity`) with
      "Include Live Activity", and `NSSupportsLiveActivities` on the app. No
@@ -404,14 +414,19 @@ The screens don't change. Each item fixes a limit the brief had to accept.
 3. **Optional: a home screen widget** showing the next session, from a
    snapshot the app writes into the App Group whenever the schedule changes.
 
-**One cue per rest.** Once the watch app runs the session (Phase 4), the watch
+**One cue per rest.** Once the watch runs the session (Phase 4), the watch
 gives the rest cue itself, so the phone stops scheduling its notification and
 the Live Activity updates stop alerting. Otherwise both devices would buzz.
 
-**Done when:** with the phone locked in your pocket, the end of a rest buzzes,
-and the Lock Screen and Dynamic Island show the countdown.
+**Done when:** with the phone locked in your pocket and no watch on, the end
+of a rest buzzes, and the Lock Screen and Dynamic Island show the countdown.
 
-## Phase 4: Watch app, the set and the rest on your wrist (M)
+## Phase 4: The watch runs the session (L)
+
+Decision 8: the watch is the logging surface from its first build. Phases 4
+and 5 are one piece of work in two halves. This half puts the session on the
+wrist; Phase 5 turns the phone into the companion and lets either device
+start a session.
 
 ### 4.1 The hard fact this design follows
 
@@ -421,7 +436,9 @@ phone app's native Swift code, but the React app and Dexie stay frozen until
 you open the phone. So with the phone locked in a bag, the watch cannot ask
 the phone what comes next, and the phone cannot write anything to Dexie.
 
-Everything below follows from that.
+Everything below follows from that: the phone works the session out in
+advance, the watch walks the list, and what the watch logs waits in a native
+inbox until the phone is next opened.
 
 ### 4.2 The pieces
 
@@ -438,20 +455,24 @@ Everything below follows from that.
   - starts the WatchConnectivity session at launch, in native code;
   - sends the latest snapshot (`updateApplicationContext`: newest wins);
   - receives events from the watch into an inbox file, even while the web
-    view is frozen.
+    view is frozen;
+  - publishes whether the watch's workout session is running, which Phase 5
+    reads.
 - **`src/domain/watch.ts`** (pure, unit tested): `buildWatchSnapshot` turns the
   active workout into what the watch shows. See "The session snapshot" below.
 - **`src/platform/watch.ts`:** watches the active workout and the rest, and
-  sends a new snapshot whenever either changes.
+  sends a new snapshot whenever either changes; drains the inbox; holds the
+  "watch session active" store.
 
 **Swift settings for the new targets.** Xcode 27's new targets most likely
 default to Swift 5 language mode with the main actor as the default
 isolation (check each new target's Build Settings: Swift Language Version,
-Default Actor Isolation). Keep that, but mark every WatchConnectivity and HealthKit delegate method
-`nonisolated`: both frameworks call them on background threads, which
-quietly misbehaves in Swift 5 mode and crashes in Swift 6 mode. Copy the
-values out and hop to the main actor for the UI. The watch app uses
-`WKApplicationDelegate`; `WKExtensionDelegate` is deprecated in watchOS 27.
+Default Actor Isolation). Keep that, but mark every WatchConnectivity and
+HealthKit delegate method `nonisolated`: both frameworks call them on
+background threads, which quietly misbehaves in Swift 5 mode and crashes in
+Swift 6 mode. Copy the values out and hop to the main actor for the UI. The
+watch app uses `WKApplicationDelegate`; `WKExtensionDelegate` is deprecated
+in watchOS 27.
 
 ### 4.3 A workout session keeps the watch app on your wrist
 
@@ -479,37 +500,11 @@ Capabilities: HealthKit on both targets, Background Modes on the watch
 both. Starting Apple's own Workout app during a GymGo session ends GymGo's,
 because the watch runs one workout at a time.
 
-### 4.4 What the watch shows in this phase
-
-The phone does the logging; the watch shows the same state:
+### 4.4 What you can do on the wrist
 
 - **The set in hand:** the exercise, "Set 2 of 4" (from `setOrdinals`) and
-  the weight × reps, poster-sized.
-- **The rest:** the countdown from the end time, "Up next" and a "New record"
-  in blue when there is one. **One firm tap on the wrist when it ends.** The
-  watch counts down by itself, so this works with the phone locked. (A haptic
-  briefly pauses heart-rate collection, which is why it is one tap and not a
-  pattern.)
-- **After the rest:** the next set, which is already in the snapshot.
-- **Heart rate** from the workout session, small, under the clock.
-
-From this phase the watch gives the rest cue whenever it runs the session, so
-the phone's notification stands down (one cue per rest, Phase 3).
-
-**Testing reality:** watch installs from Xcode are slow, `transferUserInfo`
-(which the inbox relies on) does not work in the Simulator, and workout
-mirroring needs real devices. Screens are built in the Simulator; the link
-with the phone, HealthKit and the workout session are tested on the real
-devices; and day-to-day use comes from TestFlight.
-
-**Done when:** you start a session on the phone and the watch app opens on its
-own. You press Done on the phone, lock it and pocket it. The watch counts the
-rest down, taps your wrist at the end and shows the next set.
-
-## Phase 5: Logging from the watch (L)
-
-### 5.1 What you can do on the wrist
-
+  the weight × reps, poster-sized, with the exercise's short setup note under
+  it (decision 10) and the heart rate small under the clock.
 - **Done** logs the set in hand, the way the phone's Done bar does
   ("Done · 102.5 × 6").
 - **The Action button logs the set too.** While GymGo's workout is running,
@@ -517,24 +512,31 @@ rest down, taps your wrist at the end and shows the next set.
   press means Done. You choose GymGo as the Action button's workout app once,
   in the watch's Settings. To be listed there at all, the watch app must adopt
   `StartWorkoutIntent` (in the watch app itself, not an extension), whose
-  `perform()` has to start a workout session. Phase 5 adds it and decides
-  what a press does with no session running (for example, start the watch's
-  session and say "Start the session on your iPhone"). Starting the planned
-  session from the watch stays in Phase 7. **Double tap** does the same as
-  Done while the app is on screen.
+  `perform()` has to start a workout session. In this phase a press with no
+  session running starts the watch's session and says "Start the session on
+  your iPhone"; Phase 5 lets the watch start the planned session itself.
+  **Double tap** does the same as Done while the app is on screen.
 - **The Digital Crown** moves the weight through the weights your gym can
   actually load: the same steps as the phone's steppers, from a ladder the
   snapshot carries. Tap the reps to put the Crown on reps.
 - **The rest** starts after a set exactly where the phone would start one,
-  including supersets (A1 straight into A2, rest after the pair).
+  including supersets (A1 straight into A2, rest after the pair): the
+  countdown from the end time, "Up next", and "New record" in blue when there
+  is one. **One firm tap on the wrist when it ends.** The watch counts down by
+  itself, so this works with the phone locked. (A haptic briefly pauses
+  heart-rate collection, which is why it is one tap and not a pattern.)
 - **This session:** every station in order and how far along each is. Tap one
   to go there.
 - **Finish** asks on the watch, then goes to the phone.
 
-These stay on the phone, at least for now: adding exercises, swaps, adding
-sets and child sets, the warm-up generator and fixing a done set.
+These stay on the phone: adding exercises, swaps, adding sets and child sets,
+the warm-up generator and fixing a done set. Phase 5 gives them a screen of
+their own while the watch logs.
 
-### 5.2 The session snapshot: the watch walks a list, the phone does the thinking
+From this phase the watch gives the rest cue whenever it runs the session, so
+the phone's notification stands down (one cue per rest, Phase 3).
+
+### 4.5 The session snapshot: the watch walks a list, the phone does the thinking
 
 The phone sends the watch every set still to do, already in the order
 `setInHand` walks them: warm-ups first, then working sets round by round
@@ -548,14 +550,15 @@ carries:
   "kg added");
 - the rest after it, from `restSecondsFor`, the routine's override and
   `restsAfterSet`, worked out by simulating the round;
-- the "Up next" lines, and the marks to beat for a record.
+- the "Up next" lines, the short setup note, and the marks to beat for a
+  record.
 
 The snapshot is built in TypeScript from the existing rules, so they still
 live in one place, and the watch only follows the list. The phone sends a new
 snapshot every time it can, and that corrects anything the watch had to
 estimate.
 
-### 5.3 The three rules the watch needs for itself
+### 4.6 The three rules the watch needs for itself
 
 With the phone frozen, the watch has to work out three things on its own:
 
@@ -575,7 +578,7 @@ and writes `fixtures/watch/*.json`. Vitest checks them, and an XCTest runs
 the Swift port over the same files. If either side changes, the other side's
 test fails.
 
-### 5.4 Events and the inbox
+### 4.7 Events and the inbox
 
 - The watch writes each action to its own log first, so a crash or a relaunch
   mid-session keeps its place. The actions are: complete set X with W × R at
@@ -603,15 +606,84 @@ test fails.
   every unticked set, and a finished workout is immutable, so sets the watch
   logged but the phone had not yet applied would otherwise be lost.
 - **If the same set is logged on both,** the later time wins. That is the
-  same last-write-wins rule as everywhere else.
+  same last-write-wins rule as everywhere else. From Phase 5 the phone does
+  not log while the watch's session runs, so this covers the handover only.
+
+**Testing reality:** watch installs from Xcode are slow, `transferUserInfo`
+(which the inbox relies on) does not work in the Simulator, and workout
+mirroring needs real devices. Screens are built in the Simulator; the link
+with the phone, HealthKit and the workout session are tested on the real
+devices; and day-to-day use comes from TestFlight.
 
 **Done when:**
 
+- You start a session on the phone and the watch app opens on its own.
 - A whole session (a superset, a pyramid and a record) is logged on the watch,
-  some of it with the Action button, with the phone locked in a bag.
+  some of it with the Action button, with the phone locked in a bag. Each rest
+  ends with one tap on the wrist and nothing from the phone.
 - Opening the phone shows every set with the right times, the right records
   and the right session list, and it backs up.
-- The reverse also works: log on the phone and the watch keeps up.
+
+## Phase 5: The phone as the companion, and a session from either device (L)
+
+### 5.1 The phone does not log while the watch runs the session
+
+Decision 8. The phone knows a watch session is running from its native side:
+the watch mirrors its workout session to the phone (4.3), and `WatchBridge`
+publishes that to the web app as a store in `src/platform/watch.ts`. While it
+is active, the logging screen is in **companion mode**:
+
+- **Shown:** the session list that `SessionSheet` holds today, promoted to
+  the screen itself: every station in order, how far along each is, and where
+  the watch is, in blue, kept live from the inbox while the app is open. The
+  station in hand with its **setup notes** (which nothing reads during a set
+  today) and the exercise's information. The exercise overflow: swap, move,
+  add an exercise, remove, the warm-up generator. The set chips and
+  `SetSheet`, to fix a set already logged. What is next in this session, and
+  the sessions coming up from the schedule.
+- **Not shown:** `SetInHand`, the Done bar, the steppers and the rest
+  takeover. The rest is one line; the watch has the clock.
+- **A change on the phone reaches the watch at once.** A swap or an added set
+  sends a new snapshot: the phone is open, so its JavaScript is live.
+- **Logging returns to the phone the moment there is no watch session:** the
+  watch's session ended, the watch dropped, or there was never a watch. Same
+  screen, same mutations, nothing duplicated. A flat battery never strands a
+  session.
+- One screen, two densities on one data model, as Beginner and Pro are. The
+  companion mode reads the store; nothing under `src/features/` imports
+  `@capacitor/*` for it, and with no watch the existing browser suites see
+  the screen they always have.
+
+### 5.2 A session from either device
+
+Decision 9. Starting on the phone is unchanged, and the watch opens by itself
+(4.3). Starting on the watch, with the phone in a locker:
+
+- The phone sends ahead what Today would show (`currentSession` and the
+  routine's outline, as a snapshot of a session not yet started) whenever the
+  schedule changes, in the same application context as the live snapshot.
+- The watch starts it with IDs it makes itself: the workout, its exercises
+  and its sets. `StartWorkoutIntent` (4.4) does the same from the Action
+  button.
+- When the inbox drains, the phone replays the start through
+  `startWorkoutFromRoutine` with those IDs, before any set event. The copy
+  from the routine, `slotForRoutine` and `runningPlan` all run as they would
+  for a tap, so the session is filed under the right block and week.
+- **A start for a routine whose workout is already running today joins it**
+  rather than opening a second one: the watch's sets are matched onto the
+  running workout's sets by station and ordinal. The snapshot says when a
+  workout is running, so this only happens when the two devices were out of
+  touch.
+- This touches the immutability copy and the schedule rules, so it is the
+  riskiest item in the plan. It goes last in this phase, behind the companion
+  screen, with its own mutation tests.
+
+**Done when:** while the watch runs the session, the phone shows the session,
+the notes and the swaps, and no Done bar; a swap on the phone shows on the
+watch at once; end the watch's session and the Done bar is back. Start a
+session from the watch with the phone in a locker, log it, open the phone: it
+is there under the right block and week with every set, and it backs up.
+Start from the phone: the watch opens by itself.
 
 ## Phase 6: Apple Health (M)
 
@@ -643,16 +715,11 @@ test fails.
 **Done when:** a finished session appears in the Health and Fitness apps once,
 with heart rate, and a weigh-in from your scales appears in Progress → Body.
 
-## Phase 7: Extras (M to L, each optional)
+## Phase 7: Extras (M, optional)
 
-1. **Complications and the Smart Stack:** the next session and its day, and
-   during a session the rest countdown.
-2. **Start the next planned session from the watch** with the phone in a
-   locker. The phone sends ahead what Today would show. The watch starts it
-   with IDs it makes itself, and the phone replays the start through
-   `startWorkoutFromRoutine` with those IDs. This touches the immutability
-   copy, `slotForRoutine` and `runningPlan`, so it is the biggest and riskiest
-   item here, and it goes last.
+**Complications and the Smart Stack:** the next session and its day, and
+during a session the rest countdown. Starting a session from the watch used
+to sit here; decision 9 moved it into Phase 5.
 
 ## Risks
 
@@ -672,6 +739,8 @@ with heart rate, and a weigh-in from your scales appears in Progress → Body.
 | Capacitor's prebuilt framework is still built with the iOS 26 SDK | From April 2027 Apple requires the iOS 27 SDK; one user reports an upload rejected over it | Uploads with Xcode 27 are accepted today. Watch for Capacitor 9 (due by the end of 2026) and move to it before April |
 | Xcode Cloud's "Latest Release" might not be Xcode 27 | A build on the wrong toolchain | Pick Xcode 27.0 or 27.1 by name in the workflow's Environment |
 | Two copies of the app on one phone | History split across two databases | Remove the home-screen icon after moving across (Phase 2) |
+| Both devices start the same session | Two workouts for one slot | A watch start for a routine whose workout is already running today joins it (Phase 5) |
+| The watch's session ends mid-workout: a flat battery, a relaunch | No way to log the rest of the session | Logging returns to the phone the moment there is no watch session (Phase 5) |
 
 ## Testing
 
@@ -680,7 +749,12 @@ with heart rate, and a weigh-in from your scales appears in Progress → Body.
   makes them run on the Mac.
 - **New unit tests:** the `src/platform/` fallbacks, `buildWatchSnapshot`, the
   inbox drain (idempotent, in order, refused on a finished workout, skipping
-  deleted sets) and the fixture generator.
+  deleted sets), a watch start replayed with its own IDs and one that joins a
+  running workout, and the fixture generator.
+- **A browser suite for the companion screen** (`test:companion`): with the
+  watch-session store stubbed on, the logging screen shows the session, the
+  notes and the swaps and no Done bar; stubbed off, the Done bar is back and
+  every existing suite is unchanged.
 - **XCTest:** `GymGoKit` decoding every fixture, the three ported rules, and
   the bridge's inbox file.
 - **A short device checklist** in `docs/ios-guide.md`, run before relying on a
@@ -711,6 +785,16 @@ Draft wording, to be added as each phase lands:
   before anything else, and always before Finish.
 - **One cue per rest.** Whichever device runs the session gives the cue; the
   other stays quiet.
+- **The phone does not log while the watch runs the session.** The watch's
+  workout session is the signal, published by `src/platform/watch.ts`. While
+  it is active the logging screen is in companion mode: no set in hand, no
+  Done bar, no steppers. They come back the moment there is no watch session.
+  Nothing outside `src/platform/` asks the native side whether a watch is
+  there.
+- **A session starts from either device.** The watch starts it with IDs it
+  makes itself; the phone replays the start through `startWorkoutFromRoutine`
+  with those IDs before it drains any set, and a start for a routine whose
+  workout is already running today joins that workout.
 - **Distribution.** TestFlight internal testing only. Only the publishable
   Supabase key goes into a build, as now; the repo is public, so nothing
   secret is ever committed.
@@ -723,8 +807,8 @@ because the app moves across unchanged, they come with it:
 - **Setup notes never show during a set.** The brief asks for "Setup notes per
   exercise that persist and appear during the set", and the exercise screen
   says they are "Shown while you are logging this exercise". In fact nothing
-  under `src/features/workout/` reads `setup_notes`. They would also be one of
-  the most useful things to put on the watch.
+  under `src/features/workout/` reads `setup_notes`. Phase 5 puts them on the
+  phone's companion screen, and the short form on the watch (decision 10).
 - **The exercise picker's Pro hint says "Create a custom exercise from the
   library",** but the library has no control for it. `createCustomExercise`
   exists in `src/db/mutations.ts`, and nothing calls it.
@@ -750,3 +834,31 @@ because the app moves across unchanged, they come with it:
    `group.com.liamdaly.gymgo`.
 7. **The three gaps:** still open. The first two are queued as separate
    tasks, and none of them blocks the port.
+
+## Decisions (9 October 2026)
+
+8. **The watch runs the session; the phone does not log sets while it does.**
+   The watch is the logging surface from its first build: the set in hand,
+   the weight and reps, Done, the rest, the record flash. While the watch's
+   workout session is running, the phone's set in hand, Done bar and steppers
+   are not shown. The phone is the companion you pick up between stations:
+   the session list, setup notes and exercise information, swaps, moving,
+   adding and removing exercises, fixing a set already logged, and the
+   sessions coming up. The phone takes logging back only when there is no
+   watch session: no watch at all, or the watch's session ended or dropped
+   mid-workout, so a flat battery never strands a session. Phases 4 and 5 are
+   one piece of work in two halves: the watch runs the session, then the
+   phone becomes the companion. Phase 3's Live Activity becomes the phone-only
+   fallback.
+9. **A session can be started from either device.** Starting from the watch
+   moves from Phase 7 into Phase 5. The phone sends ahead what Today
+   would show whenever the schedule changes; the watch starts it with IDs it
+   makes itself, and the phone replays the start through
+   `startWorkoutFromRoutine` with those IDs when the inbox drains. A start
+   arriving for a routine that already has today's workout running joins it
+   rather than opening a second one. This is the same work the Action
+   button's `StartWorkoutIntent` needs, so the two land together.
+10. **What the watch shows beyond the set:** the short setup note and "Up
+    next". Everything else stays on the phone. Setup notes are not read by
+    any workout screen today (see "Found while reading"), so the companion
+    screen is where they first appear.

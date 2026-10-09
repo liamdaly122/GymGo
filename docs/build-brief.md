@@ -1,25 +1,29 @@
 # Gym app build brief
 
 Author: Liam
-Version: 3
-Date: 10 August 2026
+Version: 4
+Date: 9 October 2026
 Purpose: project brief to hand to Claude Code at the start of the build
+
+Version 4 adds the iPhone app and the Apple Watch companion. The plan, the
+phases and the decisions behind them are in `docs/native-roadmap.md`; the
+step-by-step guide is `docs/ios-guide.md`. Everything else here still holds.
 
 ## What I'm building
 
-A personal workout tracker that replaces Gymverse. Single user, my phone only, no accounts, no server, no subscription. Installed to the home screen as a progressive web app.
+A personal workout tracker that replaces Gymverse. Single user, my phone only, no accounts, no server, no subscription. Installed to the home screen as a progressive web app, and from version 4 a native iPhone app with an Apple Watch companion: the same web app in a thin native shell (Capacitor), and a Swift watch app that runs the session from the wrist while the phone is the companion I pick up between stations.
 
 It needs to do three things Gymverse does well: build me a sensible plan, hold a proper exercise database, and get out of the way while I'm logging. It also needs a Pro mode that supports the training techniques Gymverse only half handles.
 
 ## Rules for the build
 
 - Offline first. The app must work fully with no signal in a gym basement. Supabase is the backup and sync layer, never the thing standing between me and logging a set.
-- No analytics, no telemetry, no third party services beyond Supabase and Vercel.
+- No analytics, no telemetry, no third party services beyond Supabase, Vercel (until the website is retired) and Apple's own: TestFlight, Xcode Cloud and Apple Health.
 - Data exportable to JSON and CSV at any time, and importable again. I am not swapping one lock-in for another.
 - Weights stored in kg as numbers. Dates stored as ISO 8601 strings, UTC.
-- No feature that requires an app store submission or a paid developer account.
+- Distributed by TestFlight to my own devices only. Never listed on the App Store, never submitted for App Review.
 - The workout generator runs locally as a rules engine. No AI API call at runtime.
-- Everything must stay inside the free tiers of Supabase and Vercel.
+- Everything must stay inside the free tiers of Supabase and Vercel, and the Apple Developer membership I already pay for.
 
 ## Stack
 
@@ -29,6 +33,8 @@ It needs to do three things Gymverse does well: build me a sensible plan, hold a
 - Tailwind for styling
 - Recharts for progress charts
 - vite-plugin-pwa for the service worker and manifest
+- Capacitor as the native shell for the iPhone app: the same bundle in a WKWebView, with src/platform/ the only code that knows it is inside an app
+- SwiftUI for the Apple Watch companion, with a GymGoKit package shared by the phone and the watch
 - Hosted and deployed on Vercel, free tier, connected to the GitHub repo
 - Git repo from the first commit
 
@@ -182,7 +188,9 @@ Suggestions appear as pre-filled placeholder values in the set row. Always edita
 
 **Version 3:** smart generator, plans and blocks, progress dashboard, gym profiles, body metrics, progress photos.
 
-**Out of scope:** social feed, leaderboards, nutrition tracking, video library, Apple Watch app, anything requiring an account.
+**Version 4:** the iPhone app, identical to the web app; TestFlight and Xcode Cloud; rest alerts with the phone locked; the Apple Watch companion, which runs the session from the wrist (the set in hand, weight and reps, Done, the rest, the record flash, starting a session) while the phone shows the session, setup notes, swaps and what is coming; Apple Health.
+
+**Out of scope:** social feed, leaderboards, nutrition tracking, video library, anything requiring an account, an App Store listing.
 
 ## Supabase setup
 
@@ -211,10 +219,11 @@ Suggestions appear as pre-filled placeholder values in the set row. Always edita
 
 ## Known limits to design around
 
-- A web app cannot ship an Apple Watch app or read Apple Health. Bodyweight gets entered manually.
-- Background timers on iOS are unreliable. Use the Screen Wake Lock API during an active workout and keep the timer on screen rather than relying on a background notification.
+- A web app cannot ship an Apple Watch app or read Apple Health. The native app can, and version 4 does both. A weight typed into GymGo is never overwritten by one read from Health.
+- Background timers on iOS are unreliable in a web app, and iOS freezes a web view's JavaScript while the phone is locked. The web app keeps the Screen Wake Lock and the timer on screen. The native app schedules a notification for the end of the rest, and once the watch runs the session the watch gives the cue, so the phone can sit locked in a bag. Whichever device runs the session gives one cue per rest; the other stays quiet.
+- The watch cannot ask the phone anything while the phone is locked. So the watch walks a list the phone worked out in advance, and keeps only three rules of its own: carry forward, the back-off target and the record check, each held to the TypeScript by a shared fixture. A fourth rule on the watch needs a fixture too, or it does not go in.
 - No exercise video library. Seed from an open dataset such as free-exercise-db or wger, check the licence terms, and store a demo link per exercise where I want one.
-- iOS can evict local browser storage from sites that go unused. Installing to the home screen and syncing to Supabase means a wiped local database is a resync rather than a loss, which is the main argument for having a remote store at all.
+- iOS can evict local browser storage from sites that go unused, and can reclaim a web view's storage inside an app when the phone runs short of space. Installing to the home screen and syncing to Supabase means a wiped local database is a resync rather than a loss, which is the main argument for having a remote store at all. The native app adds a snapshot of everything to its own Documents folder after every finished session, which iOS does not reclaim, and keeps the keys that matter in native storage.
 
 ## Build order
 
@@ -239,7 +248,7 @@ Steps 1 to 8 are local only and prove the thing is actually usable in a gym. Syn
 
 Write a CLAUDE.md at the root covering the stack, the immutability rule, the child set counting rules, kg and ISO date conventions, the local first rule and the sync rules above. Commit after every working slice.
 
-- No secret ever enters the repo. Keys live in .env.local, which is gitignored, and in Vercel project settings.
+- No secret ever enters the repo. Keys live in .env.local, which is gitignored, in Vercel project settings, and in the Xcode Cloud workflow's environment variables. Only the publishable (anon) key ever goes into a build. The repo is public.
 - The service role key is never used in client code for any reason.
 - Never introduce a code path where the UI awaits a Supabase call. If one appears, it is a bug.
 - Schema changes go through a Supabase migration file, never through the dashboard.
