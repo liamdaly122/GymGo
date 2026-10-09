@@ -2,9 +2,9 @@
  * Drives the plan selector end to end: goal, days, split, preview, and the
  * routines it writes. Run against `npm run dev`.
  */
-import { chromium } from 'playwright';
-const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:5180/';
-const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+import { launchChromium } from './browser.mjs';
+const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:5185/';
+const b = await launchChromium();
 const c = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 const p = await c.newPage();
 const errs = [];

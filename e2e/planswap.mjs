@@ -6,10 +6,10 @@
  * deadlift on three days — three different deadlifts — and "no deadlifts"
  * has to reach all of them, without touching a workout already done.
  */
-import { chromium } from 'playwright';
+import { launchChromium } from './browser.mjs';
 
 const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:5185/';
-const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const b = await launchChromium();
 const c = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 const p = await c.newPage();
 const errs = [];
@@ -44,6 +44,8 @@ const readFinished = () => p.evaluate(async () => {
 });
 
 const isDeadlift = (name) => /deadlift/i.test(name ?? '');
+/** A session name as the start of a regex. "Full body A (2)", which a four-day full body reaches on a Friday, has brackets. */
+const nameStarts = (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\s|$)`);
 
 await p.goto(BASE, { waitUntil: 'networkidle' });
 await step('app loads', async () => { await p.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 40000 }); });
@@ -150,7 +152,7 @@ await step('swapping that lift across the plan leaves the done workout alone', a
   await p.goto(BASE + '#/plan', { waitUntil: 'networkidle' });
   // The session list, not "Coming up": a done session there links to its history.
   await p.getByRole('region', { name: 'Sessions in this plan' })
-    .getByRole('link', { name: new RegExp(`^${holder.session}\\b`) }).first().click();
+    .getByRole('link', { name: nameStarts(holder.session) }).first().click();
   await p.getByRole('button', { name: `Swap ${performedLift}` }).click();
   const panel = p.getByRole('dialog', { name: `Swap ${performedLift}` });
   await panel.waitFor();

@@ -139,9 +139,18 @@ describe('training blocks', () => {
 
   it('stamps the block, week and session onto the workout it starts', async () => {
     const { result } = await generate(3);
-    // Started a week ago, so every session of week 1 exists whatever weekday
-    // the test runs on — a block started mid-week has no slots before its start.
-    await db.plans.update(result.planId, { started_at: new Date(Date.now() - 7 * 86_400_000).toISOString() });
+    const plan = (await db.plans.get(result.planId))!;
+    // Week 1 holds only the sessions on or after the start, so a block started
+    // on a Friday has no week-1 Wednesday, and the second routine's first slot
+    // is in week 2. Start the block on its own first training day, a week or
+    // more ago, so every week-1 slot exists whatever day the test runs on.
+    // Built on the local calendar at noon: the same day either side of
+    // midnight and across a clock change, which "now minus seven days" is not.
+    const firstDay = [...plan.training_days].sort((a, b) => a - b)[0]!;
+    const start = new Date();
+    start.setHours(12, 0, 0, 0);
+    start.setDate(start.getDate() - 7 - ((start.getDay() - firstDay + 7) % 7));
+    await db.plans.update(result.planId, { started_at: start.toISOString() });
     const workoutId = await startWorkoutFromRoutine(result.routineIds[1]!);
     const workout = (await db.workouts.get(workoutId))!;
     expect(workout.plan_id).toBe(result.planId);

@@ -903,10 +903,15 @@ The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
 `test:programme`, `test:toolkit`, `test:smart`, `test:session`,
 `test:rollover`, `test:planswap`, `test:report`, `test:body` and
 `test:rewards`, which runs at 375 × 667 to prove a record fits the rest screen
-of the smallest phone. They expect a preview server on `127.0.0.1:5185` —
-`test:offline` runs its own on 5190. Each takes a `BASE_URL` override.
-`test:backup` is self-contained: it starts the stand-in Supabase on 54329,
-builds a copy of the app pointed at it, and serves that on 5191.
+of the smallest phone. They expect a dev server on `127.0.0.1:5185`
+(`npx vite --port 5185`), and each takes a `BASE_URL` override.
+`test:offline` expects a preview server on `127.0.0.1:5190`
+(`npm run preview -- --port 5190`), starts none of its own, and takes
+`PREVIEW_URL` instead. `test:backup` is self-contained: it starts the
+stand-in Supabase on 54329, builds a copy of the app pointed at it, and serves
+that on 5191. Every suite launches through `e2e/browser.mjs`: Playwright's
+own Chromium (`npx playwright install chromium`, once per machine), unless
+`CHROMIUM_PATH` points at another build.
 
 **Accessible names are this app's test API.** Around 1,700 lines of Playwright
 key on them, so renaming one is a breaking change to the suites even when the

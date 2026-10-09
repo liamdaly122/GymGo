@@ -12,7 +12,7 @@
  * A live project still has to be checked by hand once (supabase/README.md);
  * this is everything short of that.
  */
-import { chromium } from 'playwright';
+import { launchChromium } from './browser.mjs';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -96,9 +96,7 @@ await step('build the app pointed at it, and serve it', async () => {
   );
 });
 
-const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-});
+const browser = await launchChromium();
 const errs = [];
 
 /** A phone: its own storage, as a home-screen install has. */

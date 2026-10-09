@@ -1,8 +1,8 @@
-import { chromium } from 'playwright';
+import { launchChromium } from './browser.mjs';
 import { readFileSync } from 'node:fs';
 
-const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:5180/';
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:5185/';
+const browser = await launchChromium();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, acceptDownloads: true });
 const page = await ctx.newPage();
 const errors = [];

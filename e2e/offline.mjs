@@ -6,12 +6,10 @@
  * Run against `vite preview` (npm run preview) — the service worker is disabled
  * in development on purpose.
  */
-import { chromium } from 'playwright';
+import { launchChromium } from './browser.mjs';
 
 const BASE = process.env.PREVIEW_URL ?? 'http://127.0.0.1:5190/';
-const browser = await chromium.launch({
-  executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
-});
+const browser = await launchChromium();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await ctx.newPage();
 const errors = [];

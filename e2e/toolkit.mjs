@@ -2,10 +2,10 @@
  * The in-gym toolkit: warm-ups, plate loading, thumb-sized adjusters, a rest
  * timer that survives, reordering, and repeating a session.
  */
-import { chromium } from 'playwright';
+import { launchChromium } from './browser.mjs';
 
 const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:5185/';
-const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+const b = await launchChromium();
 const c = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 const p = await c.newPage();
 const errs = [];
