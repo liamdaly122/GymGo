@@ -149,3 +149,72 @@ describe('choosing which lift to reason from', () => {
     expect(estimate.reps).toBe(8);
   });
 });
+
+/**
+ * The owner's note from the gym: the reason named side lateral raises on
+ * exercise after exercise. Every isolation lift shares the pattern label
+ * "isolation", which describes no movement, and the estimator counted that as
+ * related. A curl is not a lateral raise.
+ */
+describe('isolation and core are labels, not movements', () => {
+  const sideLateral = makeExercise({
+    id: 'side-lateral', name: 'Side Lateral Raise', movement_pattern: 'isolation',
+    primary_muscle: 'shoulders', equipment: 'dumbbell', is_compound: false,
+  });
+  const cableLateral = makeExercise({
+    id: 'cable-lateral', name: 'Cable Lateral Raise', movement_pattern: 'isolation',
+    primary_muscle: 'shoulders', equipment: 'cable', is_compound: false,
+  });
+  const dumbbellShoulderPress = makeExercise({
+    id: 'db-ohp', name: 'Dumbbell Shoulder Press', movement_pattern: 'vertical_push',
+    primary_muscle: 'shoulders', equipment: 'dumbbell', is_compound: true,
+  });
+  const bicepsCurl = makeExercise({
+    id: 'curl', name: 'Dumbbell Bicep Curl', movement_pattern: 'isolation',
+    primary_muscle: 'biceps', equipment: 'dumbbell', is_compound: false,
+  });
+  const hammerCurl = makeExercise({
+    id: 'hammer', name: 'Hammer Curls', movement_pattern: 'isolation',
+    primary_muscle: 'biceps', equipment: 'dumbbell', is_compound: false,
+  });
+  const legCurl = makeExercise({
+    id: 'leg-curl', name: 'Lying Leg Curls', movement_pattern: 'isolation',
+    primary_muscle: 'hamstrings', equipment: 'machine', is_compound: false,
+  });
+  const crunch = makeExercise({
+    id: 'crunch', name: 'Cable Crunch', movement_pattern: 'core',
+    primary_muscle: 'abdominals', equipment: 'cable', is_compound: false,
+  });
+  const backExtension = makeExercise({
+    id: 'back-ext', name: 'Hyperextensions', movement_pattern: 'core',
+    primary_muscle: 'lower back', equipment: 'cable', is_compound: false,
+  });
+
+  it('never reasons a curl from a lateral raise', () => {
+    expect(estimateOpeningWeight(bicepsCurl, [trained(sideLateral, 10, 12)], DUMBBELL)).toBeNull();
+  });
+
+  it('never reasons a leg curl from a lateral raise', () => {
+    expect(estimateOpeningWeight(legCurl, [trained(sideLateral, 10, 12)], STACK)).toBeNull();
+  });
+
+  it('never reasons one core lift from another that works a different muscle', () => {
+    expect(estimateOpeningWeight(crunch, [trained(backExtension, 40, 12)], STACK)).toBeNull();
+  });
+
+  it('still reasons from an isolation lift for the same muscle', () => {
+    const estimate = estimateOpeningWeight(hammerCurl, [trained(bicepsCurl, 15, 10), trained(sideLateral, 10, 12)], DUMBBELL)!;
+    expect(estimate.basis).toBe('Dumbbell Bicep Curl');
+  });
+
+  it('prefers another version of the same lift over a different lift on the same kit', () => {
+    // A press is far heavier than a raise for the same shoulders: reading a
+    // raise off a 25kg press would open at a weight nobody raises.
+    const estimate = estimateOpeningWeight(
+      sideLateral,
+      [trained(dumbbellShoulderPress, 25, 8), trained(cableLateral, 10, 12)],
+      DUMBBELL,
+    )!;
+    expect(estimate.basis).toBe('Cable Lateral Raise');
+  });
+});

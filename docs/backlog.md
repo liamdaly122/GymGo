@@ -12,6 +12,17 @@ in `docs/native-roadmap.md` under "Found while reading".
 **Seen:** the text under an exercise during a workout does not say what was
 done last time, for exercises that have been logged before.
 
+**Found on 10 October:** the suggestion engine only ever falls back to an
+estimate when the exercise has no finished history under its exact ID, so a
+lift that "should" be recognised is a different exercise in the library: a
+variant, or one a swap or a block rotation put in its place. The side-lateral
+note (fixed the same day) made that look much worse, by naming an unrelated
+lift. The estimate now says "First time on <exercise>", so the next time it
+happens the exercise is named. Still to do: confirm with the owner which
+lifts, and decide whether history should carry across a lift family (a
+Dumbbell Side Lateral Raise counting a Side Lateral Raise's history), which
+is a change to the counting rules and needs the owner's say.
+
 **Where to look:** `src/domain/previousPerformance.ts` (the best working set
 from the last time the exercise was performed) and whatever the set in hand
 renders under the name. Check how the history is looked up: by exercise id
@@ -24,25 +35,6 @@ suites' (the suites may only ever see a first session).
 **Done when:** a lift logged in a finished session shows its last best working
 set under its name the next time it comes up, and a browser suite proves it
 across two sessions.
-
-### 2. "Because you hit X on side arm laterals" on every exercise
-
-**Seen:** the suggestion's reason names the same unrelated lift (side lateral
-raises) for exercise after exercise.
-
-**Where to look:** `estimateOpeningWeight` in `src/domain/coldStart.ts`. It
-is meant to rank references with `swapSuggestions`, prefer the same movement
-on the same muscle and the same equipment, and **return null when nothing
-related has history**. Naming one lift for everything means the relatedness
-gate is too loose, or a fallback picks whichever exercise has any history at
-all. Also check why a cold-start estimate is being shown for lifts that have
-their own history (see note 1): the engine should be reading the lift's own
-sessions first (`src/domain/progression.ts`).
-
-**Done when:** a lift with its own history gets a suggestion from that
-history, a lift with none gets an estimate only from a genuinely related
-lift, with the reason naming it, and otherwise says nothing. Unit tests in
-both directions.
 
 ### 3. Is progressive overload actually suggested, and intelligently?
 

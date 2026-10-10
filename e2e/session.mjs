@@ -227,7 +227,9 @@ await step('a lift never performed is offered a labelled estimate', async () => 
 
   const body = await p.locator('body').innerText();
   if (!/estimate/i.test(body)) throw new Error(`the plan line must say it is estimating, saw: ${body.replace(/\n/g,' | ').slice(0,400)}`);
-  if (!/not done this one before/i.test(body)) throw new Error('the reason should say there is no history');
+  // It names the exact exercise, so a variant of a lift already logged reads
+  // as the new exercise it is, not as history the app has lost.
+  if (!/first time on incline dumbbell press/i.test(body)) throw new Error('the reason should name the exercise that has no history');
   if (!/Barbell Bench Press/i.test(body)) throw new Error('the estimate should name the lift it reasoned from');
   if (estimated > 100) throw new Error(`an estimate must not exceed the lift it came from: ${estimated}kg off a 100kg bench`);
   console.log('       estimated:', estimated + 'kg from the bench');

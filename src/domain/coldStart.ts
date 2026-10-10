@@ -20,7 +20,7 @@ import type { ExerciseSession } from './previousPerformance';
 import { isTopWorkingSet } from './sets';
 import { isHeavier } from './sets';
 import { loadableWeight, type LoadingProfile } from './plates';
-import { swapSuggestions } from './search';
+import { isLoosePattern, swapSuggestions } from './search';
 
 export interface OpeningEstimate {
   weight_kg: number;
@@ -50,6 +50,18 @@ const FRACTIONS = {
   direct: { sameEquipment: 0.85, crossEquipment: 0.55 },
   alternative: { sameEquipment: 0.65, crossEquipment: 0.45 },
 } as const;
+
+/**
+ * Whether one lift can be read off another at all: the same primary muscle,
+ * or the same movement. "Isolation" and "core" are labels, not movements, so
+ * sharing one says nothing. Counting it made every isolation lift related to
+ * every other, and a curl, a pushdown and a leg curl were all estimated from
+ * side lateral raises.
+ */
+function isRelated(candidate: Exercise, target: Exercise): boolean {
+  if (candidate.primary_muscle === target.primary_muscle) return true;
+  return candidate.movement_pattern === target.movement_pattern && !isLoosePattern(target.movement_pattern);
+}
 
 /** The heaviest working set ever performed on a lift. */
 function bestWorkingWeight(history: ExerciseSession[]): number {
@@ -93,7 +105,10 @@ export function estimateOpeningWeight(
   if (profile.mode === 'free') return null;
 
   const trained = references.filter(
-    (entry) => entry.exercise.id !== target.id && bestWorkingWeight(entry.history) > 0,
+    (entry) =>
+      entry.exercise.id !== target.id &&
+      isRelated(entry.exercise, target) &&
+      bestWorkingWeight(entry.history) > 0,
   );
   if (trained.length === 0) return null;
 

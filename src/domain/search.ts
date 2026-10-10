@@ -326,5 +326,10 @@ export function planSwapTargets<T extends { exercise: Exercise }>(
 /** Pattern labels that group exercises without describing a movement. */
 const LOOSE_PATTERNS = new Set<string>(['isolation', 'core']);
 
+/** Whether a movement pattern is only a label: "isolation" or "core". */
+export function isLoosePattern(pattern: string): boolean {
+  return LOOSE_PATTERNS.has(pattern);
+}
+
 /** The least muscle overlap at which a shared movement makes a fair swap. */
 const MIN_OVERLAP = 0.15;

@@ -943,8 +943,14 @@ when a deload is due.
 movement on the same muscle comes first, prefers a reference on the same equipment, takes a
 conservative fraction, rounds **down** through `loadableWeight`, and returns null
 when nothing related has history. Saying nothing beats guessing. It surfaces as
-`kind: 'estimate'` with a reason that names the reference, because it must never
-read as history.
+`kind: 'estimate'` with a reason that names the exercise and the reference
+("First time on …. From your …"), because it must never read as history, and a
+variant of a lift already logged must read as the new exercise it is.
+**Related means the same primary muscle, or the same movement.** "Isolation"
+and "core" are labels, not movements (`isLoosePattern`), so sharing one counts
+for nothing: counting it made every isolation lift related to every other, and
+the owner saw curls, pushdowns and leg curls all estimated from side lateral
+raises.
 
 **Low readiness is the one thing that scales a suggested load**, by
 `LOW_READINESS_MULTIPLIER`, and it applies to a cold-start estimate too — a

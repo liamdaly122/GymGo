@@ -1043,7 +1043,7 @@ export function useSetSuggestion(
         kind: 'estimate' as const,
         scaled_down: rough,
         reason:
-          `You have not done this one before. From your ${estimate.basis}, ` +
+          `First time on ${exercise.name}. From your ${estimate.basis}, ` +
           `${weight}kg is a sensible first try — it is an estimate, not ` +
           'history, so change it to whatever it turns out to be.' +
           (rough ? ' Scaled down 10% because you logged low readiness.' : ''),
