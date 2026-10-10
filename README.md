@@ -5,6 +5,7 @@ no subscription. Installed to the home screen as a PWA.
 
 Requirements live in [`docs/build-brief.md`](docs/build-brief.md).
 Working rules for contributors (human or agent) live in [`CLAUDE.md`](CLAUDE.md).
+Notes from the gym that are not yet done live in [`docs/backlog.md`](docs/backlog.md).
 
 ## Getting started
 
