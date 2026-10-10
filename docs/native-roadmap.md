@@ -42,11 +42,11 @@ What exists today, from reading the repo:
 - `HashRouter`, every asset bundled (fonts, 345 exercise photos, the seed), no
   `fetch` outside `src/sync/`. This already behaves like an app packaged with
   everything it needs, which is what makes the wrap cheap.
-- **The GitHub repo is public, and it has no `main` branch.** The default
-  branch is `claude/markdown-instructions-review-e0rk5v`, and this roadmap
-  lives on `claude/wonderful-galileo-6td7bh`. Public is fine as long as no
-  secret is ever committed (`.env.local` is already gitignored). Phase 0 makes
-  a `main` branch so that "push to main" means something.
+- **The GitHub repo is public, and it had no `main` branch** until Phase 0
+  made one, with `dev`, from `claude/wonderful-galileo-6td7bh` on 10 October
+  2026. The default branch on GitHub is switched to `main` by hand (guide
+  5.2). Public is fine as long as no secret is ever committed (`.env.local`
+  is already gitignored).
 
 ## The decision: wrap the web app, write the watch app
 

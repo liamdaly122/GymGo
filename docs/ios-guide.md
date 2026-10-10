@@ -10,10 +10,10 @@ open at the end of 3.1, type: **"Start Phase 0."** From then on Claude leads:
 it tells you when to do a numbered step here (for example "do 6.3"), and you
 tell it when you have.
 
-Until Phase 0 makes a `main` branch, this guide only exists on the branch
-`claude/wonderful-galileo-6td7bh`. The repo's front page on GitHub shows a
-different branch without it, so bookmark
-https://github.com/liamdaly122/GymGo/blob/claude/wonderful-galileo-6td7bh/docs/ios-guide.md
+This guide lives on `main` and `dev`. Until you switch GitHub's default
+branch to `main` (step 5.2), the repo's front page shows an old branch
+without it, so bookmark
+https://github.com/liamdaly122/GymGo/blob/main/docs/ios-guide.md
 
 ## How to use this guide
 
@@ -396,8 +396,8 @@ branch called `claude/markdown-instructions-review-e0rk5v`. From here on,
 `main` and sends it to TestFlight. Claude works on a branch called `dev` and
 merges into `main` when you say a change is ready for the phone.
 
-- [ ] **Claude:** creates `main` and `dev` from the current branch and pushes
-      both (it asks you first).
+- [x] **Claude:** creates `main` and `dev` from the current branch and pushes
+      both (it asks you first). Done 10 October 2026.
 - [ ] **You:** on github.com, open liamdaly122/GymGo > **Settings** (the tab
       along the top) > **General**. Under **Default branch**, click the
       switch button (two arrows), choose `main`, click **Update**, and
