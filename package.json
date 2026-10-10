@@ -31,9 +31,19 @@
     "test:report": "node e2e/report.mjs",
     "test:body": "node e2e/body.mjs",
     "test:rewards": "node e2e/rewards.mjs",
-    "test:backup": "node e2e/backup.mjs"
+    "test:backup": "node e2e/backup.mjs",
+    "build:ios": "tsc -b && vite build --mode ios",
+    "ios": "npm run build:ios && cap sync ios"
   },
   "dependencies": {
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/filesystem": "^8.1.4",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.5.3",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/share": "^8.0.3",
     "@fontsource/barlow": "^5.3.0",
     "@fontsource/big-shoulders-display": "^5.3.0",
     "@supabase/supabase-js": "^2.112.3",
@@ -45,6 +55,7 @@
     "recharts": "^3.10.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
     "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.2.0",

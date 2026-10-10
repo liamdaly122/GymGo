@@ -4,11 +4,14 @@ import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath, URL } from 'node:url';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
+    // The iPhone app ships every file inside its bundle, so it needs no service
+    // worker, and WKWebView would not run one inside an app anyway. `vite build
+    // --mode ios` leaves the plugin out; the web build is unchanged.
+    ...(mode === 'ios' ? [] : [VitePWA({
       // The app must work in a gym basement with no signal, so everything the
       // shell needs — including the seeded exercise database chunk — is
       // precached at install time rather than fetched on demand.
@@ -48,7 +51,7 @@ export default defineConfig({
         // change look like it did not apply.
         enabled: false,
       },
-    }),
+    })]),
   ],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
@@ -59,4 +62,4 @@ export default defineConfig({
     // therefore need Node APIs the app project deliberately does not expose.
     include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
   },
-});
+}));
