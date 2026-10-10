@@ -862,3 +862,13 @@ because the app moves across unchanged, they come with it:
     next". Everything else stays on the phone. Setup notes are not read by
     any workout screen today (see "Found while reading"), so the companion
     screen is where they first appear.
+
+## Decisions (10 October 2026)
+
+11. **The shell is on trial for a week.** Liam does not want a web app
+    pretending to be an iPhone app. The Capacitor shell goes on the phone as
+    built and is used in the gym for about a week; the feel of the real
+    thing decides whether it stays or the iPhone app is rewritten in SwiftUI,
+    with every rule ported. Until then nothing more is built on the phone
+    side beyond what the week needs. The watch app is native Swift either
+    way, and signing, TestFlight, Xcode Cloud and Apple Health carry over.
