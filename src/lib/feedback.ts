@@ -4,6 +4,8 @@
  * extra has to be cached for offline use.
  */
 
+import { vibratePattern } from '@/platform/haptics';
+
 let audioContext: AudioContext | null = null;
 
 /**
@@ -62,9 +64,5 @@ export function playRecordTone(): void {
 export const RECORD_VIBRATION = [80, 60, 80, 60, 240];
 
 export function vibrate(pattern: number | number[] = [120, 60, 120]): void {
-  try {
-    navigator.vibrate?.(pattern);
-  } catch {
-    // Unsupported on iOS Safari. Silent by design.
-  }
+  vibratePattern(pattern);
 }

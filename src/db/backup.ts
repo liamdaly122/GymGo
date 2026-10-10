@@ -124,22 +124,3 @@ export async function importFromJson(raw: string): Promise<ImportResult> {
     exported_at: backup.exported_at,
   };
 }
-
-/**
- * Hands a generated file to the browser.
- *
- * A blob URL rather than a data URL: iOS Safari truncates large data URLs, and
- * a full history export is not small.
- */
-export function downloadFile(contents: string, filename: string, mime: string): void {
-  const blob = new Blob([contents], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  // Revoked on the next tick so Safari has actually started the download.
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}

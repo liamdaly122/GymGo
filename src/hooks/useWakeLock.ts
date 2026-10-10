@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { allowScreenOff, keepScreenOn } from '@/platform/keepAwake';
+import { isNativeApp } from '@/platform/native';
 
 type WakeLockSentinelLike = { released: boolean; release: () => Promise<void> };
 
@@ -14,15 +16,30 @@ type WakeLockSentinelLike = { released: boolean; release: () => Promise<void> };
  *    you glance away.
  *  - The API is unavailable on some browsers and in insecure contexts. That is
  *    a degraded experience, not an error, so failures are swallowed.
+ *
+ * Inside the iPhone app the web API does not exist; the native idle timer is
+ * held instead (src/platform/keepAwake.ts), and it needs no re-acquiring.
  */
 export function useWakeLock(active: boolean): { supported: boolean; held: boolean } {
   const sentinel = useRef<WakeLockSentinelLike | null>(null);
   const [held, setHeld] = useState(false);
-  const supported = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
+  const native = isNativeApp();
+  const supported = native || (typeof navigator !== 'undefined' && 'wakeLock' in navigator);
 
   useEffect(() => {
     if (!active || !supported) return;
     let cancelled = false;
+
+    if (native) {
+      void keepScreenOn().then((held) => {
+        if (!cancelled) setHeld(held);
+      });
+      return () => {
+        cancelled = true;
+        setHeld(false);
+        void allowScreenOff();
+      };
+    }
 
     const acquire = async () => {
       if (cancelled || document.visibilityState !== 'visible') return;
@@ -59,7 +76,7 @@ export function useWakeLock(active: boolean): { supported: boolean; held: boolea
       setHeld(false);
       if (lock && !lock.released) void lock.release().catch(() => {});
     };
-  }, [active, supported]);
+  }, [active, supported, native]);
 
   return { supported, held };
 }

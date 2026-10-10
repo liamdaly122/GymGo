@@ -4,7 +4,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '@/db/db';
 import { useSettings } from '@/db/queries';
 import { updateSettings } from '@/db/mutations';
-import { downloadFile, exportAsCsv, exportAsJson, importFromJson } from '@/db/backup';
+import { exportAsCsv, exportAsJson, importFromJson } from '@/db/backup';
+import { saveFile } from '@/platform/files';
+import { isNativeApp } from '@/platform/native';
 import { exportFilename } from '@/lib/export';
 import { wipeAndReseed } from '@/db/seed';
 import { SCHEMA_VERSION } from '@/db/schema';
@@ -33,8 +35,8 @@ export default function SettingsScreen() {
     setBusy(true);
     try {
       const data = await exportAsJson();
-      downloadFile(JSON.stringify(data, null, 2), exportFilename('json'), 'application/json');
-      setStatus({ tone: 'ok', message: 'Exported. Keep that file somewhere safe.' });
+      const outcome = await saveFile(JSON.stringify(data, null, 2), exportFilename('json'), 'application/json');
+      if (outcome === 'saved') setStatus({ tone: 'ok', message: 'Exported. Keep that file somewhere safe.' });
     } finally {
       setBusy(false);
     }
@@ -43,8 +45,8 @@ export default function SettingsScreen() {
   const handleExportCsv = async () => {
     setBusy(true);
     try {
-      downloadFile(await exportAsCsv(), exportFilename('csv'), 'text/csv');
-      setStatus({ tone: 'ok', message: 'Exported one row per set, ready for a spreadsheet.' });
+      const outcome = await saveFile(await exportAsCsv(), exportFilename('csv'), 'text/csv');
+      if (outcome === 'saved') setStatus({ tone: 'ok', message: 'Exported one row per set, ready for a spreadsheet.' });
     } finally {
       setBusy(false);
     }
@@ -120,7 +122,7 @@ export default function SettingsScreen() {
           />
           <Toggle
             label="Vibrate"
-            hint="Ignored on iOS Safari, which has no vibration API."
+            hint={isNativeApp() ? 'A buzz at the end of a rest, and a longer one for a record.' : 'Ignored on iOS Safari, which has no vibration API.'}
             checked={settings?.vibrate_on ?? true}
             onChange={(vibrate_on) => void updateSettings({ vibrate_on })}
           />

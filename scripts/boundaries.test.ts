@@ -77,3 +77,28 @@ describe('sync stays out of the hot path', () => {
     expect(offenders, 'the service role key is never used in client code').toEqual([]);
   });
 });
+
+/**
+ * The iPhone app is the web build inside a native shell. Everything that
+ * differs between the two lives in src/platform/, each piece with a web
+ * fallback, which is what keeps the website and the browser suites valid for
+ * the app. Nothing else may reach the shell, and the rules never may.
+ */
+describe('the native shell stays behind src/platform', () => {
+  it('only src/platform imports Capacitor', () => {
+    const offenders = filesUnder(resolve(root, 'src'))
+      .filter((file) => !relative(file).startsWith('src/platform/'))
+      .filter((file) => /@capacitor(-community)?\//.test(readFileSync(file, 'utf8')))
+      .map(relative);
+
+    expect(offenders, 'every native capability has one home, with a web fallback').toEqual([]);
+  });
+
+  it('the domain never imports the platform layer', () => {
+    const offenders = filesUnder(resolve(root, 'src/domain'))
+      .filter((file) => readFileSync(file, 'utf8').includes('@/platform'))
+      .map(relative);
+
+    expect(offenders, 'src/domain is pure').toEqual([]);
+  });
+});
