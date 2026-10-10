@@ -1,6 +1,8 @@
 import { HashRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import Layout from './components/Layout';
+import { Button } from './components/ui';
 import { useAppInit } from './hooks/useAppInit';
+import { formatSince } from './lib/dates';
 import HomeScreen from './features/home/HomeScreen';
 import ActiveWorkoutScreen from './features/workout/ActiveWorkoutScreen';
 import SwapExerciseScreen from './features/workout/SwapExerciseScreen';
@@ -20,12 +22,33 @@ import SplitPickerScreen from './features/plans/SplitPickerScreen';
 import PlanPreviewScreen from './features/plans/PlanPreviewScreen';
 
 export default function App() {
-  const { state, error } = useAppInit();
+  const { state, error, snapshot, restoreSnapshot, startFresh } = useAppInit();
 
   if (state === 'seeding') {
     return (
       <div className="grid min-h-dvh place-items-center px-6 text-center">
         <p className="text-sm text-muted">Preparing your exercise database…</p>
+      </div>
+    );
+  }
+
+  if (state === 'offer' && snapshot) {
+    return (
+      <div className="grid min-h-dvh place-items-center px-6 text-center">
+        <div className="grid w-full max-w-sm gap-4">
+          <p className="text-sm text-chalk">
+            This phone kept a copy of your GymGo data from {formatSince(snapshot.takenAt)}.
+          </p>
+          <p className="text-xs text-muted">
+            The app's own storage is empty. Restore the copy, or start fresh and leave it where it is.
+          </p>
+          <Button variant="primary" block onClick={() => void restoreSnapshot()}>
+            Restore the copy
+          </Button>
+          <Button block onClick={startFresh}>
+            Start fresh
+          </Button>
+        </div>
       </div>
     );
   }

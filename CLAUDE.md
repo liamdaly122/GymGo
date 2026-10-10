@@ -15,6 +15,8 @@ Source of truth for requirements: `docs/build-brief.md`.
 - Recharts for progress charts
 - vite-plugin-pwa for the service worker and manifest
 - Vercel, free tier, static build
+- Capacitor 8 as the iPhone app's shell: the same bundle in a WKWebView, with
+  `src/platform/` the only code that knows (see "The iPhone app")
 
 Plain Vite rather than Next.js: there is no server rendering to do, the whole app
 is one user's local data, and a static build keeps service worker behaviour
@@ -218,6 +220,83 @@ field. `sync.test.ts` runs whole rounds against it, including wipe-and-restore.
 the real supabase-js client in a browser, through a backup and then a restore
 onto a brand-new phone. A live project's own account and keys can only be
 checked by signing in on the phone.
+
+## The iPhone app: the web build inside a native shell
+
+The iPhone app is this web app, unchanged, inside Capacitor. It runs the same
+React code and the same Dexie database, so it is identical because it is the
+same code. The plan, the phases and the decisions are in
+`docs/native-roadmap.md`; the step-by-step for the Mac and the devices is
+`docs/ios-guide.md`.
+
+- **Two builds from one source.** `npm run build:ios` is `vite build --mode
+  ios`, which leaves out the PWA plugin: WKWebView does not run a service
+  worker inside an app, and the app needs none, because every file ships in
+  the bundle. `npm run ios` builds that and syncs it into `ios/App`. The web
+  build is untouched.
+- **`ios/` is committed**, with the generated parts left out by its own
+  `.gitignore`. Never delete it to add it again, and never convert
+  `App.xcodeproj` to Xcode 27.2's JSON project format: `cap sync` then stops
+  updating the Swift packages without saying so. Build and install with
+  `xcodebuild` or Xcode's Run button, not `npx cap run ios`, which cannot
+  find Xcode 27's simulators. The package tools version is pinned to 6.2 in
+  `capacitor.config.ts`, because `cap sync` writes the deployment target as
+  `.iOS(.v26)` and that constant does not exist before it.
+- **What the project sets:** iPhone only, portrait only, minimum iOS 26.0,
+  bundle ID `com.liamdaly.gymgo`, the interface always dark (so the keyboard
+  and the share sheet match), a launch screen that is the ground colour and
+  nothing else, a status bar with light text (the `SystemBars` style in the
+  config; its types say Android-only, the iOS plugin reads it), and a privacy
+  manifest naming the required-reason APIs the plugins use. The icon is the
+  same art as the home-screen icon, rendered by `npm run icons:build` at 1024
+  with its alpha channel removed, which App Store Connect insists on. The
+  audio session mixes with other audio, so the rest beep plays over music.
+
+**`src/platform/` is the only place that knows it is inside an app.** Every
+capability that differs between the browser and the shell gets one module
+there with a web fallback, so the website and the browser suites see exactly
+what they always did. Nothing outside `src/platform/` may import
+`@capacitor/*`, and `src/domain/` may not import `src/platform/` at all;
+`scripts/boundaries.test.ts` holds both lines.
+
+- The screen stays on through the native idle timer (`keepAwake.ts`) rather
+  than the web wake lock, and needs no re-acquiring on resume.
+- Each "on" in a vibration pattern becomes a haptic (`haptics.ts`). Safari
+  has no vibration API, so the Vibrate toggle never did anything on an iPhone
+  before; the hint in Settings says what it does now.
+- An export is written to the app's cache and offered through the share sheet
+  (`files.ts`), because an anchor download does nothing in a web view.
+  Closing the sheet is "cancelled", not an error, and gets no message.
+- `@capacitor/keyboard` is deliberately left out: it hides the bar above the
+  keyboard by default, and that bar holds the Done key the number pads need.
+
+**The data is kept safe three ways,** because iOS can reclaim a web view's
+IndexedDB and localStorage when the phone runs short of space, and that is
+the one place the app is weaker by default:
+
+1. The Supabase backup, unchanged: a wiped app restores on the next sign-in.
+2. **A snapshot on the phone itself** (`snapshots.ts`): the same JSON as
+   "Export everything", written into the app's Documents folder after every
+   Finish and once a day, the newest seven kept. iOS does not reclaim those
+   files, they go into the phone's iCloud backup, and they show in Files
+   under On My iPhone → GymGo. Nothing is written while there is nothing of
+   the lifter's own to keep (`hasUserData`), or a fresh install would offer
+   its own empty copy back.
+3. **Restore on an empty launch** (`useAppInit`): a launch that finds nothing
+   of the lifter's own and a snapshot on the phone offers it back before the
+   app opens. "Start fresh" declines that snapshot and no other.
+   `importFromJson` does the restoring and queues every row for backup.
+   **Wipe and reseed deletes the snapshots too**, so a deliberate wipe is
+   never offered back.
+
+The small localStorage keys that matter are **mirrored into UserDefaults**
+(`durable.ts`): the once-per-phone flags, the plan builder's choices and the
+backup ledger, copied back at launch before anything reads them. The once
+flags matter most: with localStorage cleared and the database intact,
+`clearGeneratedRests` would run a second time and could clear a rest typed by
+hand. The Supabase session lives in UserDefaults inside the app, so a
+reclaimed web view does not sign the backup out. The running rest
+(`gymgo.rest`) stays where it is: it is throwaway by design.
 
 ## Writes go through one place
 

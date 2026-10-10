@@ -8,6 +8,8 @@
  * everything again, and the server keeps the newest copy of each row — which
  * is also exactly what should happen on a phone whose storage was wiped.
  */
+import { remember } from '@/platform/durable';
+
 export interface BackupLedger {
   /** The last time every row on this phone was uploaded. */
   fullUploadAt: string | null;
@@ -38,6 +40,7 @@ export function writeLedger(userId: string, patch: Partial<BackupLedger>): void 
   memory.set(userId, next);
   try {
     globalThis.localStorage?.setItem(key(userId), JSON.stringify(next));
+    remember(key(userId), JSON.stringify(next));
   } catch {
     // Kept in memory for this session; the worst case is one more full upload.
   }
@@ -51,7 +54,10 @@ export function forgetLedgers(): void {
     if (!storage) return;
     for (let index = storage.length - 1; index >= 0; index -= 1) {
       const name = storage.key(index);
-      if (name?.startsWith('gymgo.backup.')) storage.removeItem(name);
+      if (name?.startsWith('gymgo.backup.')) {
+        storage.removeItem(name);
+        remember(name, null);
+      }
     }
   } catch {
     // Nothing to forget.

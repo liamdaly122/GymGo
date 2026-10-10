@@ -316,6 +316,21 @@ export function useRoutine(routineId: string | undefined): RoutineView | undefin
  * Only finished workouts count: a session still in progress is not yet history,
  * and including it would let the current session report itself as "last time".
  */
+/**
+ * Whether this phone holds anything of the lifter's own: a session, a routine,
+ * a plan or a weigh-in. The seed adds none of these, so a fresh install says
+ * no, and so does a database iOS has reclaimed.
+ */
+export async function hasUserData(): Promise<boolean> {
+  const counts = await Promise.all([
+    db.workouts.count(),
+    db.routines.count(),
+    db.plans.count(),
+    db.body_metrics.count(),
+  ]);
+  return counts.some((count) => count > 0);
+}
+
 export async function exerciseSessions(exerciseId: string): Promise<ExerciseSession[]> {
   const workoutExercises = live(await db.workout_exercises.where({ exercise_id: exerciseId }).toArray());
   if (workoutExercises.length === 0) return [];

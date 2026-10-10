@@ -15,15 +15,20 @@ import '@fontsource/barlow/latin-600';
 import '@fontsource/barlow/latin-700';
 import './index.css';
 import { startSync } from './sync/engine';
+import { restoreDurableKeys } from './platform/durable';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Root element missing from index.html');
 
-// Started, never awaited. Sync runs behind the app from here on.
-startSync();
+// Inside the iPhone app, the flags iOS may have cleared come back first
+// (src/platform/durable.ts). On the website that is nothing, and immediate.
+void restoreDurableKeys().then(() => {
+  // Started, never awaited. Sync runs behind the app from here on.
+  startSync();
 
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+});

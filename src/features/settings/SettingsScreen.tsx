@@ -6,6 +6,7 @@ import { useSettings } from '@/db/queries';
 import { updateSettings } from '@/db/mutations';
 import { exportAsCsv, exportAsJson, importFromJson } from '@/db/backup';
 import { saveFile } from '@/platform/files';
+import { deleteSnapshots } from '@/platform/snapshots';
 import { isNativeApp } from '@/platform/native';
 import { exportFilename } from '@/lib/export';
 import { wipeAndReseed } from '@/db/seed';
@@ -72,6 +73,8 @@ export default function SettingsScreen() {
     setBusy(true);
     try {
       await wipeAndReseed();
+      // The copies on the phone go too, so the wiped data is never offered back.
+      await deleteSnapshots();
       setStatus({ tone: 'ok', message: 'Local database wiped and reseeded.' });
     } finally {
       setBusy(false);

@@ -11,6 +11,7 @@
  * back a lift the lifter ruled out.
  */
 import type { ExperienceLevel, Muscle } from '@/domain/types';
+import { remember } from '@/platform/durable';
 
 export interface BuilderPrefs {
   /** The hardest week has to fit in this. Null: no limit. */
@@ -47,6 +48,7 @@ export function saveBuilderPrefs(prefs: BuilderPrefs): void {
   memory = prefs;
   try {
     globalThis.localStorage?.setItem(KEY, JSON.stringify(prefs));
+    remember(KEY, JSON.stringify(prefs));
   } catch {
     // Kept in memory for this session; the builder simply starts fresh next time.
   }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSettings, useWorkout } from '@/db/queries';
 import { addExerciseToWorkout, addSet, discardWorkout, finishWorkout } from '@/db/mutations';
+import { snapshotEverything } from '@/platform/snapshots';
 import { Button, Sheet } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import { formatClock } from '@/lib/dates';
@@ -155,6 +156,8 @@ export default function ActiveWorkoutScreen() {
 
   const handleFinish = async () => {
     await finishWorkout(workoutId);
+    // Inside the app, a copy of everything on the phone itself. Never awaited.
+    void snapshotEverything();
     rest.stop();
     void navigate(`/history/${workoutId}`, { replace: true, state: { fresh: true } });
   };

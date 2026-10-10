@@ -12,6 +12,8 @@
  * the app opening.
  */
 
+import { remember } from '@/platform/durable';
+
 const PREFIX = 'gymgo.once.';
 
 const running = new Map<string, Promise<void>>();
@@ -29,7 +31,9 @@ export function onceOnThisPhone(key: string, task: () => Promise<unknown>): Prom
     }
     try {
       await task();
-      globalThis.localStorage.setItem(flag, new Date().toISOString());
+      const at = new Date().toISOString();
+      globalThis.localStorage.setItem(flag, at);
+      remember(flag, at);
     } catch (cause) {
       console.warn(`The one-off "${key}" did not finish, and will run again next launch.`, cause);
     }

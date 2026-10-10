@@ -8,6 +8,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_ANON_KEY, SUPABASE_URL, isSyncConfigured } from './config';
+import { nativeSessionStore } from '@/platform/durable';
 
 let client: SupabaseClient | null = null;
 
@@ -26,6 +27,9 @@ export function getClient(): SupabaseClient | null {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      // Inside the iPhone app the session is kept in UserDefaults, which iOS
+      // does not reclaim; on the website supabase-js keeps its localStorage.
+      storage: nativeSessionStore(),
       // Nothing comes back in a URL: sign-in is a password typed into the app,
       // and the fragment belongs to the app's own router.
       detectSessionInUrl: false,
