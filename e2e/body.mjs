@@ -47,9 +47,12 @@ await step('Progress has a Body tab for the weight log', async () => {
 await step('a second weigh-in the same day replaces the first', async () => {
   await p.getByLabel("Today's weight in kilograms").fill('82.4');
   await p.getByRole('button', { name: 'Save weight' }).click();
+  // The first save has to land before the second is typed: saving clears the
+  // field once the row is written, which would wipe a number typed too soon.
+  await p.getByText('82.4 kg logged today. Saving again replaces it.').waitFor({ timeout: 10000 });
   await p.getByLabel("Today's weight in kilograms").fill('82');
   await p.getByLabel("Today's weight in kilograms").press('Enter');
-  await p.getByText('82 kg logged today. Saving again replaces it.').waitFor({ timeout: 5000 });
+  await p.getByText('82 kg logged today. Saving again replaces it.').waitFor({ timeout: 10000 });
   const entries = p.getByRole('region', { name: 'Weigh-ins' }).getByRole('listitem');
   if ((await entries.count()) !== 1) throw new Error(`expected one weigh-in, saw ${await entries.count()}`);
 });
