@@ -307,6 +307,23 @@ describe('the link with the watch, inside the app', () => {
     expect(h.bridge.startWatchWorkout).not.toHaveBeenCalled();
   });
 
+  /**
+   * Started and finished on the watch out of range: the start reaches the
+   * phone before the finish, so the workout is live for a moment, but the
+   * watch has already said it ended it. Woken, it started a Health recording
+   * that belonged to no workout.
+   */
+  it('does not open it for a workout the watch has already ended', async () => {
+    reportFromWatch({
+      ...JSON.parse(report({ seq: 31, at: '2026-10-14T19:05:00.000Z', workoutId: 'w-ended', session: 'ended', health: 'off' })),
+      receivedAt: Date.now(),
+    });
+    contextMock.mockImplementation(async () => context('w-ended'));
+    await nudge();
+    await quiet();
+    expect(h.bridge.startWatchWorkout).not.toHaveBeenCalled();
+  });
+
   it('does not open it without a paired watch with GymGo on it, and decides each workout once', async () => {
     h.state.status.installed = false;
     contextMock.mockImplementation(async () => context('w-no-app'));

@@ -38,8 +38,8 @@ import { getWatchState, phoneClaim, reportFromWatch, subscribeWatchState } from 
  *  - **The watch's state** feeds `src/platform/watchState.ts`, on every report
  *    and from the native side's copy at launch and on resume.
  *  - **Starting on the phone wakes the watch:** a workout that becomes the live
- *    one, and that the watch is not already running, opens GymGo on the watch,
- *    once.
+ *    one, and that the watch has not reported in any state, opens GymGo on the
+ *    watch, once.
  *
  * Outside the app every exported function here does nothing.
  */
@@ -326,7 +326,7 @@ function rememberWoken(workoutId: string): void {
 const deciding = new Set<string>();
 
 /**
- * A workout open on the phone that the watch is not running yet: open GymGo
+ * A workout open on the phone that the watch has not reported yet: open GymGo
  * on the watch, which starts its workout session and takes the live session
  * from the context that has just gone. Each workout gets one decision, whether
  * or not it woke anything, so ending the watch's session never brings it back.
@@ -341,8 +341,10 @@ async function wakeTheWatch(context: WatchContext): Promise<void> {
     if (status.supported && status.activated === false) return;
     rememberWoken(workoutId);
     if (!status.supported || !status.paired || !status.installed) return;
-    const report = getWatchState().report;
-    if (report?.workoutId === workoutId && report.session === 'running') return;
+    // The watch knows this workout already: running it, or ended it. Opened for
+    // one it has ended, it would start a Health recording that belongs to no
+    // workout, and nothing would end it.
+    if (getWatchState().report?.workoutId === workoutId) return;
     const { started, error } = await WatchBridge.startWatchWorkout();
     if (!started) console.warn('GymGo: could not open GymGo on the watch', error);
   } finally {
