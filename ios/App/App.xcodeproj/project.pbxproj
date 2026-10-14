@@ -9,6 +9,15 @@
 /* Begin PBXBuildFile section */
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		3E1141C1307F622300686372 /* GymGo Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 3E1141B7307F622200686372 /* GymGo Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		3E64BE87307FC258005ABCAD /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3E64BE86307FC258005ABCAD /* WidgetKit.framework */; };
+		3E64BE89307FC258005ABCAD /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3E64BE88307FC258005ABCAD /* SwiftUI.framework */; };
+		3E64BE96307FC259005ABCAD /* GymGo ComplicationsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3E64BE84307FC258005ABCAD /* GymGo ComplicationsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		3E64BEA1307FC298005ABCAD /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3E64BE86307FC258005ABCAD /* WidgetKit.framework */; };
+		3E64BEA2307FC298005ABCAD /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3E64BE88307FC258005ABCAD /* SwiftUI.framework */; };
+		3E64BEAF307FC299005ABCAD /* GymGo Live ActivityExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3E64BEA0307FC298005ABCAD /* GymGo Live ActivityExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		3E64BEB8307FC32E005ABCAD /* GymGoKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3E64BEB7307FC32E005ABCAD /* GymGoKit */; };
+		3E64BEBA307FC33A005ABCAD /* GymGoKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3E64BEB9307FC33A005ABCAD /* GymGoKit */; };
+		3E64BEBC307FC33F005ABCAD /* GymGoKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3E64BEBB307FC33F005ABCAD /* GymGoKit */; };
 		3EDA884A307F632200FCB3CF /* GymGoWatchUI in Frameworks */ = {isa = PBXBuildFile; productRef = 3EDA8849307F632200FCB3CF /* GymGoWatchUI */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
@@ -18,10 +27,10 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		5A1C0DE0A0000000000000A1 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE0A0000000000000A0 /* PrivacyInfo.xcprivacy */; };
-		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 		5A1C0DE0A0000000000000B1 /* WatchLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE0A0000000000000B0 /* WatchLink.swift */; };
 		5A1C0DE0A0000000000000B3 /* WatchBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE0A0000000000000B2 /* WatchBridgePlugin.swift */; };
 		5A1C0DE0A0000000000000B5 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE0A0000000000000B4 /* MainViewController.swift */; };
+		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -31,6 +40,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = 3E1141B6307F622200686372;
 			remoteInfo = "GymGo Watch App";
+		};
+		3E64BE94307FC259005ABCAD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3E64BE83307FC258005ABCAD;
+			remoteInfo = "GymGo ComplicationsExtension";
+		};
+		3E64BEAD307FC299005ABCAD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3E64BE9F307FC298005ABCAD;
+			remoteInfo = "GymGo Live ActivityExtension";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -46,11 +69,39 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		3E64BE97307FC259005ABCAD /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3E64BE96307FC259005ABCAD /* GymGo ComplicationsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3E64BEB4307FC299005ABCAD /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				3E64BEAF307FC299005ABCAD /* GymGo Live ActivityExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		3E1141B7307F622200686372 /* GymGo Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "GymGo Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3E64BE84307FC258005ABCAD /* GymGo ComplicationsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "GymGo ComplicationsExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3E64BE86307FC258005ABCAD /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		3E64BE88307FC258005ABCAD /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		3E64BEA0307FC298005ABCAD /* GymGo Live ActivityExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "GymGo Live ActivityExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3E64BEB5307FC2EF005ABCAD /* GymGo ComplicationsExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "GymGo ComplicationsExtension.entitlements"; sourceTree = "<group>"; };
+		3E64BEB6307FC2FD005ABCAD /* GymGo Live ActivityExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "GymGo Live ActivityExtension.entitlements"; sourceTree = "<group>"; };
 		3EDA8850307F647D00FCB3CF /* GymGo-Watch-App-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GymGo-Watch-App-Info.plist"; sourceTree = "<group>"; };
 		3EDA8851307F649500FCB3CF /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
@@ -62,15 +113,34 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		5A1C0DE0A0000000000000A0 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		5A1C0DE0A0000000000000B0 /* WatchLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchLink.swift; sourceTree = "<group>"; };
 		5A1C0DE0A0000000000000B2 /* WatchBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridgePlugin.swift; sourceTree = "<group>"; };
 		5A1C0DE0A0000000000000B4 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		3E64BE9A307FC259005ABCAD /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 3E64BE83307FC258005ABCAD /* GymGo ComplicationsExtension */;
+		};
+		3E64BEB0307FC299005ABCAD /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 3E64BE9F307FC298005ABCAD /* GymGo Live ActivityExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3E1141B8307F622200686372 /* GymGo Watch App */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = "GymGo Watch App"; sourceTree = "<group>"; };
+		3E64BE8A307FC258005ABCAD /* GymGo Complications */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (3E64BE9A307FC259005ABCAD /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "GymGo Complications"; sourceTree = "<group>"; };
+		3E64BEA3307FC298005ABCAD /* GymGo Live Activity */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (3E64BEB0307FC299005ABCAD /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "GymGo Live Activity"; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -82,24 +152,59 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		3E64BE81307FC258005ABCAD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3E64BEBA307FC33A005ABCAD /* GymGoKit in Frameworks */,
+				3E64BE89307FC258005ABCAD /* SwiftUI.framework in Frameworks */,
+				3E64BE87307FC258005ABCAD /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3E64BE9D307FC298005ABCAD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3E64BEBC307FC33F005ABCAD /* GymGoKit in Frameworks */,
+				3E64BEA2307FC298005ABCAD /* SwiftUI.framework in Frameworks */,
+				3E64BEA1307FC298005ABCAD /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3011FED79650016851F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+				3E64BEB8307FC32E005ABCAD /* GymGoKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		3E64BE85307FC258005ABCAD /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				3E64BE86307FC258005ABCAD /* WidgetKit.framework */,
+				3E64BE88307FC258005ABCAD /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		504EC2FB1FED79650016851F = {
 			isa = PBXGroup;
 			children = (
+				3E64BEB6307FC2FD005ABCAD /* GymGo Live ActivityExtension.entitlements */,
+				3E64BEB5307FC2EF005ABCAD /* GymGo ComplicationsExtension.entitlements */,
 				3EDA8850307F647D00FCB3CF /* GymGo-Watch-App-Info.plist */,
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
 				3E1141B8307F622200686372 /* GymGo Watch App */,
+				3E64BE8A307FC258005ABCAD /* GymGo Complications */,
+				3E64BEA3307FC298005ABCAD /* GymGo Live Activity */,
+				3E64BE85307FC258005ABCAD /* Frameworks */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -109,6 +214,8 @@
 			children = (
 				504EC3041FED79650016851F /* App.app */,
 				3E1141B7307F622200686372 /* GymGo Watch App.app */,
+				3E64BE84307FC258005ABCAD /* GymGo ComplicationsExtension.appex */,
+				3E64BEA0307FC298005ABCAD /* GymGo Live ActivityExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -144,10 +251,12 @@
 				3E1141B3307F622200686372 /* Sources */,
 				3E1141B4307F622200686372 /* Frameworks */,
 				3E1141B5307F622200686372 /* Resources */,
+				3E64BE97307FC259005ABCAD /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				3E64BE95307FC259005ABCAD /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				3E1141B8307F622200686372 /* GymGo Watch App */,
@@ -160,6 +269,52 @@
 			productReference = 3E1141B7307F622200686372 /* GymGo Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		3E64BE83307FC258005ABCAD /* GymGo ComplicationsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3E64BE9B307FC259005ABCAD /* Build configuration list for PBXNativeTarget "GymGo ComplicationsExtension" */;
+			buildPhases = (
+				3E64BE80307FC258005ABCAD /* Sources */,
+				3E64BE81307FC258005ABCAD /* Frameworks */,
+				3E64BE82307FC258005ABCAD /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				3E64BE8A307FC258005ABCAD /* GymGo Complications */,
+			);
+			name = "GymGo ComplicationsExtension";
+			packageProductDependencies = (
+				3E64BEB9307FC33A005ABCAD /* GymGoKit */,
+			);
+			productName = "GymGo ComplicationsExtension";
+			productReference = 3E64BE84307FC258005ABCAD /* GymGo ComplicationsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		3E64BE9F307FC298005ABCAD /* GymGo Live ActivityExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3E64BEB1307FC299005ABCAD /* Build configuration list for PBXNativeTarget "GymGo Live ActivityExtension" */;
+			buildPhases = (
+				3E64BE9C307FC298005ABCAD /* Sources */,
+				3E64BE9D307FC298005ABCAD /* Frameworks */,
+				3E64BE9E307FC298005ABCAD /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				3E64BEA3307FC298005ABCAD /* GymGo Live Activity */,
+			);
+			name = "GymGo Live ActivityExtension";
+			packageProductDependencies = (
+				3E64BEBB307FC33F005ABCAD /* GymGoKit */,
+			);
+			productName = "GymGo Live ActivityExtension";
+			productReference = 3E64BEA0307FC298005ABCAD /* GymGo Live ActivityExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		504EC3031FED79650016851F /* App */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "App" */;
@@ -168,15 +323,18 @@
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
 				3E1141C2307F622300686372 /* Embed Watch Content */,
+				3E64BEB4307FC299005ABCAD /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				3E1141C0307F622300686372 /* PBXTargetDependency */,
+				3E64BEAE307FC299005ABCAD /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
 				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
+				3E64BEB7307FC32E005ABCAD /* GymGoKit */,
 			);
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
@@ -192,6 +350,12 @@
 				LastUpgradeCheck = 0920;
 				TargetAttributes = {
 					3E1141B6307F622200686372 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					3E64BE83307FC258005ABCAD = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					3E64BE9F307FC298005ABCAD = {
 						CreatedOnToolsVersion = 27.0;
 					};
 					504EC3031FED79650016851F = {
@@ -220,12 +384,28 @@
 			targets = (
 				504EC3031FED79650016851F /* App */,
 				3E1141B6307F622200686372 /* GymGo Watch App */,
+				3E64BE83307FC258005ABCAD /* GymGo ComplicationsExtension */,
+				3E64BE9F307FC298005ABCAD /* GymGo Live ActivityExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		3E1141B5307F622200686372 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3E64BE82307FC258005ABCAD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3E64BE9E307FC298005ABCAD /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -256,6 +436,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		3E64BE80307FC258005ABCAD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3E64BE9C307FC298005ABCAD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3001FED79650016851F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -275,6 +469,16 @@
 			isa = PBXTargetDependency;
 			target = 3E1141B6307F622200686372 /* GymGo Watch App */;
 			targetProxy = 3E1141BF307F622300686372 /* PBXContainerItemProxy */;
+		};
+		3E64BE95307FC259005ABCAD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3E64BE83307FC258005ABCAD /* GymGo ComplicationsExtension */;
+			targetProxy = 3E64BE94307FC259005ABCAD /* PBXContainerItemProxy */;
+		};
+		3E64BEAE307FC299005ABCAD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3E64BE9F307FC298005ABCAD /* GymGo Live ActivityExtension */;
+			targetProxy = 3E64BEAD307FC299005ABCAD /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -311,7 +515,7 @@
 				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CODE_SIGN_ENTITLEMENTS = "GymGo Watch App/GymGo Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = R697RRVMF2;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -331,6 +535,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.liamdaly.gymgo.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -358,7 +563,7 @@
 				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CODE_SIGN_ENTITLEMENTS = "GymGo Watch App/GymGo Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = R697RRVMF2;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -377,6 +582,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.liamdaly.gymgo.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -387,6 +593,186 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
+		3E64BE98307FC259005ABCAD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CODE_SIGN_ENTITLEMENTS = "GymGo ComplicationsExtension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = R697RRVMF2;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "GymGo Complications/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "GymGo Complications";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.liamdaly.gymgo.watchkitapp.GymGo-Complications";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		3E64BE99307FC259005ABCAD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CODE_SIGN_ENTITLEMENTS = "GymGo ComplicationsExtension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = R697RRVMF2;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "GymGo Complications/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "GymGo Complications";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.liamdaly.gymgo.watchkitapp.GymGo-Complications";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Release;
+		};
+		3E64BEB2307FC299005ABCAD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CODE_SIGN_ENTITLEMENTS = "GymGo Live ActivityExtension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = R697RRVMF2;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "GymGo Live Activity/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "GymGo Live Activity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.liamdaly.gymgo.GymGo-Live-Activity";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		3E64BEB3307FC299005ABCAD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CODE_SIGN_ENTITLEMENTS = "GymGo Live ActivityExtension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = R697RRVMF2;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "GymGo Live Activity/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "GymGo Live Activity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MARKETING_VERSION = 1.0;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.liamdaly.gymgo.GymGo-Live-Activity";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -506,7 +892,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = R697RRVMF2;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -530,7 +916,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 6;
+				CURRENT_PROJECT_VERSION = 7;
 				DEVELOPMENT_TEAM = R697RRVMF2;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -555,6 +941,24 @@
 			buildConfigurations = (
 				3E1141C3307F622300686372 /* Debug */,
 				3E1141C4307F622300686372 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		3E64BE9B307FC259005ABCAD /* Build configuration list for PBXNativeTarget "GymGo ComplicationsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3E64BE98307FC259005ABCAD /* Debug */,
+				3E64BE99307FC259005ABCAD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		3E64BEB1307FC299005ABCAD /* Build configuration list for PBXNativeTarget "GymGo Live ActivityExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3E64BEB2307FC299005ABCAD /* Debug */,
+				3E64BEB3307FC299005ABCAD /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -591,6 +995,21 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		3E64BEB7307FC32E005ABCAD /* GymGoKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EDA8848307F632200FCB3CF /* XCLocalSwiftPackageReference "../GymGoKit" */;
+			productName = GymGoKit;
+		};
+		3E64BEB9307FC33A005ABCAD /* GymGoKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EDA8848307F632200FCB3CF /* XCLocalSwiftPackageReference "../GymGoKit" */;
+			productName = GymGoKit;
+		};
+		3E64BEBB307FC33F005ABCAD /* GymGoKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EDA8848307F632200FCB3CF /* XCLocalSwiftPackageReference "../GymGoKit" */;
+			productName = GymGoKit;
+		};
 		3EDA8849307F632200FCB3CF /* GymGoWatchUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = GymGoWatchUI;

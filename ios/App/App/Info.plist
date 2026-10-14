@@ -24,14 +24,14 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>NSHealthShareUsageDescription</key>
-	<string>GymGo reads your body weight from Apple Health and your heart rate during a workout.</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>GymGo saves your finished workouts to Apple Health.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSHealthShareUsageDescription</key>
+	<string>GymGo reads your body weight from Apple Health and your heart rate during a workout.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>GymGo saves your finished workouts to Apple Health.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
