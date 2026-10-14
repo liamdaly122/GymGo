@@ -140,9 +140,9 @@ private func liveContext(reps: Int? = 5, claim: [String: Any]? = nil) throws -> 
     store.haptics.observe = { cues.append($0) }
     #expect(store.actionButtonPressed() == .logSet)
     #expect(store.session?.progress.done == 0)
-    // The failure tap, and nothing that says a set was logged.
-    #expect(cues.last == .failed)
-    #expect(!cues.contains { $0 != .failed })
+    // The failure tap, once, and nothing that says a set was logged:
+    // `logSetOnScreen` owns the tap, and the press does not add another.
+    #expect(cues == [.failed])
 }
 
 @MainActor
@@ -166,11 +166,21 @@ private func liveContext(reps: Int? = 5, claim: [String: Any]? = nil) throws -> 
 }
 
 @MainActor
-@Test func aPauseOrResumeIsReportedToThePhoneAtOnce() throws {
+@Test func aPauseOrResumeIsReportedToThePhoneAtOnceAndOnlyOnce() throws {
     let store = store()
+    // As the watch target wires it.
+    store.workout.onPauseChanged = { store.workoutPauseChanged() }
     store.receive(try liveContext())
-    var reports = 0
-    store.sendState = { _ in reports += 1 }
-    store.workoutPauseChanged()
-    #expect(reports == 1)
+    var reports: [WatchStateReport] = []
+    store.sendState = { json in
+        if let report = try? JSONDecoder().decode(WatchStateReport.self, from: Data(json.utf8)) { reports.append(report) }
+    }
+    let began = Date()
+    store.workout.pauseChanged(paused: true, at: began)
+    // One report per flip: each wakes the phone.
+    #expect(reports.count == 1)
+    #expect(reports.last?.paused == WatchSession.isoString(began))
+    store.workout.pauseChanged(paused: false, at: began.addingTimeInterval(60))
+    #expect(reports.count == 2)
+    #expect(reports.last?.paused == nil)
 }

@@ -70,7 +70,8 @@ extension WatchSessionStore {
     /// logging → nothing; paused → resume; resting → skip the rest; a set in
     /// hand → Done with the numbers on screen, or the failure tap when that
     /// has no reps yet (the screen would ask for them; a press never logs
-    /// 0 × 0); anything else → nothing. A press never finishes a workout.
+    /// 0 × 0; `logSetOnScreen` plays the tap, once); anything else →
+    /// nothing. A press never finishes a workout.
     @discardableResult
     public func actionButtonPressed() -> ActionPress {
         let press = ActionPress.decide(
@@ -85,7 +86,7 @@ extension WatchSessionStore {
         case .skipRest:
             skipRest()
         case .logSet:
-            if !logSetOnScreen() { haptics.play(.failed) }
+            logSetOnScreen()
         }
         return press
     }
@@ -108,9 +109,10 @@ extension WatchSessionStore {
 
     /// The Health session paused or resumed, however it came about
     /// (`WorkoutController.onPauseChanged`, wired in the watch target): the
-    /// rest-over notification follows, and the phone hears of it now.
+    /// rest-over notification follows, and the phone hears of it now, once.
+    /// `syncRestAlert` reports, since the report's `paused` changed; another
+    /// report here would wake the phone twice for one pause.
     public func workoutPauseChanged() {
         syncRestAlert()
-        reportNow()
     }
 }
