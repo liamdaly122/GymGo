@@ -331,6 +331,22 @@ await step('a row shows that station, and the way back to the watch', async () =
   if (await p.getByRole('button', { name: "Back to the watch's exercise" }).count()) throw new Error('the way back stayed');
 });
 
+await step('a station picked from the list follows the watch once the watch gets there', async () => {
+  await sessionRegion().getByRole('button').nth(1).click();
+  await p.getByRole('region', { name: 'Coming up' }).getByRole('heading', { name: SQUAT }).waitFor({ timeout: 5000 });
+  // The watch moves on to the station picked: the card is the watch's now.
+  await report({ workoutId, setId: sets[SQUAT][0] });
+  await watching().getByRole('heading', { name: SQUAT }).waitFor({ timeout: 5000 });
+  if (await p.getByRole('button', { name: "Back to the watch's exercise" }).count()) {
+    throw new Error('the way back stayed once the watch got there');
+  }
+  // And when the watch moves on again, the card goes with it rather than staying behind.
+  await report({ workoutId, setId: sets[ROW][0] });
+  await watching().getByRole('heading', { name: ROW }).waitFor({ timeout: 5000 });
+  await report({ workoutId, setId: sets[BENCH][1] });
+  await watching().getByRole('heading', { name: BENCH }).waitFor({ timeout: 5000 });
+});
+
 let swappedTo = '';
 await step('a swap from the companion leaves it in place, and renames the row', async () => {
   await sessionRegion().getByRole('button').nth(2).click();

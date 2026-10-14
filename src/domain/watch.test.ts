@@ -76,6 +76,26 @@ describe('the list the watch walks', () => {
     expect(buildWatchSnapshot(input([a])).sets[0]).toMatchObject({ weight: 90, reps: 8, source: 'typed', carries: false });
   });
 
+  /**
+   * Reps typed into a set's sheet on the phone, and no weight. The phone shows
+   * and would log the placeholder weight; the list sent 0kg, the bottom of the
+   * Crown's ladder, so Done on the wrist logged a barbell lift at nothing.
+   */
+  it('starts a set with only its reps typed at the weight the phone shows, and does not carry over it', () => {
+    const a = entry('a', { sets: [todo('a', 0, { reps: 8 }), todo('a', 1)] });
+    expect(buildWatchSnapshot(input([a])).sets[0]).toMatchObject({ weight: 100, reps: 8, source: 'suggestion', carries: false });
+  });
+
+  it('starts a set with only its weight typed at the reps the phone shows, and does not carry over it', () => {
+    const a = entry('a', { sets: [todo('a', 0, { weight_kg: 90 }), todo('a', 1)] });
+    expect(buildWatchSnapshot(input([a])).sets[0]).toMatchObject({ weight: 90, reps: 5, source: 'suggestion', carries: false });
+  });
+
+  it('fills the untyped field from the set just done, from the second set on', () => {
+    const a = entry('a', { sets: [done('a', 0, 102.5, 6, '2026-10-14T17:03:00.000Z'), todo('a', 1, { reps: 8 })] });
+    expect(buildWatchSnapshot(input([a])).sets[0]).toMatchObject({ weight: 102.5, reps: 8, source: 'carried', carries: false });
+  });
+
   it('rests after each working set, and says what is next', () => {
     const snapshot = buildWatchSnapshot(input([entry('a'), entry('b', { restSeconds: 90, sets: [todo('b', 0)] })]));
     const [first, , last, other] = snapshot.sets;

@@ -2,9 +2,7 @@ import type { WorkoutExerciseView } from '@/db/queries';
 import type { WorkoutSet } from '@/db/schema';
 import type { PreviousPerformance } from '@/domain/previousPerformance';
 import type { Suggestion } from '@/domain/progression';
-import { isChildSet, latestWorkingSet } from '@/domain/sets';
-import { schemeTarget, stepsFromTop } from '@/domain/schemes';
-import { CHILD_NAMES } from './setNames';
+import { setHints } from '@/domain/setHints';
 
 /** The chip beside the plan line: what the engine wants you to do, in a word. */
 export const VERB: Record<string, string> = {
@@ -40,15 +38,10 @@ export interface SetPlan {
 }
 
 /**
- * The numbers a set starts at, and what it is called.
- *
- * From the second set on the placeholder is the set just done, so the next
- * set is a nudge of a stepper. In order: a pyramid's scheme target, the
- * working set done most recently today, the suggestion, last time. Warm-ups,
- * drops and back-offs are never carried.
- *
- * Shared by the set in hand, which logs it, and the companion screen, which
- * shows what the watch is about to log, so the two cannot disagree.
+ * The numbers a set starts at, and what it is called: `setHints`
+ * (src/domain/setHints.ts), the one rule shared by the set in hand, which
+ * logs it, the companion screen, which shows what the watch is about to log,
+ * and the list the watch is sent, so the three cannot disagree.
  */
 export function setPlan(
   entry: WorkoutExerciseView,
@@ -57,46 +50,12 @@ export function setPlan(
   suggestion: Suggestion | null | undefined,
   previous: PreviousPerformance | null | undefined,
 ): SetPlan {
-  const child = isChildSet(set);
-
-  // Only a top-level working set is something a suggestion or last time's
-  // numbers apply to. A warm-up arrives filled in; a drop carries its weight.
-  const hintable = !child && set.type === 'working';
-  const lastTime = hintable ? previous?.working_sets[ordinal] : undefined;
-
-  // A pyramid's other sets aim off its top set: lighter and longer the further
-  // away they sit. One added by hand off a straight set arrives filled in.
-  const technique = entry.workoutExercise.technique;
-  const nonWarmups = entry.sets.filter((candidate) => candidate.parent_set_id === null && candidate.type !== 'warmup');
-  const fromTop = stepsFromTop(
-    technique,
-    nonWarmups.map((candidate) => candidate.type),
-    nonWarmups.findIndex((candidate) => candidate.id === set.id),
+  const { child, hintable, lastTime, fromTop, schemeRole, weightHint, repsHint, label } = setHints(
+    { technique: entry.workoutExercise.technique, loading: entry.loading, sets: entry.sets },
+    set,
+    ordinal,
+    suggestion,
+    previous,
   );
-  // Today's top set once it is done — a reverse pyramid's comes first — else
-  // what it is meant to be.
-  const workingSets = nonWarmups.filter((candidate) => candidate.type === 'working');
-  const topSet = technique === 'reverse_pyramid' ? workingSets[0] : workingSets.at(-1);
-  const topDone = topSet?.completed && (topSet.weight_kg > 0 || topSet.reps > 0) ? topSet : null;
-  const topTarget = topDone ?? suggestion ?? previous?.top_set ?? null;
-  const schemeHint = fromTop !== null && topTarget ? schemeTarget(topTarget, fromTop, entry.loading) : null;
-  const schemeRole = set.type === 'back_off' ? (technique === 'pyramid' ? 'Ramp' : 'Back-off') : null;
-
-  // From the second set on, the fields start at what was just done: the next
-  // set is a nudge of a stepper, not two numbers typed again. The suggestion
-  // and last time are for the first.
-  const carried = hintable ? latestWorkingSet(entry.sets) : null;
-  const weightHint =
-    schemeHint?.weight_kg ??
-    (hintable ? (carried?.weight_kg ?? suggestion?.weight_kg ?? lastTime?.weight_kg ?? null) : null);
-  const repsHint = schemeHint?.reps ?? (hintable ? (carried?.reps ?? suggestion?.reps ?? lastTime?.reps ?? null) : null);
-
-  const warmups = entry.sets.filter((candidate) => candidate.parent_set_id === null && candidate.type === 'warmup');
-  const label = child
-    ? `${CHILD_NAMES[set.type] ?? 'Continuation'} · set ${ordinal + 1}`
-    : set.type === 'warmup'
-      ? `Warm-up ${ordinal + 1} of ${warmups.length}`
-      : `Set ${ordinal + 1} of ${nonWarmups.length}${schemeRole ? ` · ${schemeRole}` : ''}`;
-
   return { child, hintable, lastTime, fromTop, schemeRole, weightHint, repsHint, label };
 }

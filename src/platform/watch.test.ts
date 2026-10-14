@@ -125,7 +125,7 @@ beforeEach(() => {
   h.state.inbox = [];
   h.state.drainGate = null;
   applyMock.mockReset();
-  applyMock.mockResolvedValue({ acknowledge: [], keep: [], finished: [] });
+  applyMock.mockResolvedValue({ acknowledge: [], keep: [], finished: [], revived: [] });
   contextMock.mockReset();
   contextMock.mockImplementation(async () => context());
   vi.mocked(snapshotEverything).mockClear();
@@ -168,7 +168,7 @@ describe('the link with the watch, inside the app', () => {
 
   it('acknowledges what was applied or skipped, and unreadable events, and leaves the rest', async () => {
     h.state.inbox = [event('a'), event('b'), 'not json, "id": "bad-1"', '{"id":"bad-2"}', '{"kind":"finish"}'];
-    applyMock.mockResolvedValue({ acknowledge: ['a'], keep: ['b'], finished: [] });
+    applyMock.mockResolvedValue({ acknowledge: ['a'], keep: ['b'], finished: [], revived: [] });
     await drainWatchInbox();
     expect(applyMock).toHaveBeenCalledTimes(1);
     expect(applyMock.mock.calls[0]![0].map((e) => e.id)).toEqual(['a', 'b']);
@@ -178,7 +178,14 @@ describe('the link with the watch, inside the app', () => {
 
   it('writes the phone snapshot when a drain finished a workout', async () => {
     h.state.inbox = [event('f', 'finish')];
-    applyMock.mockResolvedValue({ acknowledge: ['f'], keep: [], finished: ['w-1'] });
+    applyMock.mockResolvedValue({ acknowledge: ['f'], keep: [], finished: ['w-1'], revived: [] });
+    await drainWatchInbox();
+    expect(snapshotEverything).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes it again when a drain put a late set back into a finished workout', async () => {
+    h.state.inbox = [event('late')];
+    applyMock.mockResolvedValue({ acknowledge: ['late'], keep: [], finished: [], revived: ['w-1'] });
     await drainWatchInbox();
     expect(snapshotEverything).toHaveBeenCalledTimes(1);
   });
@@ -188,14 +195,14 @@ describe('the link with the watch, inside the app', () => {
     h.state.inbox = [event('t')];
     applyMock.mockRejectedValue(new Error('IndexedDB went away'));
     await expect(drainWatchInbox()).resolves.toBeUndefined();
-    applyMock.mockResolvedValue({ acknowledge: [], keep: ['t'], finished: [] });
+    applyMock.mockResolvedValue({ acknowledge: [], keep: ['t'], finished: [], revived: [] });
     await drainWatchInbox();
     expect(h.state.acknowledged.length).toBe(before);
   });
 
   it('drains when something lands', async () => {
     h.state.inbox = [event('landed')];
-    applyMock.mockResolvedValue({ acknowledge: ['landed'], keep: [], finished: [] });
+    applyMock.mockResolvedValue({ acknowledge: ['landed'], keep: [], finished: [], revived: [] });
     h.emit('inbox');
     await waitFor(() => expect(h.state.acknowledged.at(-1)).toEqual(['landed']));
   });
@@ -212,7 +219,7 @@ describe('the link with the watch, inside the app', () => {
     let open!: () => void;
     h.state.drainGate = new Promise<void>((resolve) => (open = resolve));
     h.state.inbox = [event('slow')];
-    applyMock.mockResolvedValue({ acknowledge: ['slow'], keep: [], finished: [] });
+    applyMock.mockResolvedValue({ acknowledge: ['slow'], keep: [], finished: [], revived: [] });
     const drained = drainWatchInbox();
     const before = sentCount();
     takeLoggingBack('w-claim', '2026-10-14T18:20:00.000Z');
@@ -295,6 +302,23 @@ describe('the link with the watch, inside the app', () => {
   it('does not open it for a workout the watch is already running', async () => {
     reportFromWatch({ ...JSON.parse(report({ seq: 30, at: '2026-10-14T19:00:00.000Z', workoutId: 'w-watch' })), receivedAt: Date.now() });
     contextMock.mockImplementation(async () => context('w-watch'));
+    await nudge();
+    await quiet();
+    expect(h.bridge.startWatchWorkout).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Started and finished on the watch out of range: the start reaches the
+   * phone before the finish, so the workout is live for a moment, but the
+   * watch has already said it ended it. Woken, it started a Health recording
+   * that belonged to no workout.
+   */
+  it('does not open it for a workout the watch has already ended', async () => {
+    reportFromWatch({
+      ...JSON.parse(report({ seq: 31, at: '2026-10-14T19:05:00.000Z', workoutId: 'w-ended', session: 'ended', health: 'off' })),
+      receivedAt: Date.now(),
+    });
+    contextMock.mockImplementation(async () => context('w-ended'));
     await nudge();
     await quiet();
     expect(h.bridge.startWatchWorkout).not.toHaveBeenCalled();

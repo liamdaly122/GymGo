@@ -26,9 +26,11 @@ import { getWatchState, phoneClaim, reportFromWatch, subscribeWatchState } from 
  *  - **The inbox is drained** on launch, on resume, the moment something lands,
  *    and always before Finish on the phone, because Finish tidies away every
  *    unticked set and a set logged on the wrist must be ticked before that.
- *    Only what was applied, or skipped for good, is acknowledged; anything
- *    deferred or that threw stays for the next drain. A drain that finished a
- *    workout writes the phone's snapshot, as Finish on the phone does.
+ *    One that reaches the phone only after that Finish is put back
+ *    (`reviveTidiedSet`). Only what was applied, or skipped for good, is
+ *    acknowledged; anything deferred or that threw stays for the next drain.
+ *    A drain that finished a workout, or put a set back into one, writes the
+ *    phone's snapshot, as Finish on the phone does.
  *  - **The context goes out** a moment after anything it is built from
  *    changes, and at launch, on resume, at local midnight and when the phone
  *    takes logging back, but never while a drain is running: a stale `ready`
@@ -36,8 +38,8 @@ import { getWatchState, phoneClaim, reportFromWatch, subscribeWatchState } from 
  *  - **The watch's state** feeds `src/platform/watchState.ts`, on every report
  *    and from the native side's copy at launch and on resume.
  *  - **Starting on the phone wakes the watch:** a workout that becomes the live
- *    one, and that the watch is not already running, opens GymGo on the watch,
- *    once.
+ *    one, and that the watch has not reported in any state, opens GymGo on the
+ *    watch, once.
  *
  * Outside the app every exported function here does nothing.
  */
@@ -87,7 +89,7 @@ let drainsWaiting = 0;
 /** Every drain ever queued, so a send can tell that one ran while it was building. */
 let drainsQueued = 0;
 
-const NOTHING_APPLIED: WatchDrainResult = { acknowledge: [], keep: [], finished: [] };
+const NOTHING_APPLIED: WatchDrainResult = { acknowledge: [], keep: [], finished: [], revived: [] };
 
 function isEvent(value: unknown): value is WatchEvent {
   if (typeof value !== 'object' || value === null) return false;
@@ -126,7 +128,8 @@ async function drainOnce(): Promise<void> {
   const ids = [...result.acknowledge, ...unreadable];
   if (ids.length > 0) await WatchBridge.acknowledge({ ids });
   // Finish on the watch is a Finish: the phone keeps its own copy, as after Finish on the phone.
-  if (result.finished.length > 0) await snapshotEverything();
+  // So is a set put back into a finished workout: the copy taken at Finish lacks it.
+  if (result.finished.length > 0 || result.revived.length > 0) await snapshotEverything();
 }
 
 /**
@@ -323,7 +326,7 @@ function rememberWoken(workoutId: string): void {
 const deciding = new Set<string>();
 
 /**
- * A workout open on the phone that the watch is not running yet: open GymGo
+ * A workout open on the phone that the watch has not reported yet: open GymGo
  * on the watch, which starts its workout session and takes the live session
  * from the context that has just gone. Each workout gets one decision, whether
  * or not it woke anything, so ending the watch's session never brings it back.
@@ -338,8 +341,10 @@ async function wakeTheWatch(context: WatchContext): Promise<void> {
     if (status.supported && status.activated === false) return;
     rememberWoken(workoutId);
     if (!status.supported || !status.paired || !status.installed) return;
-    const report = getWatchState().report;
-    if (report?.workoutId === workoutId && report.session === 'running') return;
+    // The watch knows this workout already: running it, or ended it. Opened for
+    // one it has ended, it would start a Health recording that belongs to no
+    // workout, and nothing would end it.
+    if (getWatchState().report?.workoutId === workoutId) return;
     const { started, error } = await WatchBridge.startWatchWorkout();
     if (!started) console.warn('GymGo: could not open GymGo on the watch', error);
   } finally {

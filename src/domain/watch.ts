@@ -28,9 +28,9 @@ import {
   nextLoadableAbove,
   type LoadingProfile,
 } from './plates';
+import { setHints, startingNumbers } from './setHints';
 import { restsAfterSet, setInHand, type OrderedSet } from './supersets';
-import { CHILD_NAMES, isChildSet, isTopWorkingSet, latestWorkingSet, setOrdinals } from './sets';
-import { schemeTarget, stepsFromTop } from './schemes';
+import { isTopWorkingSet, setOrdinals } from './sets';
 import type { Equipment, Technique } from './types';
 
 export const WATCH_SNAPSHOT_VERSION = 1;
@@ -232,57 +232,18 @@ export function buildWatchSnapshot(input: WatchInput): WatchSnapshot {
 
   const sets: WatchSet[] = order.map(({ station, set }) => {
     const entry = entryByWorkoutExercise.get(set.workout_exercise_id)!;
-    const ordinals = setOrdinals(entry.sets);
-    const ordinal = ordinals.get(set.id) ?? 0;
-    const child = isChildSet(set);
-    const hintable = !child && set.type === 'working';
-
-    const nonWarmups = entry.sets.filter((candidate) => candidate.parent_set_id === null && candidate.type !== 'warmup');
-    const warmups = entry.sets.filter((candidate) => candidate.parent_set_id === null && candidate.type === 'warmup');
-    const fromTop = stepsFromTop(
-      entry.technique,
-      nonWarmups.map((candidate) => candidate.type),
-      nonWarmups.findIndex((candidate) => candidate.id === set.id),
-    );
-    const workingSets = nonWarmups.filter((candidate) => candidate.type === 'working');
-    const topSet = entry.technique === 'reverse_pyramid' ? workingSets[0] : workingSets.at(-1);
-    const topDone = topSet?.completed && (topSet.weight_kg > 0 || topSet.reps > 0) ? topSet : null;
-    const topTarget = topDone ?? entry.suggestion ?? entry.previous?.top_set ?? null;
-    const schemeHint = fromTop !== null && topTarget ? schemeTarget(topTarget, fromTop, entry.loading) : null;
-    const schemeRole = set.type === 'back_off' ? (entry.technique === 'pyramid' ? 'Ramp' : 'Back-off') : null;
-
-    const lastTime = hintable ? entry.previous?.working_sets[ordinal] : undefined;
-    const carried = hintable ? latestWorkingSet(entry.sets) : null;
-
-    // The same order of preference as the phone's set in hand: what was
-    // typed, then the scheme, the set just done, the suggestion, last time.
-    let weight: number | null = null;
-    let reps: number | null = null;
-    let source: WatchHintSource = 'none';
-    if (set.weight_kg > 0 || set.reps > 0) {
-      weight = set.weight_kg;
-      reps = set.reps > 0 ? set.reps : null;
-      source = 'typed';
-    } else if (schemeHint) {
-      ({ weight_kg: weight, reps } = schemeHint);
-      source = 'scheme';
-    } else if (hintable && carried) {
-      ({ weight_kg: weight, reps } = carried);
-      source = 'carried';
-    } else if (hintable && entry.suggestion) {
-      ({ weight_kg: weight, reps } = entry.suggestion);
-      source = 'suggestion';
-    } else if (lastTime) {
-      ({ weight_kg: weight, reps } = lastTime);
-      source = 'last';
-    }
-    if (weight === null && entry.equipment === 'bodyweight') weight = 0;
-
-    const label = child
-      ? `${CHILD_NAMES[set.type] ?? 'Continuation'} · set ${ordinal + 1}`
-      : set.type === 'warmup'
-        ? `Warm-up ${ordinal + 1} of ${warmups.length}`
-        : `Set ${ordinal + 1} of ${nonWarmups.length}${schemeRole ? ` · ${schemeRole}` : ''}`;
+    const ordinal = setOrdinals(entry.sets).get(set.id) ?? 0;
+    // The phone's own rule (`setHints`), field by field as the set in hand
+    // reads it: a field typed on the phone keeps its number, and the other
+    // starts at its placeholder.
+    const hints = setHints(entry, set, ordinal, entry.suggestion, entry.previous);
+    const { weight, reps, weightTyped, repsTyped } = startingNumbers(set, hints, entry.equipment === 'bodyweight');
+    const source: WatchHintSource =
+      weightTyped && repsTyped
+        ? 'typed'
+        : ((weightTyped ? null : hints.weightSource) ??
+          (repsTyped ? null : hints.repsSource) ??
+          (weightTyped || repsTyped ? 'typed' : 'none'));
 
     return {
       id: set.id,
@@ -291,12 +252,13 @@ export function buildWatchSnapshot(input: WatchInput): WatchSnapshot {
       station,
       type: set.type,
       parentSetId: set.parent_set_id,
-      label,
+      label: hints.label,
       weight,
       reps,
       source,
-      carries: hintable && fromTop === null && source !== 'typed',
-      scheme: fromTop !== null && topSet ? { stepsFromTop: fromTop, topSetId: topSet.id } : null,
+      // Never over a number typed on the phone, which the watch's carry would replace.
+      carries: hints.hintable && hints.fromTop === null && !weightTyped && !repsTyped,
+      scheme: hints.fromTop !== null && hints.topSet ? { stepsFromTop: hints.fromTop, topSetId: hints.topSet.id } : null,
       restAfter: null,
       upNext: FINISH,
     };

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useSettings, useWorkout } from '@/db/queries';
-import { addExerciseToWorkout, addSet, discardWorkout, finishWorkout } from '@/db/mutations';
+import { addExerciseToWorkout, addSet, discardWorkout, finishWorkout, ImmutableWorkoutError } from '@/db/mutations';
 import { db } from '@/db/db';
 import { snapshotEverything } from '@/platform/snapshots';
 import { drainWatchInbox } from '@/platform/watch';
@@ -172,7 +172,9 @@ export default function ActiveWorkoutScreen() {
   // Finished while this screen showed it open, which is the watch's Finish:
   // out the same way as Finish here, "Done." poster and all. Opened already
   // finished, it goes to the session's summary without the poster. Finish
-  // here navigates itself, and `leaving` keeps this from doing it twice.
+  // here navigates itself, and `leaving` keeps this from doing it twice. The
+  // drain that applied the watch's Finish has written the phone's snapshot
+  // already, so it is not written again here.
   const finishedAt = view?.workout.finished_at;
   const seenFinishedAt = useRef<string | null | undefined>(undefined);
   const leaving = useRef(false);
@@ -184,8 +186,6 @@ export default function ActiveWorkoutScreen() {
     leaving.current = true;
     if (before === null) {
       rest.stop();
-      // Inside the app, a copy of everything on the phone itself. Never awaited.
-      void snapshotEverything();
       void navigate(`/history/${workoutId}`, { replace: true, state: { fresh: true } });
     } else {
       void navigate(`/history/${workoutId}`, { replace: true });
@@ -247,12 +247,24 @@ export default function ActiveWorkoutScreen() {
     // Sets logged on the watch but not yet applied go in first: Finish tidies
     // away every unticked set, and a finished workout cannot change.
     await drainWatchInbox();
-    // The watch's own Finish may have been in that drain.
-    const workout = await db.workouts.get(workoutId);
-    if (workout?.finished_at === null) await finishWorkout(workoutId);
-    // Inside the app, a copy of everything on the phone itself. Never awaited.
-    void snapshotEverything();
+    // That drain may have finished this workout (the watch's own Finish) or
+    // discarded it (the watch's Discard, or a start from the watch taking the
+    // place of an empty one). finishWorkout checks and writes in one step, so
+    // neither can slip in between, and it never finishes a discarded workout.
+    const finishedHere = await finishWorkout(workoutId).catch(async (cause: unknown) => {
+      // Finished by that drain, or gone altogether: where to go is read below.
+      if (cause instanceof ImmutableWorkoutError || !(await db.workouts.get(workoutId))) return false;
+      throw cause;
+    });
     rest.stop();
+    const workout = await db.workouts.get(workoutId);
+    if (!workout || workout.deleted_at !== null || workout.finished_at === null) {
+      void navigate('/', { replace: true });
+      return;
+    }
+    // Inside the app, a copy of everything on the phone itself. Never awaited.
+    // A Finish the drain applied was copied by the drain.
+    if (finishedHere) void snapshotEverything();
     void navigate(`/history/${workoutId}`, { replace: true, state: { fresh: true } });
   };
 

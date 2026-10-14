@@ -5,6 +5,7 @@ import ExerciseImage from '@/components/ExerciseImage';
 import { Icon } from '@/components/icons';
 import { formatSetSummary } from '@/domain/previousPerformance';
 import { SCHEME_LOAD_STEP, SCHEME_REP_STEP } from '@/domain/schemes';
+import { startingNumbers } from '@/domain/setHints';
 import { setOrdinals } from '@/domain/sets';
 import { formatClock, formatDayLabel } from '@/lib/dates';
 import LiftRecords from '@/features/exercises/LiftRecords';
@@ -60,9 +61,10 @@ export default function ExerciseInfo({
   const plan = set ? setPlan(entry, set, ordinal, suggestion, previous) : null;
   const bodyweight = exercise?.equipment === 'bodyweight';
 
-  // What the watch shows: what was typed into the set, else its placeholder.
-  const weight = set && plan ? (set.weight_kg > 0 ? set.weight_kg : (plan.weightHint ?? (bodyweight ? 0 : null))) : null;
-  const reps = set && plan ? (set.reps > 0 ? set.reps : plan.repsHint) : null;
+  // What the watch shows: each field what was typed into the set, else its
+  // placeholder, by the same function that builds the watch's list.
+  const { weight, reps } =
+    set && plan ? startingNumbers(set, plan, bodyweight) : { weight: null as number | null, reps: null as number | null };
 
   const muscles = [
     exercise?.primary_muscle,
