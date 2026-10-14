@@ -38,8 +38,9 @@ public struct LiveSessionContent: Codable, Hashable, Sendable {
     public var upNextDetail: String?
     /// Beats per minute, most recent.
     public var heartRate: Int?
-    /// When the watch paused the workout, while it is paused. The elapsed
-    /// clock stops there; a rest keeps its wall-clock end.
+    /// When the watch paused the workout, while it is paused: the activity
+    /// says Paused. Its elapsed clock carries on, wall-clock time from the
+    /// start, as the phone's duration does; a rest keeps its wall-clock end.
     public var pausedAt: Date?
 
     public init(
