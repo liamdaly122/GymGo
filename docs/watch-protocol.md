@@ -67,7 +67,7 @@ to be applied.
 | Kind | Sent when | Phone applies it by |
 |---|---|---|
 | `startWorkout` | Start on the watch's Today page | `replayWatchStart(layout, at)`: writes exactly the workout, exercise and set rows in the layout, with `started_at = at`. Skipped if a workout with that ID already exists, even a deleted one. Filed under the block slot the layout was offered for only if that slot is still the one `planSlot` gives now; otherwise filed with the plan but no week or session index. If an empty workout is open on the phone, it is discarded first; one with sets is kept and both stay open. Exercises missing from the library are dropped with their sets. The layout may carry IDs the watch minted (see `ready` above). |
-| `completeSet` | Done or double tap (the Action button is not wired up yet: it needs an App Intent, roadmap 4.4) | `completeSetWith(setId, {weight, reps}, {completedAt: at})`. **Deferred** (left in the inbox, not acknowledged) while the workout row does not exist yet. Skipped if the set or workout is gone, or if the set was completed at a time `>=` this one. In a workout **finished on the phone**, a set that Finish tidied away (its `deleted_at` equals `finished_at`) and that was logged before that Finish (`at < finished_at`) goes back in through `reviveTidiedSet`: completed with the watch's numbers and time, its exercise restored if Finish dropped it, both queued. Any other write to a finished workout is skipped. |
+| `completeSet` | Done or double tap (the Action button is not wired up yet: it needs an App Intent, roadmap 4.4) | `completeSetWith(setId, {weight, reps}, {completedAt: at})`. **Deferred** (left in the inbox, not acknowledged) while the workout row does not exist yet. Read and written in one transaction, so a Finish on the phone lands wholly before or wholly after. Skipped if the set or workout is gone, or if the set was completed at a time `>=` this one. In a workout **finished on the phone**, a set that Finish tidied away (its `deleted_at` equals `finished_at`) and that was logged before that Finish (`at < finished_at`) goes back in through `reviveTidiedSet`: completed with the watch's numbers and time, its exercise restored if Finish dropped it, both queued. Any other write to a finished workout is skipped. |
 | `skipRest` | Skip on the rest | Nothing to write. Acknowledged. |
 | `finish` | Finish and save on the watch | First applies `sets` (the watch's unconfirmed completeSets), deduped by ID, then `finishWorkout(id, { finishedAt: at })`: `finished_at` is when Finish was pressed, clamped to no earlier than `started_at` and the last completed set and no later than now; tidied rows get the same `deleted_at`, and `updated_at` is now. If the phone finished the workout first, the carried sets still go through as late sets (revived as above) and the finish itself is skipped. The phone's snapshot (`snapshotEverything`) is written after a finish or a revival. |
 | `discard` | Discard on the watch (offered only before the first set is logged) | `discardWorkout(id, { deletedAt: at })`, clamped to no earlier than `started_at` and no later than now. A workout already discarded is never finished afterwards: `finishWorkout` leaves it alone and returns false. |
@@ -144,7 +144,12 @@ main actor.
   ended as a finish and thrown away if it was discarded. An untagged
   recording with no session ends once a context sent after it began has no
   live workout: saved under the workout that just finished if it is at least
-  60 s long, otherwise thrown away.
+  60 s long, otherwise thrown away. With no context since it began, it waits
+  2 minutes (`strayRecordingWait`; the 30 s heartbeat asks again) and is then
+  thrown away, never saved: a finish that ended before it began is an
+  earlier workout's. A recording a context names as live, or tagged with the
+  running session, is never ended. The idle page's End throws it away and
+  says so ("End, not saved").
 - **Recovers** after a crash through `handleActiveWorkoutRecovery` and
   `recoverActiveWorkoutSession`, with the delegates and data source set again.
 - **Live metrics:** the most recent heart rate (count/min) and the summed
@@ -170,7 +175,7 @@ phone's Vibrate switch is off.
 | Record (replaces the two above) | `.success`, 700, `.success` |
 | 10 s left (rests of 20 s or more) | `.retry` |
 | 3, 2, 1 s left | `.click` each second |
-| **Rest over** | `.notification`, 600, `.notification`, 600, `.start`; once more 8 s later if the screen was not woken or touched, and only while that session still runs. While Health is not recording, the rest's end is also a local notification ("Rest over"), one per rest, replaced or removed as the rest changes and never sent with Vibrate off; delivered ones are cleared when the app comes to the front |
+| **Rest over** | `.notification`, 600, `.notification`, 600, `.start`; once more 8 s later if the screen was not woken or touched, and only while that session still runs. While Health is not recording, the rest's end is also a local notification ("Rest over"), one per rest, replaced or removed as the rest changes and never sent with Vibrate off; delivered ones are cleared when the app comes to the front. **One cue per rest** (`RestAlert.cuer`): with the app active, or no notification that will sound, the app plays it; wrist down or in the background, the notification plays it with the system's sound and haptic and the app plays nothing. A Focus or Do Not Disturb can silence that notification (it is not Time Sensitive) |
 | +30 s or Skip | `.click` |
 | Finished or discarded on the iPhone | `.stop`, 500, `.directionDown` |
 | Saved to Health | `.success` |

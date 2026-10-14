@@ -283,7 +283,10 @@ the one place the app is weaker by default:
 1. The Supabase backup, unchanged: a wiped app restores on the next sign-in.
 2. **A snapshot on the phone itself** (`snapshots.ts`): the same JSON as
    "Export everything", written into the app's Documents folder after every
-   Finish and once a day, the newest seven kept. iOS does not reclaim those
+   Finish and once a day, the newest seven kept. One written within a
+   minute of the last replaces it (`snapshotsReplacedBy`), so a Finish and
+   the late sets from the watch after it leave one copy rather than pushing
+   older restore points out. iOS does not reclaim those
    files, they go into the phone's iCloud backup, and they show in Files
    under On My iPhone → GymGo. Nothing is written while there is nothing of
    the lifter's own to keep (`hasUserData`), or a fresh install would offer
@@ -329,7 +332,8 @@ Read it before changing anything on either side of the link. In short:
 
 **The watch walks a list the phone worked out** (`buildWatchSnapshot` in
 `src/domain/watch.ts`) and keeps exactly three rules of its own: carry
-forward, the back-off target, the record check. They are held to the
+forward, the back-off target, the record check. The back-off target never
+replaces a number typed on the phone where the list marks the set `typed`. They are held to the
 TypeScript by `fixtures/watch/`: `npm run fixtures:watch` writes them,
 Vitest fails if they fall behind, and the Swift tests run the port over the
 same cases and decode the context and event fixtures. A fourth rule on the
