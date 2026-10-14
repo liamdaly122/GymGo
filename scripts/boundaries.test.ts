@@ -101,4 +101,33 @@ describe('the native shell stays behind src/platform', () => {
 
     expect(offenders, 'src/domain is pure').toEqual([]);
   });
+
+  /**
+   * The native bridge has one home. A plugin registered anywhere else would
+   * be a second way into the shell, with no web fallback beside it.
+   */
+  it('only src/platform names the watch bridge or registers a plugin', () => {
+    const offenders = filesUnder(resolve(root, 'src'))
+      .filter((file) => !relative(file).startsWith('src/platform/'))
+      .filter((file) => /\bWatchBridge\b|\bregisterPlugin\b/.test(readFileSync(file, 'utf8')))
+      .map(relative);
+
+    expect(offenders, 'the bridge to the watch lives in src/platform').toEqual([]);
+  });
+});
+
+/**
+ * Who logs sets, the watch or the phone, is one rule (`loggingSurface` in
+ * src/domain/companion.ts) applied in one place (`useCompanionMode`). A
+ * screen reading the watch's store directly could decide for itself, and two
+ * screens deciding differently is how a set gets logged twice.
+ */
+describe('the companion rule has one way in', () => {
+  it('no screen reads the watch store directly', () => {
+    const offenders = filesUnder(resolve(root, 'src/features'))
+      .filter((file) => readFileSync(file, 'utf8').includes('@/platform/watchState'))
+      .map(relative);
+
+    expect(offenders, 'screens read the watch through useCompanionMode').toEqual([]);
+  });
 });

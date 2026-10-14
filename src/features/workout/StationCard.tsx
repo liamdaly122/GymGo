@@ -1,13 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { WorkoutExerciseView, WorkoutView } from '@/db/queries';
 import { usePreviousPerformance, useRecordMarks, useSetSuggestion } from '@/db/queries';
-import { addSet } from '@/db/mutations';
 import { Icon } from '@/components/icons';
 import { recordSetIds, type RecordMarks } from '@/domain/prs';
 import { restSecondsFor } from '@/domain/rest';
 import { setOrdinals } from '@/domain/sets';
 import { setInHand, supersetLabel } from '@/domain/supersets';
 import { formatClock } from '@/lib/dates';
+import { addRound } from './addRound';
 import ExerciseSheet from './ExerciseSheet';
 import { useRestTimer, type UpNext } from './RestTimer';
 import SetChips from './SetChips';
@@ -129,14 +129,6 @@ export default function StationCard({
     />
   );
 
-  /** Another set on each member: one more round of the pair. */
-  const addRound = async () => {
-    for (const entry of entries) {
-      const last = entry.sets.filter((set) => set.parent_set_id === null && set.type !== 'warmup').at(-1);
-      await addSet(entry.workoutExercise.id, { weight_kg: last?.weight_kg ?? 0, reps: last?.reps ?? 0 });
-    }
-  };
-
   return (
     <>
       {entries.length > 1 ? (
@@ -189,7 +181,8 @@ export default function StationCard({
                 {chips(entry, null)}
               </div>
             ))}
-            <button type="button" className="add-set" onClick={() => void addRound()}>
+            {/* Another set on each member: one more round of the pair. */}
+            <button type="button" className="add-set" onClick={() => void addRound(entries)}>
               {entries.length > 1 ? 'Add round' : 'Add set'}
             </button>
           </div>

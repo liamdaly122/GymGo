@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useSettings, useWorkout } from '@/db/queries';
 import { addExerciseToWorkout, addSet, discardWorkout, finishWorkout } from '@/db/mutations';
 import { db } from '@/db/db';
@@ -8,16 +9,20 @@ import { drainWatchInbox } from '@/platform/watch';
 import { Button, Sheet } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import { formatClock } from '@/lib/dates';
+import { useCompanionMode } from '@/hooks/useCompanionMode';
 import { useElapsed } from '@/hooks/useElapsed';
 import { totalWorkingSets } from '@/domain/volume';
 import { isLive } from '@/domain/sets';
+import { watchStation } from '@/domain/companion';
 import { nextStation, sessionStations } from '@/domain/supersets';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
 import { useRestTimer } from './RestTimer';
+import CompanionView from './CompanionView';
 import ExerciseStrip from './ExerciseStrip';
 import ReadinessPrompt from './ReadinessPrompt';
 import SessionSheet from './SessionSheet';
 import StationCard from './StationCard';
+import WatchBar from './WatchBar';
 import { stationName, stationOutline } from './outline';
 
 /**
@@ -35,6 +40,14 @@ import { stationName, stationOutline } from './outline';
  * waiting. It never follows a tick. On the last tick the screen stays put
  * under the rest, so "Show sets" still finds the set just done if a rep was
  * mistyped.
+ *
+ * While the watch logs (`useCompanionMode`), the same screen is the
+ * companion instead: no set in hand, no Done bar, no strip and no rest of its
+ * own, and the watch's place in the session, live. When logging comes back to
+ * the phone, the screen picks up at the station the watch was on.
+ *
+ * It follows the workout too: finished from the watch while it is open, it
+ * goes where Finish here goes; discarded or deleted, it says so.
  */
 export default function ActiveWorkoutScreen() {
   const { workoutId } = useParams<{ workoutId: string }>();
@@ -57,6 +70,15 @@ export default function ActiveWorkoutScreen() {
     [],
   );
   const elapsed = useElapsed(view?.workout.started_at);
+  const companion = useCompanionMode(workoutId);
+  const onWatch = companion.surface.on === 'watch';
+  // Discarded or deleted, on the watch or by a sync: told apart from still loading.
+  const exists = useLiveQuery(async () => {
+    if (!workoutId) return false;
+    const row = await db.workouts.get(workoutId);
+    return row !== undefined && row.deleted_at === null;
+  }, [workoutId]);
+  const gone = view === null || exists === false;
 
   // The session as stations, worked out before any early return so the
   // effects below can read it. Empty while the workout loads.
@@ -113,10 +135,74 @@ export default function ActiveWorkoutScreen() {
     return () => window.clearTimeout(id);
   }, [toast]);
 
-  if (view === undefined) {
+  // Where the watch is, kept while it logs: when logging comes back to the
+  // phone, the phone picks up there rather than where it last was.
+  const atWatch = onWatch ? (watchStation(stations, exercises, companion.report?.setId ?? null) ?? seeded) : null;
+  const watchKey = atWatch === null ? null : keyOf(atWatch);
+  const lastWatchKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (watchKey !== null) lastWatchKey.current = watchKey;
+  }, [watchKey]);
+
+  // The handover, either way. To the watch: nothing waits on a phone rest,
+  // and the session is on the screen itself, so its sheet closes. Back to the
+  // phone: focus where the watch was. Losing touch is said out loud; an
+  // ended session is not, because the watch's Finish ends it too, a moment
+  // before the Finish itself lands and the screen moves on.
+  const wasOnWatch = useRef(false);
+  const why = companion.surface.on === 'phone' ? companion.surface.why : null;
+  useEffect(() => {
+    if (onWatch) {
+      wasOnWatch.current = true;
+      setMoveOn(null);
+      setListing(false);
+      return;
+    }
+    if (!wasOnWatch.current) return;
+    wasOnWatch.current = false;
+    if (lastWatchKey.current !== null) setFocusId(lastWatchKey.current);
+    if (why === 'stale') showToast('Lost touch with your watch. Log here.');
+    // Keyed on the handover alone.
+  }, [onWatch]);
+
+  useEffect(() => {
+    if (companion.reclaimed) showToast('Logging is back on your watch.');
+  }, [companion.reclaimed, showToast]);
+
+  // Finished while this screen showed it open, which is the watch's Finish:
+  // out the same way as Finish here, "Done." poster and all. Opened already
+  // finished, it goes to the session's summary without the poster. Finish
+  // here navigates itself, and `leaving` keeps this from doing it twice.
+  const finishedAt = view?.workout.finished_at;
+  const seenFinishedAt = useRef<string | null | undefined>(undefined);
+  const leaving = useRef(false);
+  useEffect(() => {
+    if (finishedAt === undefined || !workoutId) return;
+    const before = seenFinishedAt.current;
+    seenFinishedAt.current = finishedAt;
+    if (finishedAt === null || leaving.current) return;
+    leaving.current = true;
+    if (before === null) {
+      rest.stop();
+      // Inside the app, a copy of everything on the phone itself. Never awaited.
+      void snapshotEverything();
+      void navigate(`/history/${workoutId}`, { replace: true, state: { fresh: true } });
+    } else {
+      void navigate(`/history/${workoutId}`, { replace: true });
+    }
+    // Keyed on the workout's own finish alone.
+  }, [finishedAt, workoutId]);
+
+  // Gone from under the screen: no rest runs on over "That workout is gone".
+  useEffect(() => {
+    if (gone) rest.stop();
+    // Keyed on it going alone.
+  }, [gone]);
+
+  if (view === undefined && !gone) {
     return <div className="grid min-h-dvh place-items-center text-sm text-muted">Loading…</div>;
   }
-  if (view === null || !workoutId) {
+  if (gone || view === undefined || !workoutId) {
     return (
       <main className="screen grid place-items-center text-center">
         <div className="stack-sm">
@@ -157,6 +243,7 @@ export default function ActiveWorkoutScreen() {
   };
 
   const handleFinish = async () => {
+    leaving.current = true;
     // Sets logged on the watch but not yet applied go in first: Finish tidies
     // away every unticked set, and a finished workout cannot change.
     await drainWatchInbox();
@@ -176,6 +263,7 @@ export default function ActiveWorkoutScreen() {
   };
 
   const showReadiness = view.workout.readiness === null && completedSets === 0 && !dismissedReadiness;
+  const watchReport = onWatch ? companion.report : null;
 
   return (
     <div className="wk">
@@ -191,7 +279,7 @@ export default function ActiveWorkoutScreen() {
             <span>
               {completedSets}/{plannedSets} sets
             </span>
-            {stations.length > 0 ? (
+            {stations.length > 0 && !watchReport ? (
               <>
                 <span aria-hidden="true">·</span>
                 {/* The way into the whole session: what is coming, and what kit it needs. */}
@@ -211,13 +299,17 @@ export default function ActiveWorkoutScreen() {
             Finish
           </Button>
         </div>
-        <ExerciseStrip
-          stations={stations}
-          exercises={view.exercises}
-          focused={focused}
-          onFocus={focusStation}
-          onAdd={() => setPicking(true)}
-        />
+        {watchReport ? (
+          <WatchBar report={watchReport} onTakeBack={companion.takeBack} />
+        ) : (
+          <ExerciseStrip
+            stations={stations}
+            exercises={view.exercises}
+            focused={focused}
+            onFocus={focusStation}
+            onAdd={() => setPicking(true)}
+          />
+        )}
       </header>
 
       <main className="wk-body">
@@ -229,6 +321,18 @@ export default function ActiveWorkoutScreen() {
               Add exercise
             </Button>
           </div>
+        ) : watchReport ? (
+          <CompanionView
+            view={view}
+            stations={stations}
+            open={open}
+            workoutId={workoutId}
+            pro={pro}
+            defaultRest={settings?.default_rest_seconds ?? 120}
+            watchSetId={watchReport.setId}
+            onAdd={() => setPicking(true)}
+            onToast={showToast}
+          />
         ) : (
           <>
             {showReadiness ? (

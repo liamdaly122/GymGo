@@ -1,5 +1,7 @@
+import { useEffect } from 'react';
 import { Outlet, useParams } from 'react-router-dom';
 import { RestTimerProvider, RestTimerView, useRestTimer } from './RestTimer';
+import { useCompanionMode } from '@/hooks/useCompanionMode';
 import { useWakeLock } from '@/hooks/useWakeLock';
 
 /**
@@ -12,16 +14,21 @@ import { useWakeLock } from '@/hooks/useWakeLock';
  * pick a replacement exercise, which is when you most want to know how long you
  * have left.
  *
+ * While the watch logs, both stand down: the watch has the countdown and the
+ * cue (one cue per rest), and the phone is the companion you pick up between
+ * stations, free to sleep in a pocket.
+ *
  * Deliberately not hoisted to the app root: the rest and the tab bar would
  * fight over the screen everywhere else.
  */
 export default function WorkoutShell() {
   const { workoutId } = useParams<{ workoutId: string }>();
-  useWakeLock(true);
+  const onWatch = useCompanionMode(workoutId).surface.on === 'watch';
+  useWakeLock(!onWatch);
 
   return (
     <RestTimerProvider scopeId={workoutId ?? null}>
-      <Covered />
+      <Covered onWatch={onWatch} />
     </RestTimerProvider>
   );
 }
@@ -30,15 +37,23 @@ export default function WorkoutShell() {
  * While the rest fills the screen, what is underneath is inert: a keyboard or
  * a screen reader must not wander into set fields nobody can see.
  */
-function Covered() {
-  const { endsAt, minimised } = useRestTimer();
-  const covering = endsAt !== null && !minimised;
+function Covered({ onWatch }: { onWatch: boolean }) {
+  const { endsAt, minimised, stop } = useRestTimer();
+
+  // The phone's rest stops the moment the watch takes over, and none starts
+  // while it logs, so the phone never counts down or cues alongside it.
+  useEffect(() => {
+    if (onWatch && endsAt !== null) stop();
+  }, [onWatch, endsAt, stop]);
+
+  const resting = !onWatch && endsAt !== null;
+  const covering = resting && !minimised;
   return (
     <>
-      <div className={endsAt !== null && minimised ? 'with-rest-bar' : undefined} inert={covering}>
+      <div className={resting && minimised ? 'with-rest-bar' : undefined} inert={covering}>
         <Outlet />
       </div>
-      <RestTimerView />
+      {onWatch ? null : <RestTimerView />}
     </>
   );
 }

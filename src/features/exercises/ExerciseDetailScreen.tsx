@@ -1,13 +1,14 @@
-import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useExercise, useExerciseLoading, useExerciseRecords, useExerciseTrend, useSettings } from '@/db/queries';
 import { updateExercise } from '@/db/mutations';
 import { BackLink, Button, Pill, Screen, ScreenHeader, SectionLabel, Segmented } from '@/components/ui';
-import { estimate1RMRounded, loadablePercentageTable } from '@/domain/epley';
 import { incrementFor } from '@/domain/progression';
-import { formatDayLabel, formatShortDate } from '@/lib/dates';
+import { formatShortDate } from '@/lib/dates';
 import { LiftChart, type LiftPoint } from '@/features/progress/charts';
 import { EQUIPMENT_LABELS, PATTERN_LABELS } from './labels';
+import LiftRecords from './LiftRecords';
+import PercentageTable, { tableMax } from './PercentageTable';
+import SetupNotesField from './SetupNotesField';
 
 /**
  * One lift: its chart, its records, and the setup notes you read mid-set.
@@ -24,11 +25,7 @@ export default function ExerciseDetailScreen() {
   const trend = useExerciseTrend(exerciseId);
   const settings = useSettings();
   const pro = settings?.mode === 'pro';
-  const [notesDraft, setNotesDraft] = useState<string | null>(null);
   const loading = useExerciseLoading(exerciseId);
-  const [maxText, setMaxText] = useState('');
-  // Null until tapped: open in Pro, folded away in Beginner.
-  const [tableOpen, setTableOpen] = useState<boolean | null>(null);
 
   if (exercise === undefined) {
     return (
@@ -46,7 +43,6 @@ export default function ExerciseDetailScreen() {
     );
   }
 
-  const notes = notesDraft ?? exercise.setup_notes ?? '';
   const records = stats?.records;
   const points: LiftPoint[] = (trend ?? []).map((point) => ({
     date: point.date,
@@ -55,13 +51,6 @@ export default function ExerciseDetailScreen() {
     detail: `${formatShortDate(point.date)}${pro ? ` · top set ${point.topWeight}kg` : ''}`,
   }));
   const change = points.length > 1 ? Math.round((points.at(-1)!.value - points[0]!.value) * 10) / 10 : 0;
-
-  // The table works off the max you type, else your best estimate.
-  const typedMax = Number.parseFloat(maxText.replace(',', '.'));
-  const estimatedMax = records?.bestE1rm ? Math.round(records.bestE1rm.value * 10) / 10 : null;
-  const max = Number.isFinite(typedMax) && typedMax > 0 ? typedMax : estimatedMax;
-  const percentages = max !== null && loading ? loadablePercentageTable(max, loading) : [];
-  const tableShown = tableOpen ?? pro;
 
   return (
     <Screen>
@@ -126,31 +115,7 @@ export default function ExerciseDetailScreen() {
             <p className="t-meta">No completed sets yet.</p>
           ) : (
             <div>
-              <div className="pr-row">
-                <span className="pr-badge">PR</span>
-                <span className="list-main">
-                  <span className="font-semibold">
-                    Heaviest set · {records.heaviest.weight_kg}kg × {records.heaviest.reps}
-                  </span>
-                  <span className="t-meta">
-                    {formatDayLabel(records.heaviest.completed_at ?? records.heaviest.created_at)}
-                  </span>
-                </span>
-              </div>
-              {pro && records.bestE1rm ? (
-                <div className="pr-row">
-                  <span className="pr-badge">1RM</span>
-                  <span className="list-main">
-                    <span className="font-semibold">
-                      Best estimate ·{' '}
-                      {estimate1RMRounded(records.bestE1rm.set.weight_kg, records.bestE1rm.set.reps)}kg
-                    </span>
-                    <span className="t-meta">
-                      from {records.bestE1rm.set.weight_kg}kg × {records.bestE1rm.set.reps}
-                    </span>
-                  </span>
-                </div>
-              ) : null}
+              <LiftRecords records={records} pro={pro} />
               <p className="t-meta mt-2">
                 {stats?.sessionCount ?? 0} {stats?.sessionCount === 1 ? 'session' : 'sessions'}. Records
                 come from top working sets only — drop sets count toward volume, never a record.
@@ -162,61 +127,12 @@ export default function ExerciseDetailScreen() {
         {/* The brief: "Percentage table from an estimated or entered 1RM." Every
             row rounds DOWN through the gym's plates, so each one can be loaded
             and none is heavier than its percentage. */}
-        <section aria-labelledby="percentages">
-          <div className="card-head">
-            <SectionLabel id="percentages">Percentage table</SectionLabel>
-            <button
-              type="button"
-              className="btn-text"
-              aria-expanded={tableShown}
-              aria-controls="percentage-rows"
-              onClick={() => setTableOpen(!tableShown)}
-            >
-              {tableShown ? 'Hide' : 'Show'}
-            </button>
-          </div>
-          {tableShown ? (
-            <div id="percentage-rows" className="stack-sm">
-              <input
-                type="text"
-                inputMode="decimal"
-                value={maxText}
-                onChange={(event) => setMaxText(event.target.value)}
-                placeholder={estimatedMax !== null ? String(estimatedMax) : '1-rep max, kg'}
-                aria-label="Your max in kilograms"
-                className="field h-12 text-center"
-              />
-              <p className="t-meta">
-                {Number.isFinite(typedMax) && typedMax > 0
-                  ? `From the max you typed, ${typedMax} kg.`
-                  : estimatedMax !== null
-                    ? `From your best estimated max, ${estimatedMax} kg. Type your own to use that instead.`
-                    : 'Type a max to see the table. Once you have logged this lift, your best estimate fills in.'}
-              </p>
-              {percentages.length > 0 ? (
-                <div className="tbl-wrap">
-                  <table aria-label={`Percentages of ${max} kilograms`}>
-                    <thead>
-                      <tr>
-                        <th>Percent</th>
-                        <th>Load</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {percentages.map((row) => (
-                        <tr key={row.percent}>
-                          <td>{row.percent}%</td>
-                          <td>{row.weight_kg} kg</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-              <p className="t-meta">Each load is rounded down to what {exercise.equipment === 'barbell' || exercise.equipment === 'ez_bar' ? 'your plates make' : 'the equipment steps in'}.</p>
-            </div>
-          ) : null}
-        </section>
+        <PercentageTable
+          estimatedMax={tableMax(records?.bestE1rm)}
+          loading={loading}
+          equipment={exercise.equipment}
+          pro={pro}
+        />
 
         {/* The brief: increments are "configurable per exercise". Auto is the
             brief's default for the lift; a coarse machine or a home rack can
@@ -241,20 +157,7 @@ export default function ExerciseDetailScreen() {
             pin position, which bar. Shown again during the set. */}
         <section aria-labelledby="setup-notes">
           <SectionLabel id="setup-notes">Setup notes</SectionLabel>
-          <textarea
-            value={notes}
-            onChange={(event) => setNotesDraft(event.target.value)}
-            onBlur={() => {
-              if (notesDraft === null) return;
-              const trimmed = notesDraft.trim();
-              void updateExercise(exercise.id, { setup_notes: trimmed === '' ? null : trimmed });
-              setNotesDraft(null);
-            }}
-            rows={2}
-            placeholder="Seat height, pin position, grip width, which bar…"
-            aria-label="Setup notes"
-            className="field h-auto resize-none py-3"
-          />
+          <SetupNotesField exercise={exercise} label="Setup notes" />
           <p className="t-meta mt-1">Shown while you are logging this exercise.</p>
         </section>
 

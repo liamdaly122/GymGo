@@ -32,6 +32,7 @@
     "test:body": "node e2e/body.mjs",
     "test:rewards": "node e2e/rewards.mjs",
     "test:backup": "node e2e/backup.mjs",
+    "test:companion": "node e2e/companion.mjs",
     "build:ios": "tsc -b && vite build --mode ios",
     "ios": "npm run build:ios && cap sync ios",
     "fixtures:watch": "tsx scripts/build-watch-fixtures.ts",

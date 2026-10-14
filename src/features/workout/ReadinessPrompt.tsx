@@ -19,11 +19,16 @@ import { Icon } from '@/components/icons';
  * kind of cleverness that makes a suggestion untrustworthy, so `normal` and
  * `high` are recorded and change no load.
  */
-const CHOICES: Array<{ value: Readiness; label: string }> = [
+export const READINESS_CHOICES: Array<{ value: Readiness; label: string }> = [
   { value: 'low', label: 'Rough' },
   { value: 'normal', label: 'OK' },
   { value: 'high', label: 'Good' },
 ];
+
+/** What an answer is said back as: only `low` changes a number. */
+export function readinessAnswer(value: Readiness): string {
+  return value === 'low' ? 'Suggestions are 10% lighter today.' : 'Noted. Suggestions stay as planned.';
+}
 
 export default function ReadinessPrompt({
   workoutId,
@@ -39,18 +44,14 @@ export default function ReadinessPrompt({
     <div className="ready" role="group" aria-label="How is today going?">
       <p>How's today?</p>
 
-      {CHOICES.map((choice) => (
+      {READINESS_CHOICES.map((choice) => (
         <button
           key={choice.value}
           type="button"
           className="btn btn-secondary"
           onClick={() =>
             void updateWorkout(workoutId, { readiness: choice.value }).then(() =>
-              onAnswered?.(
-                choice.value === 'low'
-                  ? 'Suggestions are 10% lighter today.'
-                  : 'Noted. Suggestions stay as planned.',
-              ),
+              onAnswered?.(readinessAnswer(choice.value)),
             )
           }
           aria-label={`Readiness ${choice.value}`}
