@@ -120,8 +120,23 @@ private struct Highlight: ViewModifier {
     }
 }
 
+/// A gauge's or a progress ring's fill in GymGo blue, its digits left chalk;
+/// the face's own tint where the face tints.
+private struct RingTint: ViewModifier {
+    @Environment(\.widgetRenderingMode) private var mode
+
+    func body(content: Content) -> some View {
+        if mode == .fullColor {
+            content.tint(Palette.hot)
+        } else {
+            content.widgetAccentable()
+        }
+    }
+}
+
 extension View {
     fileprivate func highlighted() -> some View { modifier(Highlight()) }
+    fileprivate func ringTinted() -> some View { modifier(RingTint()) }
 }
 
 // MARK: Rectangular: the Today page in three lines, or the set and the rest
@@ -154,13 +169,19 @@ struct RectangularGlance: View {
             case .today:
                 Text(moment.card.heading)
                     .font(.caption2.weight(.semibold)).textCase(.uppercase).highlighted().lineLimit(1)
-                Text(moment.card.title ?? moment.card.message ?? "GymGo")
-                    .font(moment.card.title == nil ? .caption : .headline)
-                    .lineLimit(moment.card.title == nil ? 2 : 1)
-                if !moment.week.isEmpty {
-                    WeekStrip(marks: moment.week)
-                } else if let detail = moment.card.detail {
-                    Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                if let title = moment.card.title {
+                    Text(title).font(.headline).lineLimit(1)
+                    if !moment.week.isEmpty {
+                        WeekStrip(marks: moment.week)
+                    } else if let detail = moment.card.detail {
+                        Text(detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                } else {
+                    // Nothing to name: the card's line gets the room, not the week.
+                    Text(moment.card.kind == .noPhone ? moment.shortLine : moment.card.message ?? "")
+                        .font(.caption)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
                 }
             }
         }
@@ -211,7 +232,7 @@ struct CircularGlance: View {
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
             }
             .progressViewStyle(.circular)
-            .highlighted()
+            .ringTinted()
         case .session(let session):
             Gauge(value: Double(session.setsDone), in: 0...Double(max(1, session.setsTotal))) {
                 Text("Sets")
@@ -219,7 +240,7 @@ struct CircularGlance: View {
                 Text("\(session.setsDone)")
             }
             .gaugeStyle(.accessoryCircularCapacity)
-            .highlighted()
+            .ringTinted()
         case .today:
             ZStack {
                 AccessoryWidgetBackground()
@@ -301,7 +322,7 @@ struct CornerGlance: View {
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                 .widgetLabel {
                     ProgressView(timerInterval: rest.startedAt...rest.endsAt, countsDown: true)
-                        .highlighted()
+                        .ringTinted()
                 }
         case .session(let session):
             Text("\(session.setsDone)")
@@ -310,7 +331,7 @@ struct CornerGlance: View {
                     Gauge(value: Double(session.setsDone), in: 0...Double(max(1, session.setsTotal))) {
                         Text("Sets")
                     }
-                    .highlighted()
+                    .ringTinted()
                 }
         case .today:
             Image(systemName: moment.doneHereToday ? "checkmark" : "dumbbell.fill")
