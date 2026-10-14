@@ -261,7 +261,9 @@ focuses it; if all it has left are skipped sets, they come back. Skip this set
 skips the set and its children; Done with this lift skips every remaining set
 of the station in hand. When the set just logged has no rest only because its
 round's partner was skipped, it takes that partner's rest; skipping the set
-straight after the one just logged starts that rest, once. A focused station
+straight after the one just logged starts that rest, once. A warm-up, or a
+rest-pause, myo or cluster piece, never hands a rest on (by the phone's rule
+none rests); a drop does, as the phone rests the round after a drop. A focused station
 the phone has finished hands focus on to where `nextStation` goes from it.
 "Same station" is judged by station, never by exercise (a rest remembers its
 station's workout-exercise IDs, `RestState.afterStation`), so a lift that

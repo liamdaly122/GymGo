@@ -1078,11 +1078,13 @@ when a deload is due.
 **After a step-down, the next session builds from the weight that worked.**
 When the top set fell short of the range and a lighter set reached it, the
 suggestion progresses from that lighter set ("100kg × 5 was under 8; 90kg × 8
-worked. Go for 9."), with its reps kept inside the range. Only a set about as
-heavy as the app's own step-down from the one that missed counts (within one
-loadable step below `carryForward`'s answer): a burnout, ramp-up sets or a
-planned top single's back-offs are not a step-down, and the top set stays the
-thing to build on. The failure counter is unchanged, so a session where even
+worked. Go for 9."), with its reps kept inside the range. Only the sets the
+app's own step-down produced count (`stepDownSets`): each lighter than the
+short set straight before it and within one loadable step below
+`carryForward`'s answer for it, so two steps down in a session count, and the
+sets after it at that weight. A burnout, ramp-up sets or a planned top
+single's back-offs are not a step-down, and the top set stays the thing to
+build on. The failure counter is unchanged, so a session where even
 the lighter sets missed still counts towards the deload. Without this, the
 step-down's in-range sets ended every failure streak and the lifter was asked
 for one more rep at the weight just missed, forever.

@@ -69,6 +69,7 @@ export default function NowOnWatch({
     entries.map((entry) => entry.sets),
     watchSetId,
     skipped,
+    !following,
   );
 
   // What each lift's records stood at before today, for the blue chips.

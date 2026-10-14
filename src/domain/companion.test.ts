@@ -303,4 +303,15 @@ describe("companionTargets: each member's next set on the companion's card", () 
       skippedOnly: [false],
     });
   });
+
+  it('the station the watch is on, with only skipped sets left, says so rather than offering one', () => {
+    // "Done with this lift" on the last exercise: the watch has nothing left.
+    const rows = [set('row-1', true), set('row-2'), set('row-3')];
+    expect(companionTargets([rows], null, ['row-2', 'row-3'], false)).toEqual({
+      watchMember: -1,
+      current: -1,
+      targets: [null],
+      skippedOnly: [true],
+    });
+  });
 });

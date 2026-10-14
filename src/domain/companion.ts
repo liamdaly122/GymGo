@@ -185,10 +185,12 @@ export function companionTargets(
   members: ReadonlyArray<ReadonlyArray<OrderedSet>>,
   watchSetId: string | null,
   skipped: ReadonlyArray<string> = [],
+  /** A station the lifter picked brings its skipped sets back, as the watch does when it goes there; the station the watch is on does not. */
+  picked = true,
 ): { watchMember: number; current: number; targets: Array<string | null>; skippedOnly: boolean[] } {
   const passed = new Set(skipped);
   const remaining = members.map((sets) => sets.map((set) => (passed.has(set.id) ? { ...set, completed: true } : set)));
-  const lists = setInHand(remaining) ? remaining : members.map((sets) => [...sets]);
+  const lists = setInHand(remaining) || !picked ? remaining : members.map((sets) => [...sets]);
   // The member the watch is on, else whoever is next in the order the work is done.
   const watchMember = members.findIndex((sets) => sets.some((set) => set.id === watchSetId));
   const current = watchMember !== -1 ? watchMember : (setInHand(lists)?.member ?? -1);
