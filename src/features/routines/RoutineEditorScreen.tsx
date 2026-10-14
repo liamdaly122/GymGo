@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useRoutine, useSettings } from '@/db/queries';
+import { useActiveWorkout, useRoutine, useSettings, useWorkoutName } from '@/db/queries';
 import {
   addExerciseToRoutine,
   deleteRoutine,
@@ -24,6 +24,11 @@ import { Toast, useToast } from '@/components/Toast';
  *
  * Starting it copies every prescription onto the session rather than pointing
  * at this screen, so nothing edited here can reach a workout already done.
+ *
+ * Only one workout is open at a time. While one is, this offers to resume it,
+ * as Today does, rather than starting a second: two open workouts left the
+ * watch following whichever was newer, and Finish on one brought the other
+ * back onto the wrist.
  */
 export default function RoutineEditorScreen() {
   const { routineId } = useParams<{ routineId: string }>();
@@ -35,6 +40,9 @@ export default function RoutineEditorScreen() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [swapping, setSwapping] = useState<string | null>(null);
   const [toast, showToast] = useToast();
+  // Undefined while it loads, so Start cannot slip a second workout in first.
+  const active = useActiveWorkout();
+  const activeName = useWorkoutName(active?.id);
 
   if (view === undefined) {
     return (
@@ -63,6 +71,7 @@ export default function RoutineEditorScreen() {
   );
 
   const handleStart = async () => {
+    if (active !== null) return;
     const workoutId = await startWorkoutFromRoutine(routineId);
     void navigate(`/workout/${workoutId}`);
   };
@@ -103,9 +112,24 @@ export default function RoutineEditorScreen() {
       </header>
 
       <div className="stack">
-        <Button variant="primary" size="lg" block onClick={() => void handleStart()}>
-          Start {shortName}
-        </Button>
+        {active ? (
+          <div className="stack-sm">
+            <Button variant="primary" size="lg" block onClick={() => void navigate(`/workout/${active.id}`)}>
+              Resume {activeName ?? 'workout'}
+            </Button>
+            <p className="t-meta">Finish the workout you have open before starting {shortName}.</p>
+          </div>
+        ) : (
+          <Button
+            variant="primary"
+            size="lg"
+            block
+            disabled={active === undefined}
+            onClick={() => void handleStart()}
+          >
+            Start {shortName}
+          </Button>
+        )}
 
         <section aria-labelledby="routine-exercises">
           <SectionLabel id="routine-exercises">Exercises</SectionLabel>

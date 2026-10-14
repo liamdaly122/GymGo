@@ -13,7 +13,7 @@ import { playRecordTone, RECORD_VIBRATION, vibrate } from '@/lib/feedback';
 import { useWriteQueue } from '@/hooks/useWriteQueue';
 import { useRestTimer } from './RestTimer';
 import PlateDiagram from './PlateDiagram';
-import { setPlan } from './setPlan';
+import { setPlan, VERB, VERB_TONE } from './setPlan';
 import {
   CONTINUATION_REST_SECONDS,
   describeRecord,
@@ -23,20 +23,6 @@ import {
   parseEntry,
   setName,
 } from './setNames';
-
-/** The chip beside the plan line: what the engine wants you to do, in a word. */
-const VERB: Record<string, string> = {
-  add_weight: 'Go up',
-  add_reps: 'More reps',
-  repeat: 'Hold',
-  deload: 'Back off',
-  estimate: 'Estimate',
-};
-
-const VERB_TONE: Record<string, string> = {
-  estimate: 'chip-hot',
-  deload: 'chip-warn',
-};
 
 /** 0 means failure, 4 means four left in the tank. Past that nobody estimates. */
 const RIR_OPTIONS = [0, 1, 2, 3, 4];

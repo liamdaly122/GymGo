@@ -6,6 +6,20 @@ import { isChildSet, latestWorkingSet } from '@/domain/sets';
 import { schemeTarget, stepsFromTop } from '@/domain/schemes';
 import { CHILD_NAMES } from './setNames';
 
+/** The chip beside the plan line: what the engine wants you to do, in a word. */
+export const VERB: Record<string, string> = {
+  add_weight: 'Go up',
+  add_reps: 'More reps',
+  repeat: 'Hold',
+  deload: 'Back off',
+  estimate: 'Estimate',
+};
+
+export const VERB_TONE: Record<string, string> = {
+  estimate: 'chip-hot',
+  deload: 'chip-warn',
+};
+
 /** What a set is meant to be, before anything is typed into it. */
 export interface SetPlan {
   /** A drop, rest-pause, myo or cluster piece hanging off another set. */
