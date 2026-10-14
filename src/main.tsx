@@ -16,6 +16,7 @@ import '@fontsource/barlow/latin-700';
 import './index.css';
 import { startSync } from './sync/engine';
 import { restoreDurableKeys } from './platform/durable';
+import { startWatchLink } from './platform/watch';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Root element missing from index.html');
@@ -25,6 +26,8 @@ if (!root) throw new Error('Root element missing from index.html');
 void restoreDurableKeys().then(() => {
   // Started, never awaited. Sync runs behind the app from here on.
   startSync();
+  // Inside the app, the link with the watch. Nothing on the website.
+  startWatchLink();
 
   createRoot(root).render(
     <StrictMode>

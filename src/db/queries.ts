@@ -65,7 +65,7 @@ export interface WorkoutView {
   exercises: WorkoutExerciseView[];
 }
 
-async function composeWorkout(workoutId: string): Promise<WorkoutView | undefined> {
+export async function composeWorkout(workoutId: string): Promise<WorkoutView | undefined> {
   const workout = await db.workouts.get(workoutId);
   if (!workout || workout.deleted_at !== null) return undefined;
 
@@ -978,7 +978,15 @@ export function useSetSuggestion(
   workoutId: string | undefined,
   exerciseId: string | undefined,
 ): Suggestion | null | undefined {
-  return useLiveQuery(async () => {
+  return useLiveQuery(() => setSuggestion(workoutId, exerciseId), [workoutId, exerciseId]);
+}
+
+/** The suggestion itself, for a caller that is not a screen: the watch's list. */
+export async function setSuggestion(
+  workoutId: string | undefined,
+  exerciseId: string | undefined,
+): Promise<Suggestion | null> {
+  {
     if (!workoutId || !exerciseId) return null;
 
     const exercise = await db.exercises.get(exerciseId);
@@ -1058,7 +1066,7 @@ export function useSetSuggestion(
       readiness: workout.readiness,
       week: week ? { loadMultiplier: week.loadMultiplier, isDeload: week.isDeload } : null,
     });
-  }, [workoutId, exerciseId]);
+  }
 }
 
 export interface MuscleVolume {

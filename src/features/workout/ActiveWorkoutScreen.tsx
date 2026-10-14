@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSettings, useWorkout } from '@/db/queries';
 import { addExerciseToWorkout, addSet, discardWorkout, finishWorkout } from '@/db/mutations';
+import { db } from '@/db/db';
 import { snapshotEverything } from '@/platform/snapshots';
+import { drainWatchInbox } from '@/platform/watch';
 import { Button, Sheet } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import { formatClock } from '@/lib/dates';
@@ -155,7 +157,12 @@ export default function ActiveWorkoutScreen() {
   };
 
   const handleFinish = async () => {
-    await finishWorkout(workoutId);
+    // Sets logged on the watch but not yet applied go in first: Finish tidies
+    // away every unticked set, and a finished workout cannot change.
+    await drainWatchInbox();
+    // The watch's own Finish may have been in that drain.
+    const workout = await db.workouts.get(workoutId);
+    if (workout?.finished_at === null) await finishWorkout(workoutId);
     // Inside the app, a copy of everything on the phone itself. Never awaited.
     void snapshotEverything();
     rest.stop();

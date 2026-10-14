@@ -48,6 +48,9 @@ const appIcon = await sharp(apple)
   .png({ compressionLevel: 9 })
   .toBuffer();
 writeFileSync(resolve(appIconDir, 'AppIcon-1024.png'), appIcon);
+// The watch app's icon is the same image; watchOS crops it to a circle, and
+// the art sits well inside one.
+writeFileSync(resolve(root, 'ios/App/GymGo Watch App/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png'), appIcon);
 console.log(`  ${'AppIcon-1024.png (iOS)'.padEnd(26)} 1024x1024  ${(appIcon.length / 1024).toFixed(1)}KB`);
 
 // A tiny SVG favicon for browsers that prefer one.

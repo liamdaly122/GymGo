@@ -772,6 +772,15 @@ export async function completeSet(setId: string, completed = true): Promise<void
 export async function completeSetWith(
   setId: string,
   values: { weight_kg: number; reps: number },
+  options: {
+    /**
+     * When the set was actually done, for one logged on the watch and applied
+     * later: a set done at 18:42 is stamped 18:42, not when the phone was next
+     * opened. Records and the early bird and night owl badges read this time.
+     * `updated_at` is still now, so the change syncs forward like any other.
+     */
+    completedAt?: string;
+  } = {},
 ): Promise<void> {
   if (!Number.isFinite(values.weight_kg) || values.weight_kg < 0) {
     throw new Error(`Cannot log a weight of ${values.weight_kg}kg`);
@@ -779,13 +788,16 @@ export async function completeSetWith(
   if (!Number.isFinite(values.reps) || values.reps < 0) {
     throw new Error(`Cannot log ${values.reps} reps`);
   }
+  if (options.completedAt !== undefined && Number.isNaN(Date.parse(options.completedAt))) {
+    throw new Error(`Cannot stamp a set with ${options.completedAt}`);
+  }
   await assertSetEditable(setId);
   const now = nowIso();
   const patch = {
     weight_kg: values.weight_kg,
     reps: Math.round(values.reps),
     completed: true,
-    completed_at: now,
+    completed_at: options.completedAt ? new Date(options.completedAt).toISOString() : now,
     updated_at: now,
   };
   await db.transaction('rw', db.sets, db.outbox, async () => {

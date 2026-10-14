@@ -20,6 +20,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         } catch {
             print("GymGo: audio session not configured: \(error)")
         }
+        // The watch link starts in native code, so the watch can reach the
+        // phone while the web view is frozen.
+        WatchLink.shared.start()
         return true
     }
 
