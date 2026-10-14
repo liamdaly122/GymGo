@@ -14,6 +14,7 @@
  */
 import type { RoutineExercise, WorkoutSet } from '../src/db/schema';
 import { carryForward } from '../src/domain/carry';
+import { staleAfter } from '../src/domain/companion';
 import { loadableWeight, nextLoadableBelow, type LoadingProfile } from '../src/domain/plates';
 import { weekModifier } from '../src/domain/programmes/block';
 import type { SuggestionKind } from '../src/domain/progression';
@@ -570,6 +571,23 @@ function stateCases(): Array<{ name: string; report: WatchStateReport }> {
   ];
 }
 
+/**
+ * How long a state report counts for (`staleAfter` in src/domain/companion.ts):
+ * the companion's rule, which the iPhone's Live Activity keeps too
+ * (`LiveSession.staleAfter` in GymGoKit). Five minutes, or an hour while the
+ * watch says the workout is paused; the Swift tests hold their numbers to these.
+ */
+function staleCases(): Array<{ name: string; paused: string | null; staleAfterMs: number }> {
+  return [
+    { name: 'a report of a workout recording', paused: null, staleAfterMs: staleAfter({ paused: null }) },
+    {
+      name: 'a report of a paused workout',
+      paused: '2026-10-14T17:31:00.000Z',
+      staleAfterMs: staleAfter({ paused: '2026-10-14T17:31:00.000Z' }),
+    },
+  ];
+}
+
 export function watchFixtures(): Record<string, unknown> {
   return {
     'carry.json': carryCases(),
@@ -581,5 +599,6 @@ export function watchFixtures(): Record<string, unknown> {
     'context.json': contextCases(),
     'events.json': eventCases(),
     'state.json': stateCases(),
+    'stale.json': staleCases(),
   };
 }

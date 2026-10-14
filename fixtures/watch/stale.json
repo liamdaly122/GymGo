@@ -1,0 +1,12 @@
+[
+  {
+    "name": "a report of a workout recording",
+    "paused": null,
+    "staleAfterMs": 300000
+  },
+  {
+    "name": "a report of a paused workout",
+    "paused": "2026-10-14T17:31:00.000Z",
+    "staleAfterMs": 3600000
+  }
+]

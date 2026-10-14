@@ -186,6 +186,20 @@ private func waiting(_ workoutId: String = "w-1", since: Date = t0) -> LiveSessi
     #expect(LiveSession.step(report: paused, receivedAt: t0, now: at(61 * 60), showing: shown(), mayStart: false, declined: []) == .nothing)
 }
 
+/// The companion's numbers (fixtures/watch/stale.json, from `staleAfter` in
+/// src/domain/companion.ts): the phone's screen and its Live Activity go
+/// out of touch at the same moment.
+@Test func goesStaleWhenTheCompanionDoes() throws {
+    let data = try Data(contentsOf: fixturesFolder.appendingPathComponent("stale.json"))
+    let cases = try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+    #expect(cases.count == 2)
+    for item in cases {
+        let paused = item["paused"] as? String
+        let milliseconds = try #require(item["staleAfterMs"] as? Double)
+        #expect(LiveSession.staleAfter(report(paused: paused)) * 1000 == milliseconds, "\(item["name"] ?? "")")
+    }
+}
+
 @Test func aPauseShowsAndStopsTheClock() {
     let content = LiveSession.content(for: report(paused: WatchSession.isoString(at(-30))), inHandFallback: nil, restFirstSeen: nil)
     #expect(content.pausedAt == at(-30))
