@@ -137,6 +137,16 @@ struct SetInHandView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Resting, show the rest")
+                } else if let record = store.state.lastRecord {
+                    // The set just done was a record and no rest followed (the
+                    // first half of a superset): said here, in blue, until
+                    // the rest that ends the round, which leads with it.
+                    Text("New record · \(recordLine(record))")
+                        .font(Theme.text(12, semiBold: true))
+                        .foregroundStyle(Theme.hot)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .accessibilityLabel("New record. \(recordLine(record))")
                 } else {
                     Text("\(hand.set.label) · \(hand.set.station + 1)/\(max(1, store.session?.snapshot.stations.count ?? 1))")
                         .font(Theme.text(12))

@@ -106,6 +106,8 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public private(set) var pending: [WatchEvent] = []
 
     public private(set) var rest: RestState?
+    /// The record to say: from the set just logged, or from the first half of
+    /// a superset round, until the rest after it is over.
     public private(set) var lastRecord: SetRecord?
     public private(set) var summary: WatchSummary?
     /// The number on the last state report sent.
@@ -232,6 +234,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
             owner = .phone
             seenPhoneClaim = claim.at
             rest = nil
+            lastRecord = nil
             change.claimed = true
         }
         return change
@@ -290,7 +293,15 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         guard owner == .watch, var running = session,
               let outcome = running.logSetInHand(weight: weight, reps: reps, at: date, eventId: eventId) else { return nil }
         session = running
-        lastRecord = outcome.record
+        // A record is said until the rest after it is over. A set with no
+        // rest after it (the first half of a superset) hands its record on,
+        // so the set screen says it and the rest that ends the round leads
+        // with it; a set logged during a rest starts afresh.
+        if let record = outcome.record {
+            lastRecord = record
+        } else if rest != nil {
+            lastRecord = nil
+        }
         if let seconds = outcome.restSeconds {
             rest = RestState(id: eventId, startedAt: date, endsAt: date.addingTimeInterval(TimeInterval(seconds)), seconds: seconds, upNext: outcome.upNext)
         } else {
@@ -304,6 +315,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public mutating func skipRest(at date: Date, eventId: String = UUID().uuidString) -> WatchEvent? {
         guard rest != nil, var running = session else { return nil }
         rest = nil
+        lastRecord = nil
         let event = running.skipRest(at: date, eventId: eventId)
         session = running
         return event
@@ -322,6 +334,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public mutating func restRanOut(id: String) -> Bool {
         guard rest?.id == id else { return false }
         rest = nil
+        lastRecord = nil
         return true
     }
 
@@ -329,6 +342,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public mutating func expireRest(now: Date) -> Bool {
         guard let current = rest, current.endsAt <= now else { return false }
         rest = nil
+        lastRecord = nil
         return true
     }
 

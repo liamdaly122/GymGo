@@ -145,13 +145,15 @@ struct RestView: View {
               let note = next.lift.setupNote, !note.isEmpty else { return nil }
         return note
     }
+}
 
-    private func recordLine(_ record: SetRecord) -> String {
-        switch record.kind {
-        case .weight: "\(formatWeight(record.value))kg, was \(formatWeight(record.previous))"
-        case .e1rm: "Est. max \(formatWeight((record.value * 10).rounded() / 10))kg"
-        case .reps: "\(Int(record.value)) reps, was \(Int(record.previous))"
-        }
+/// What a record beat: "102.5kg, was 100". Said on the rest, and on the set
+/// screen when no rest follows the set that set it.
+func recordLine(_ record: SetRecord) -> String {
+    switch record.kind {
+    case .weight: "\(formatWeight(record.value))kg, was \(formatWeight(record.previous))"
+    case .e1rm: "Est. max \(formatWeight((record.value * 10).rounded() / 10))kg"
+    case .reps: "\(Int(record.value)) reps, was \(Int(record.previous))"
     }
 }
 #endif

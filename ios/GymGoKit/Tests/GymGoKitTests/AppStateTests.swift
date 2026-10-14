@@ -377,6 +377,53 @@ private func claim(_ workoutId: String, at: Date) -> [String: Any] {
     #expect(state.rest == nil)
 }
 
+@Test func aRecordOnASupersetsFirstHalfIsSaidUntilTheRestThatEndsTheRound() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: live("w-1", name: "a superset and a pyramid")))
+    for m in 6...8 { _ = state.logSet(weight: 100, reps: 5, at: minute(Double(m))) }
+    let roundRest = try #require(state.rest)
+    let ranOut = state.restRanOut(id: roundRest.id)
+    #expect(ranOut)
+
+    // A1 beats 100kg, and no rest follows: the record waits on the set screen.
+    let a1Result = state.logSet(weight: 102.5, reps: 5, at: minute(10), eventId: "a1")
+    let a1 = try #require(a1Result)
+    #expect(a1.cue == .record)
+    #expect(state.rest == nil)
+    #expect(state.setInHand?.set.id == "c-s0")
+    #expect(state.lastRecord?.kind == .weight)
+    #expect(state.lastRecord?.value == 102.5)
+
+    // A2 is no record, and its rest ends the round: the rest leads with A1's.
+    let a2Result = state.logSet(weight: 25, reps: 15, at: minute(11), eventId: "a2")
+    let a2 = try #require(a2Result)
+    #expect(a2.outcome.record == nil)
+    #expect(state.rest?.id == "a2")
+    #expect(state.lastRecord?.value == 102.5)
+
+    // Once that rest is over, it is not said again.
+    let a2RanOut = state.restRanOut(id: "a2")
+    #expect(a2RanOut)
+    #expect(state.lastRecord == nil)
+    _ = state.logSet(weight: 40, reps: 12, at: minute(13))
+    #expect(state.lastRecord == nil)
+}
+
+@Test func aRecordIsNotCarriedPastASkippedOrExpiredRest() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: live("w-1")))
+    _ = state.logSet(weight: 102.5, reps: 5, at: minute(6), eventId: "s1")
+    #expect(state.lastRecord != nil)
+    _ = state.skipRest(at: minute(7))
+    #expect(state.lastRecord == nil)
+
+    _ = state.logSet(weight: 105, reps: 5, at: minute(8), eventId: "s2")
+    #expect(state.lastRecord != nil)
+    let expired = state.expireRest(now: minute(20))
+    #expect(expired)
+    #expect(state.lastRecord == nil)
+}
+
 @Test func skipAdjustAndRunOut() throws {
     var state = WatchAppState()
     state.apply(try context(sentAt: minute(5), live: live("w-1")))
