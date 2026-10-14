@@ -438,13 +438,16 @@ export interface WatchDrainResult {
   revived: string[];
 }
 
-const RANK: Record<string, number> = { startWorkout: 0, finish: 2 };
+const RANK: Record<string, number> = { startWorkout: 0, discard: 0, finish: 2 };
 
 /**
  * Applies a batch from the inbox: starts first, so a set can find its
- * workout; then everything else by when it happened on the wrist; then
- * finishes, so a set logged on the wrist is never tidied away by a Finish in
- * the same batch.
+ * workout, with discards among them in the order they happened, so a session
+ * thrown away on the wrist and started again gives up its block slot before
+ * the new start asks for it; then everything else by when it happened on the
+ * wrist; then finishes, so a set logged on the wrist is never tidied away by
+ * a Finish in the same batch. A discard can go early because the watch offers
+ * it only before the first set, so no set of that workout can be behind it.
  *
  * An event that throws is not acknowledged and is tried again next drain, as
  * is one deferred; either is dropped once it is more than seven days old by
@@ -474,8 +477,13 @@ export async function applyWatchEvents(events: readonly WatchEvent[], now: Date 
     .map(({ event }) => event);
 
   // The watch's own workouts: a start never discards one of these as empty,
-  // because their sets are in this batch.
-  const keepOpen = new Set(ordered.filter((event) => event.kind !== 'startWorkout').map((event) => event.workoutId));
+  // because their sets are in this batch. One the batch discards is going anyway.
+  const discarded = new Set(ordered.filter((event) => event.kind === 'discard').map((event) => event.workoutId));
+  const keepOpen = new Set(
+    ordered
+      .filter((event) => event.kind !== 'startWorkout' && !discarded.has(event.workoutId))
+      .map((event) => event.workoutId),
+  );
   const failedStarts = new Set<string>();
   const handled = new Set<string>();
 

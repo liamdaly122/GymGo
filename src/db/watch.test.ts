@@ -659,6 +659,65 @@ describe('a session laid out for the watch', () => {
     expect((await context()).home.closed.find((entry) => entry.workoutId === empty)).toMatchObject({ how: 'discarded' });
   });
 
+  /**
+   * Discard on the wrist frees the ready session, and the next context offers
+   * it again with fresh IDs. Applied after the second start, the discard left
+   * the first workout holding the slot while that start was filed, so the
+   * session actually trained became an extra and the slot stayed to do.
+   */
+  describe('started again on the wrist after a Discard', () => {
+    async function twice() {
+      const { plan } = await blockToday();
+      const first = await readyNow();
+      const second = await readyNow();
+      expect(second.key).toBe(first.key);
+      expect(second.snapshot.workoutId).not.toBe(first.snapshot.workoutId);
+      const w1 = first.snapshot.workoutId;
+      const w2 = second.snapshot.workoutId;
+      const setId = layoutOf(second).exercises[0]!.sets[0]!.id;
+      return {
+        plan,
+        w1,
+        w2,
+        startW1: startOf(first, minutesAgo(30)),
+        discardW1: event({ workoutId: w1, kind: 'discard', at: minutesAgo(29) }),
+        startW2: startOf(second, minutesAgo(28)),
+        set: event({ workoutId: w2, setId, weight: 60, reps: 10, at: minutesAgo(20) }),
+        finishW2: event({ workoutId: w2, kind: 'finish', at: minutesAgo(10) }),
+      };
+    }
+
+    async function expectSlotTrainedBy(planId: string, workoutId: string) {
+      expect(await db.workouts.get(workoutId)).toMatchObject({ plan_id: planId, plan_week: 1, plan_session_index: 0 });
+      const schedule = (await planScheduleFor(new Date()))!;
+      expect(schedule.schedule.find((slot) => slot.week === 1 && slot.sessionIndex === 0)).toMatchObject({
+        status: 'done',
+        workoutId,
+      });
+    }
+
+    it('files the second under the slot when all of it arrives in one batch', async () => {
+      const { plan, w1, w2, startW1, discardW1, startW2, set, finishW2 } = await twice();
+
+      const result = await applyWatchEvents([startW1, discardW1, startW2, set, finishW2]);
+
+      expect(result.keep).toEqual([]);
+      expect((await db.workouts.get(w1))!.deleted_at).not.toBeNull();
+      await expectSlotTrainedBy(plan.id, w2);
+    });
+
+    it('files the second under the slot when the first was applied in an earlier drain', async () => {
+      const { plan, w1, w2, startW1, discardW1, startW2, set, finishW2 } = await twice();
+      await applyWatchEvents([startW1]);
+
+      const result = await applyWatchEvents([startW2, set, finishW2, discardW1]);
+
+      expect(result.keep).toEqual([]);
+      expect((await db.workouts.get(w1))!.deleted_at).not.toBeNull();
+      await expectSlotTrainedBy(plan.id, w2);
+    });
+  });
+
   it('keeps a workout open on the phone with sets logged, and opens the watch one beside it', async () => {
     await blockToday();
     const ready = await readyNow();
