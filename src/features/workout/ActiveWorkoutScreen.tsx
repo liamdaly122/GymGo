@@ -144,22 +144,24 @@ export default function ActiveWorkoutScreen() {
     if (watchKey !== null) lastWatchKey.current = watchKey;
   }, [watchKey]);
 
-  // The handover, either way. To the watch: nothing waits on a phone rest.
-  // Back to the phone: focus where the watch was, and say why if it was not
-  // the lifter's own tap.
+  // The handover, either way. To the watch: nothing waits on a phone rest,
+  // and the session is on the screen itself, so its sheet closes. Back to the
+  // phone: focus where the watch was. Losing touch is said out loud; an
+  // ended session is not, because the watch's Finish ends it too, a moment
+  // before the Finish itself lands and the screen moves on.
   const wasOnWatch = useRef(false);
   const why = companion.surface.on === 'phone' ? companion.surface.why : null;
   useEffect(() => {
     if (onWatch) {
       wasOnWatch.current = true;
       setMoveOn(null);
+      setListing(false);
       return;
     }
     if (!wasOnWatch.current) return;
     wasOnWatch.current = false;
     if (lastWatchKey.current !== null) setFocusId(lastWatchKey.current);
-    if (why === 'ended') showToast('Your watch ended its session. Log here.');
-    else if (why === 'stale') showToast('Lost touch with your watch. Log here.');
+    if (why === 'stale') showToast('Lost touch with your watch. Log here.');
     // Keyed on the handover alone.
   }, [onWatch]);
 

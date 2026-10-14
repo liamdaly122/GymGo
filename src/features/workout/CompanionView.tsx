@@ -76,7 +76,6 @@ export default function CompanionView({
   return (
     <div className="stack">
       <NowOnWatch
-        key={stations[shown]!.join('-')}
         view={view}
         station={stations[shown]!}
         workoutId={workoutId}

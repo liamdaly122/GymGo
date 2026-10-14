@@ -263,6 +263,28 @@ await step('a logged set is fixed from its chip', async () => {
   await watching().getByRole('button', { name: /^Edit set 1, 60kg × 9, done/ }).waitFor({ timeout: 5000 });
 });
 
+await step('the card follows the watch on without losing a note half typed or an open sheet', async () => {
+  const note = 'Bench on notch 4, feet flat, arch';
+  await watching().getByLabel(`Setup notes for ${BENCH}`).fill(note);
+  // The watch moves on while the note is still being typed.
+  await report({ workoutId, setId: sets[SQUAT][0] });
+  await watching().getByRole('heading', { name: SQUAT }).waitFor({ timeout: 5000 });
+  await p.waitForTimeout(400);
+  const stored = await idb(`return (await getAll('exercises')).find((e) => e.name === value).setup_notes;`, BENCH);
+  if (stored !== note) throw new Error(`the half-typed note was lost: "${stored}"`);
+
+  await report({ workoutId, setId: sets[BENCH][1] });
+  await watching().getByRole('button', { name: /^Edit set 1, 60kg × 9, done/ }).click();
+  const sheet = p.getByRole('dialog', { name: 'Edit set 1' });
+  await sheet.waitFor();
+  await report({ workoutId, setId: sets[SQUAT][0] });
+  await watching().getByRole('heading', { name: SQUAT }).waitFor({ timeout: 5000 });
+  if (!(await sheet.count())) throw new Error('the set sheet closed when the watch moved on');
+  await sheet.getByRole('button', { name: 'Done', exact: true }).click();
+  await report({ workoutId, setId: sets[BENCH][1] });
+  await watching().getByRole('heading', { name: BENCH }).waitFor({ timeout: 5000 });
+});
+
 await step('readiness stays on screen, pressed, and says what it did', async () => {
   const low = p.getByRole('button', { name: 'Readiness low' });
   await low.click();
@@ -362,7 +384,6 @@ await step("the watch's session ending brings the Done bar back, at the station 
   const current = await p.locator('header [aria-current="true"]').getAttribute('aria-label');
   if (!current?.startsWith(SQUAT)) throw new Error(`expected the phone to pick up at the squat, got ${current}`);
   if ((await stripPills().count()) !== 3) throw new Error('the strip is not back');
-  await p.getByRole('status').filter({ hasText: /ended its session/i }).waitFor({ timeout: 3000 });
 });
 
 await step('five minutes without a word is stale: the phone logs', async () => {

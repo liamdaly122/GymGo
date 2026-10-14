@@ -79,8 +79,12 @@ export default function NowOnWatch({
   const restFor = (entry: WorkoutExerciseView) =>
     entry.workoutExercise.rest_seconds ?? (entry.exercise ? restSecondsFor(entry.exercise) : defaultRest);
 
+  // Looked up across the whole session, so a sheet stays open when the watch
+  // moves on to another station under it.
   const openSet = openSetId
-    ? entries.flatMap((entry) => entry.sets.map((set) => ({ entry, set }))).find(({ set }) => set.id === openSetId)
+    ? view.exercises
+        .flatMap((entry) => entry.sets.map((set) => ({ entry, set })))
+        .find(({ set }) => set.id === openSetId)
     : undefined;
   const moreFor = moreForId ? view.exercises.findIndex((entry) => entry.workoutExercise.id === moreForId) : -1;
 
