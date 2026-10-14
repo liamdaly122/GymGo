@@ -12,8 +12,6 @@ private func snapshot(_ name: String) throws -> WatchSnapshot {
     return try #require(cases.first { $0.name == name }).snapshot
 }
 
-private let start = Date(timeIntervalSince1970: 1_791_997_200) // 14 Oct 2026, 17:00 UTC
-private func minute(_ m: Double) -> Date { start.addingTimeInterval(m * 60) }
 
 @Test func walksTheListInOrderAndRestsWhereThePhoneWould() throws {
     var session = WatchSession(snapshot: try snapshot("two straight lifts"))
@@ -26,6 +24,7 @@ private func minute(_ m: Double) -> Date { start.addingTimeInterval(m * 60) }
     #expect(outcome.restSeconds == 150)
     #expect(outcome.upNext.detail == "Set 2 of 3 · 100 × 5")
     #expect(outcome.event == WatchEvent(id: "e1", kind: .completeSet, workoutId: "w-1", setId: "a-s0", weight: 100, reps: 5, at: WatchSession.isoString(minute(1))))
+    #expect(outcome.set.id == "a-s0")
     #expect(session.setInHand?.set.label == "Set 2 of 3")
 }
 
