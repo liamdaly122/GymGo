@@ -9,6 +9,9 @@ public struct RestState: Codable, Sendable, Equatable {
     /// Its length, with any +30 s added: the 10-second cue needs 20 or more.
     public var seconds: Int
     public var upNext: UpNext
+    /// The lift whose set it follows, so Up next can be worded again when the
+    /// set in hand moves during the rest. Nil in a rest saved by build 6.
+    public var after: String? = nil
 }
 
 /// What the watch shows once a session ends: on the wrist, or on the phone.
@@ -303,13 +306,55 @@ public struct WatchAppState: Codable, Sendable, Equatable {
             lastRecord = nil
         }
         if let seconds = outcome.restSeconds {
-            rest = RestState(id: eventId, startedAt: date, endsAt: date.addingTimeInterval(TimeInterval(seconds)), seconds: seconds, upNext: outcome.upNext)
+            rest = RestState(
+                id: eventId, startedAt: date, endsAt: date.addingTimeInterval(TimeInterval(seconds)), seconds: seconds,
+                upNext: outcome.upNext, after: outcome.set.exerciseId
+            )
         } else {
             rest = nil
         }
+        // A skipped set is never left to do, so it never holds this cue back.
         let lastOfExercise = !running.remainingSets.contains { $0.exerciseId == outcome.set.exerciseId }
         let cue = cueForLoggedSet(record: outcome.record != nil, lastOfExercise: lastOfExercise, rests: rest != nil)
         return LogResult(outcome: outcome, cue: cue, lastOfExercise: lastOfExercise)
+    }
+
+    /// "Skip this set". False while the phone logs, or with nothing in hand.
+    public mutating func skipSetInHand(at date: Date, restId: String = UUID().uuidString) -> Bool {
+        move(at: date, restId: restId) { $0.skipSetInHand() }
+    }
+
+    /// "Done with this lift": the rest of the station in hand.
+    public mutating func skipStationInHand(at date: Date, restId: String = UUID().uuidString) -> Bool {
+        move(at: date, restId: restId) { $0.skipStationInHand() }
+    }
+
+    /// A station tapped on This session. Its skipped sets come back when
+    /// they are all it has left.
+    public mutating func go(toStation index: Int, at date: Date) -> Bool {
+        move(at: date, restId: UUID().uuidString) { $0.go(toStation: index) ? [] : nil }
+    }
+
+    /// The set in hand moved on the wrist (`change` returns the sets it
+    /// skipped, nil when nothing moved). A rest under way says what is next
+    /// now. With none, a skip of the set straight after the one just logged,
+    /// which rested only because that set followed (a superset's partner, a
+    /// drop), gives the set just logged the rest the skipped one would have
+    /// ended its round with.
+    private mutating func move(at date: Date, restId: String, _ change: (inout WatchSession) -> [String]?) -> Bool {
+        guard owner == .watch, var running = session, let newlySkipped = change(&running) else { return false }
+        session = running
+        if var current = rest {
+            current.upNext = running.upNext(afterLift: current.after)
+            rest = current
+        } else if let last = running.lastLoggedSet, let follower = running.set(after: last),
+                  newlySkipped.contains(follower.id), let seconds = running.restHandedOn(after: last) {
+            rest = RestState(
+                id: restId, startedAt: date, endsAt: date.addingTimeInterval(TimeInterval(seconds)), seconds: seconds,
+                upNext: running.upNext(afterLift: last.exerciseId), after: last.exerciseId
+            )
+        }
+        return true
     }
 
     public mutating func skipRest(at date: Date, eventId: String = UUID().uuidString) -> WatchEvent? {
