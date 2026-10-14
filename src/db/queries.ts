@@ -37,6 +37,7 @@ import type { BodyMetricKind } from '@/domain/types';
 import type { Rewards } from '@/domain/rewards';
 import { roleForPrescription } from '@/domain/programmes/prescribe';
 import { restSecondsFor } from '@/domain/rest';
+import { EQUIPMENT_LABELS } from '@/features/exercises/labels';
 
 const live = <T extends { deleted_at: string | null }>(rows: T[]) =>
   rows.filter((row) => row.deleted_at === null);
@@ -65,15 +66,34 @@ export interface WorkoutView {
   exercises: WorkoutExerciseView[];
 }
 
-export async function composeWorkout(workoutId: string): Promise<WorkoutView | undefined> {
+/**
+ * A workout as the screens read it. Null when there is no such workout or it
+ * has been deleted, which is how "That workout is gone" can show rather than
+ * "Loading…" for ever: a live query reads undefined while it loads.
+ */
+export async function composeWorkout(workoutId: string): Promise<WorkoutView | null> {
   const workout = await db.workouts.get(workoutId);
-  if (!workout || workout.deleted_at !== null) return undefined;
+  if (!workout || workout.deleted_at !== null) return null;
 
-  const workoutExercises = live(await db.workout_exercises.where({ workout_id: workoutId }).toArray())
-    .sort((a, b) => a.position - b.position);
-
+  const workoutExercises = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
   const ids = workoutExercises.map((we) => we.id);
-  const allSets = live(await db.sets.where('workout_exercise_id').anyOf(ids).toArray());
+  const sets = ids.length > 0 ? await db.sets.where('workout_exercise_id').anyOf(ids).toArray() : [];
+  return composeWorkoutRows(workout, workoutExercises, sets);
+}
+
+/**
+ * The view of a workout from its own rows, wherever they came from: the
+ * database, or a session laid out in memory and not yet written (the watch's
+ * ready session). The library, the gym and the routine's rep ranges are read
+ * from the database; deleted rows are left out.
+ */
+export async function composeWorkoutRows(
+  workout: Workout,
+  rows: readonly WorkoutExercise[],
+  sets: readonly WorkoutSet[],
+): Promise<WorkoutView> {
+  const workoutExercises = live([...rows]).sort((a, b) => a.position - b.position);
+  const allSets = live([...sets]);
   const exercises = await db.exercises.bulkGet(workoutExercises.map((we) => we.exercise_id));
   const exerciseById = new Map(exercises.filter(Boolean).map((ex) => [ex!.id, ex!]));
 
@@ -105,7 +125,8 @@ export async function composeWorkout(workoutId: string): Promise<WorkoutView | u
   };
 }
 
-export function useWorkout(workoutId: string | undefined): WorkoutView | undefined {
+/** Undefined while it loads; null once it is known to be gone. */
+export function useWorkout(workoutId: string | undefined): WorkoutView | null | undefined {
   return useLiveQuery(
     async () => (workoutId ? composeWorkout(workoutId) : undefined),
     [workoutId],
@@ -531,41 +552,52 @@ export interface PlanScheduleView {
 export function usePlanSchedule(): PlanScheduleView | undefined | null {
   // Live, so a session skipped yesterday rolls onto today without a reload.
   const today = useToday();
-  return useLiveQuery(async () => {
-    const plan = runningPlan(await db.plans.toArray());
-    if (!plan) return null;
+  return useLiveQuery(() => planScheduleFor(scheduleDay(today)), [today]);
+}
 
-    const routines = await db.routines.bulkGet(plan.routine_ids);
-    // Generated routines are named "<plan> — <session>". The calendar only needs
-    // the session part; the full name would swamp the card.
-    const routineNames = new Map(
-      routines
-        .filter(Boolean)
-        .map((routine) => [routine!.id, routine!.name.split(' — ').at(-1) ?? routine!.name]),
-    );
-    const workouts = live(await db.workouts.where({ plan_id: plan.id }).toArray());
+/**
+ * The running block on the calendar as it stands on `today`, with the session
+ * up next picked out, or null when no block is running. What Today shows, for
+ * a caller that is not a screen: the watch's home page.
+ */
+export async function planScheduleFor(today: Date): Promise<PlanScheduleView | null> {
+  const plan = runningPlan(await db.plans.toArray());
+  if (!plan) return null;
 
-    const schedule = buildSchedule({ plan, routineNames, workouts, today: scheduleDay(today) });
-    const current = currentSession(schedule);
+  const routines = await db.routines.bulkGet(plan.routine_ids);
+  // Generated routines are named "<plan> — <session>". The calendar only needs
+  // the session part; the full name would swamp the card.
+  const routineNames = new Map(
+    routines
+      .filter(Boolean)
+      .map((routine) => [routine!.id, routine!.name.split(' — ').at(-1) ?? routine!.name]),
+  );
+  const workouts = live(await db.workouts.where({ plan_id: plan.id }).toArray());
 
-    return {
-      plan,
-      schedule,
-      current,
-      week: weekModifier(current?.week ?? plan.current_week, plan.block_weeks),
-      progress: blockProgress(schedule),
-    };
-  }, [today]);
+  const schedule = buildSchedule({ plan, routineNames, workouts, today });
+  const current = currentSession(schedule);
+
+  return {
+    plan,
+    schedule,
+    current,
+    week: weekModifier(current?.week ?? plan.current_week, plan.block_weeks),
+    progress: blockProgress(schedule),
+  };
 }
 
 export interface SessionPreviewItem {
   /** The routine row, which a swap from the preview starts from. */
   rowId: string;
   name: string;
+  /** The kit to go and find: "Barbell", or null for "other" kit or a lift no longer in the library. */
+  kit: string | null;
   sets: number;
   reps: string;
   /** "A1", "A2" for the halves of a superset. */
   badge: string | null;
+  /** The superset the row belongs to, so its members can be drawn together. Null for a solo exercise. */
+  superset: string | null;
 }
 
 export interface SessionPreview {
@@ -587,39 +619,47 @@ export function useSessionPreview(
   routineId: string | undefined,
   week: WeekModifier | null | undefined,
 ): SessionPreview | null | undefined {
-  return useLiveQuery(async () => {
-    if (!routineId) return null;
-    const rows = live(await db.routine_exercises.where({ routine_id: routineId }).toArray()).sort(
-      (a, b) => a.position - b.position,
-    );
-    const exercises = await db.exercises.bulkGet(rows.map((row) => row.exercise_id));
-    const setsOf = (base: number) => (week ? setsForWeek(base, week) : base);
-    const groups = new Map<string, number>();
-    return {
-      minutes: estimateDurationMinutes(
-        rows.map((row, index) => ({ sets: setsOf(row.target_sets), restSeconds: restOf(row, exercises[index]) })),
-      ),
-      items: rows.map((row, index) => {
-        let badge: string | null = null;
-        if (row.superset_group) {
-          const n = (groups.get(row.superset_group) ?? 0) + 1;
-          groups.set(row.superset_group, n);
-          badge = `A${n}`;
-        }
-        return {
-          rowId: row.id,
-          name: exercises[index]?.name ?? 'Exercise',
-          sets: setsOf(row.target_sets),
-          reps:
-            row.rep_range_low === row.rep_range_high
-              ? `${row.rep_range_low}`
-              : `${row.rep_range_low}–${row.rep_range_high}`,
-          badge,
-        };
-      }),
-    };
+  return useLiveQuery(
+    async () => (routineId ? sessionPreview(routineId, week ?? null) : null),
     // The modifier is derived from these two numbers; its identity is not stable.
-  }, [routineId, week?.week, week?.totalWeeks]);
+    [routineId, week?.week, week?.totalWeeks],
+  );
+}
+
+/** What a planned session holds in a given week of its block, for a caller that is not a screen. */
+export async function sessionPreview(routineId: string, week: WeekModifier | null): Promise<SessionPreview> {
+  const rows = live(await db.routine_exercises.where({ routine_id: routineId }).toArray()).sort(
+    (a, b) => a.position - b.position,
+  );
+  const exercises = await db.exercises.bulkGet(rows.map((row) => row.exercise_id));
+  const setsOf = (base: number) => (week ? setsForWeek(base, week) : base);
+  const groups = new Map<string, number>();
+  return {
+    minutes: estimateDurationMinutes(
+      rows.map((row, index) => ({ sets: setsOf(row.target_sets), restSeconds: restOf(row, exercises[index]) })),
+    ),
+    items: rows.map((row, index) => {
+      let badge: string | null = null;
+      if (row.superset_group) {
+        const n = (groups.get(row.superset_group) ?? 0) + 1;
+        groups.set(row.superset_group, n);
+        badge = `A${n}`;
+      }
+      const equipment = exercises[index]?.equipment;
+      return {
+        rowId: row.id,
+        name: exercises[index]?.name ?? 'Exercise',
+        kit: equipment && equipment !== 'other' ? EQUIPMENT_LABELS[equipment] : null,
+        sets: setsOf(row.target_sets),
+        reps:
+          row.rep_range_low === row.rep_range_high
+            ? `${row.rep_range_low}`
+            : `${row.rep_range_low}–${row.rep_range_high}`,
+        badge,
+        superset: row.superset_group,
+      };
+    }),
+  };
 }
 
 /** One routine as the Programme screen lists it: enough to recognise it by. */
@@ -986,87 +1026,95 @@ export async function setSuggestion(
   workoutId: string | undefined,
   exerciseId: string | undefined,
 ): Promise<Suggestion | null> {
-  {
-    if (!workoutId || !exerciseId) return null;
+  if (!workoutId || !exerciseId) return null;
+  const workout = await db.workouts.get(workoutId);
+  return workout ? suggestionFor(workout, exerciseId) : null;
+}
 
-    const exercise = await db.exercises.get(exerciseId);
-    const workout = await db.workouts.get(workoutId);
-    if (!exercise || !workout) return null;
+/**
+ * The suggestion for one exercise of a workout, from the workout row itself,
+ * so it works for a session laid out in memory and not yet written: the
+ * watch's ready session. Its block week, gym, routine and readiness are read
+ * off the row; history leaves this workout out.
+ */
+export async function suggestionFor(workout: Workout, exerciseId: string): Promise<Suggestion | null> {
+  const workoutId = workout.id;
+  const exercise = await db.exercises.get(exerciseId);
+  if (!exercise) return null;
 
-    const sessions = (await exerciseSessions(exerciseId)).filter(
-      (session) => session.workout_id !== workoutId,
+  const sessions = (await exerciseSessions(exerciseId)).filter(
+    (session) => session.workout_id !== workoutId,
+  );
+
+  // Rep range comes from the routine this session was started from. A
+  // freestyle session has none, and inventing one would make heavy low-rep
+  // work look like repeated failure and trigger a false deload.
+  let repRange: { low: number; high: number } | null = null;
+  if (workout.routine_id) {
+    const routineExercises = live(
+      await db.routine_exercises.where({ routine_id: workout.routine_id }).toArray(),
     );
-
-    // Rep range comes from the routine this session was started from. A
-    // freestyle session has none, and inventing one would make heavy low-rep
-    // work look like repeated failure and trigger a false deload.
-    let repRange: { low: number; high: number } | null = null;
-    if (workout.routine_id) {
-      const routineExercises = live(
-        await db.routine_exercises.where({ routine_id: workout.routine_id }).toArray(),
-      );
-      const match = routineExercises.find((row) => row.exercise_id === exerciseId);
-      if (match) repRange = { low: match.rep_range_low, high: match.rep_range_high };
-    }
-
-    const gym = workout.gym_id
-      ? await db.gyms.get(workout.gym_id)
-      : (await db.gyms.toArray()).find((candidate) => candidate.is_default);
-
-    const plan = workout.plan_id ? await db.plans.get(workout.plan_id) : undefined;
-    const week =
-      plan && workout.plan_week
-        ? weekModifier(workout.plan_week, plan.block_weeks)
-        : null;
-
-    const loading = loadingProfileFor(exercise.equipment, gym ?? {});
-
-    /*
-     * Never done this lift before.
-     *
-     * The engine says nothing without history, which is right — a number with
-     * nothing behind it still looks authoritative. But a freshly generated plan
-     * is entirely made of lifts you have not done, so the whole first block
-     * arrived with no guidance at all. Reason from the closest lift you HAVE
-     * done instead, clearly labelled as an estimate.
-     */
-    if (sessions.length === 0) {
-      const references = await referenceLifts(exercise, workoutId);
-      const estimate = estimateOpeningWeight(exercise, references, loading, { repRange });
-      if (!estimate) return null;
-
-      // An estimate is still a suggested load, so a bad day pulls it down like
-      // any other. Leaving it alone would make answering "rough" look like it
-      // only half worked.
-      const rough = workout.readiness === 'low';
-      const weight = rough
-        ? loadableWeight(estimate.weight_kg * LOW_READINESS_MULTIPLIER, loading, {
-            direction: 'down',
-          })
-        : estimate.weight_kg;
-
-      return {
-        weight_kg: weight,
-        reps: estimate.reps,
-        kind: 'estimate' as const,
-        scaled_down: rough,
-        reason:
-          `First time on ${exercise.name}. From your ${estimate.basis}, ` +
-          `${weight}kg is a sensible first try — it is an estimate, not ` +
-          'history, so change it to whatever it turns out to be.' +
-          (rough ? ' Scaled down 10% because you logged low readiness.' : ''),
-      };
-    }
-
-    return suggestNextSet({
-      exercise,
-      repRange,
-      history: sessions,
-      loading,
-      readiness: workout.readiness,
-      week: week ? { loadMultiplier: week.loadMultiplier, isDeload: week.isDeload } : null,
-    });
+    const match = routineExercises.find((row) => row.exercise_id === exerciseId);
+    if (match) repRange = { low: match.rep_range_low, high: match.rep_range_high };
   }
+
+  const gym = workout.gym_id
+    ? await db.gyms.get(workout.gym_id)
+    : (await db.gyms.toArray()).find((candidate) => candidate.is_default);
+
+  const plan = workout.plan_id ? await db.plans.get(workout.plan_id) : undefined;
+  const week =
+    plan && workout.plan_week
+      ? weekModifier(workout.plan_week, plan.block_weeks)
+      : null;
+
+  const loading = loadingProfileFor(exercise.equipment, gym ?? {});
+
+  /*
+   * Never done this lift before.
+   *
+   * The engine says nothing without history, which is right — a number with
+   * nothing behind it still looks authoritative. But a freshly generated plan
+   * is entirely made of lifts you have not done, so the whole first block
+   * arrived with no guidance at all. Reason from the closest lift you HAVE
+   * done instead, clearly labelled as an estimate.
+   */
+  if (sessions.length === 0) {
+    const references = await referenceLifts(exercise, workoutId);
+    const estimate = estimateOpeningWeight(exercise, references, loading, { repRange });
+    if (!estimate) return null;
+
+    // An estimate is still a suggested load, so a bad day pulls it down like
+    // any other. Leaving it alone would make answering "rough" look like it
+    // only half worked.
+    const rough = workout.readiness === 'low';
+    const weight = rough
+      ? loadableWeight(estimate.weight_kg * LOW_READINESS_MULTIPLIER, loading, {
+          direction: 'down',
+        })
+      : estimate.weight_kg;
+
+    return {
+      weight_kg: weight,
+      reps: estimate.reps,
+      kind: 'estimate' as const,
+      scaled_down: rough,
+      reason:
+        `First time on ${exercise.name}. From your ${estimate.basis}, ` +
+        `${weight}kg is a sensible first try — it is an estimate, not ` +
+        'history, so change it to whatever it turns out to be.' +
+        (rough ? ' Scaled down 10% because you logged low readiness.' : ''),
+    };
+  }
+
+  return suggestNextSet({
+    exercise,
+    repRange,
+    history: sessions,
+    loading,
+    readiness: workout.readiness,
+    week: week ? { loadMultiplier: week.loadMultiplier, isDeload: week.isDeload } : null,
+  });
 }
 
 export interface MuscleVolume {
