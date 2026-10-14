@@ -40,9 +40,19 @@ public enum WatchCue: String, Sendable, CaseIterable {
     case endedOnPhone
     case savedToHealth
     case failed
+    /// The workout paused, asked for on the wrist: Pause on screen, the
+    /// Action and side buttons, the Crown and side button. Wrist-down, with
+    /// the rest screen unchanged, it is the only sign the press worked.
+    case paused
+    /// The workout resumed, asked for on the wrist: Resume, the buttons, or
+    /// an Action press while paused. Never the resume that logging a set
+    /// causes, which the set's own cue covers, and never a recovery.
+    case resumed
 
     public var steps: [HapticStep] {
         switch self {
+        case .paused: [HapticStep(.stop)]
+        case .resumed: [HapticStep(.start)]
         case .workoutStarted: [HapticStep(.start)]
         case .restBegins: [HapticStep(.stop), HapticStep(.directionDown, after: 250)]
         case .partnerNext: [HapticStep(.directionUp)]

@@ -67,6 +67,9 @@ struct MainPage: View {
                 LoggingOnPhoneView(store: store)
             } else if let rest = store.rest, !restCollapsed {
                 RestView(store: store, rest: rest) { restCollapsed = true }
+                    .overlay(alignment: .top) {
+                        if store.workout.isPaused { PausedLine(store: store) }
+                    }
             } else if let hand = store.setInHand {
                 SetInHandView(store: store, hand: hand) { restCollapsed = false }
                     .overlay(alignment: .top) {
@@ -83,8 +86,10 @@ struct MainPage: View {
 /// the clock shares: "PAUSED" in blue (a state) and RESUME in chalk (the
 /// thing to press), over the lift's name until the pause ends. The set's
 /// label stays under it, and Done stays below and keeps the double tap;
-/// logging a set resumes too. Laid over `SetInHandView` from here, one line
-/// high, on the ground colour; the whole line is the button.
+/// logging a set resumes too. Laid over `SetInHandView` and `RestView` (over
+/// the rest's "Rest" and heart rate; the countdown stays) from here, one
+/// line high, on the ground colour; the whole line is the button.
+/// `AllLoggedView` puts it above its heading.
 struct PausedLine: View {
     let store: WatchSessionStore
 
@@ -154,6 +159,7 @@ struct AllLoggedView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if store.workout.isPaused { PausedLine(store: store) }
             Text(store.session?.nothingLeftTitle ?? "All sets logged")
                 .font(Theme.display(26, extraBold: true))
                 .textCase(.uppercase)

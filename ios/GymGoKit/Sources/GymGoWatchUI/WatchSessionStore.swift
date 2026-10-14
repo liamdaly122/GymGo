@@ -75,6 +75,7 @@ public final class WatchSessionStore {
             self.keepReporting()
             self.reportIfChanged()
         }
+        workout.onButtonsPausedOrResumed = { [weak self] answer in self?.buttonsPausedOrResumed(answer) }
         restAlerts.onPresented = { [weak self] restId in self?.restRanOut(id: restId) ?? true }
         restAlerts.activate()
         // A launch in the background (a rest restored from disk) must know

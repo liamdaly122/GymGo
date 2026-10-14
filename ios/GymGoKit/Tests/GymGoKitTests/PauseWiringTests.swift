@@ -150,10 +150,70 @@ private func liveContext(reps: Int? = 5, claim: [String: Any]? = nil) throws -> 
     let store = store()
     store.receive(try liveContext())
     store.workout.pauseChanged(paused: true, at: Date())
+    var cues: [WatchCue] = []
+    store.haptics.observe = { cues.append($0) }
     #expect(store.actionButtonPressed() == .resume)
     #expect(store.session?.progress.done == 0)
+    // The press taps, so a press wrist-down is never silent.
+    #expect(cues == [.resumed])
     // The resume counts as asked for: its echo from both buttons is ignored.
     #expect(store.workout.answerRequest(.paused, now: Date()) == nil)
+}
+
+@MainActor
+@Test func aPauseOrResumeAskedForOnTheWristTaps() throws {
+    let store = store()
+    store.workout.onPauseChanged = { store.workoutPauseChanged() }
+    store.receive(try liveContext())
+    var cues: [WatchCue] = []
+    store.haptics.observe = { cues.append($0) }
+
+    // Nothing recording: nothing to pause, and nothing said.
+    store.pauseWorkout()
+    #expect(cues.isEmpty)
+
+    store.workout.recordForTests()
+    store.pauseWorkout()
+    #expect(cues == [.paused])
+    // HealthKit saying it paused taps nothing more, and nor does Pause again.
+    store.workout.pauseChanged(paused: true, at: Date())
+    store.pauseWorkout()
+    #expect(cues == [.paused])
+
+    store.resumeWorkout()
+    #expect(cues == [.paused, .resumed])
+    store.workout.pauseChanged(paused: false, at: Date())
+    store.resumeWorkout()
+    #expect(cues == [.paused, .resumed])
+}
+
+@MainActor
+@Test func bothButtonsTogetherTapAsTheyPauseOrResume() {
+    let store = store()
+    var cues: [WatchCue] = []
+    store.haptics.observe = { cues.append($0) }
+    #expect(store.workout.answerButtons(.running, now: Date()) == .pause)
+    #expect(store.workout.answerButtons(.paused, now: Date()) == .resume)
+    #expect(cues == [.paused, .resumed])
+    // The echo of a pause asked for directly is ignored, and taps nothing.
+    store.workout.pause()
+    #expect(store.workout.answerButtons(.paused, now: Date()) == nil)
+    #expect(cues == [.paused, .resumed])
+}
+
+@MainActor
+@Test func aRecoveredPauseAndTheResumeALoggedSetCausesTapNothingOfTheirOwn() throws {
+    let store = store()
+    store.workout.onPauseChanged = { store.workoutPauseChanged() }
+    store.receive(try liveContext())
+    var cues: [WatchCue] = []
+    store.haptics.observe = { cues.append($0) }
+    // A recovery finds the session paused.
+    store.workout.pauseChanged(paused: true, at: Date())
+    #expect(cues.isEmpty)
+    // A set logged while paused plays its own cue, uncut, and nothing else.
+    store.done(weight: 100, reps: 5)
+    #expect(cues == [.restBegins])
 }
 
 @MainActor
