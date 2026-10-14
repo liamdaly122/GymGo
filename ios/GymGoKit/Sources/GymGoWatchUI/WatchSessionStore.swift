@@ -499,7 +499,9 @@ public final class WatchSessionStore {
     }
 
     /// Every 30 s while a session or a Health workout runs, so the phone
-    /// knows the watch is still there.
+    /// knows the watch is still there. A Health workout with no session is
+    /// looked at again each time: the context that would end it may have
+    /// left the phone before it began (`strayRecordingWait`).
     private func keepReporting() {
         let needed = state.session != nil || workout.isRunning
         if !needed {
@@ -517,6 +519,9 @@ public final class WatchSessionStore {
                     return
                 }
                 self.report()
+                if self.state.session == nil {
+                    self.health { await self.settleHealthRecording() }
+                }
             }
         }
     }

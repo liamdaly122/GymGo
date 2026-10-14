@@ -107,6 +107,50 @@ private func closed(_ workoutId: String, _ how: String, at: Date) -> [String: An
     #expect(action == .discard)
 }
 
+@Test func anUntaggedRecordingWhoseWorkoutWasDiscardedBeforeItBeganIsThrownAwayOnceItHasWaited() throws {
+    // The phone starts w-1, opens the watch app and discards w-1, all within
+    // seconds: its context (sent at +5 s) leaves before the watch starts
+    // recording (at +7 s), and no other context may come for hours.
+    let started = minute(10).addingTimeInterval(7)
+    var state = WatchAppState()
+    state.apply(try context(
+        sentAt: minute(10).addingTimeInterval(5), closed: [closed("w-1", "discarded", at: minute(10).addingTimeInterval(4))]
+    ))
+    #expect(state.healthRecordingAction(taggedWith: nil, startedAt: started, now: started.addingTimeInterval(1)) == .keep)
+    let justBefore = started.addingTimeInterval(WatchAppState.strayRecordingWait - 1)
+    #expect(state.healthRecordingAction(taggedWith: nil, startedAt: started, now: justBefore) == .keep)
+    // A phone start names its workout within seconds; by now nothing will.
+    let waited = started.addingTimeInterval(WatchAppState.strayRecordingWait)
+    #expect(state.healthRecordingAction(taggedWith: nil, startedAt: started, now: waited) == .discard)
+
+    // The other order: the discard's context comes after the recording began.
+    var after = WatchAppState()
+    after.apply(try context(sentAt: minute(10).addingTimeInterval(9), closed: [closed("w-1", "discarded", at: minute(10).addingTimeInterval(8))]))
+    #expect(after.healthRecordingAction(taggedWith: nil, startedAt: started, now: minute(10).addingTimeInterval(10)) == .discard)
+
+    // Nothing ever heard from the phone: the same wait, then thrown away.
+    #expect(WatchAppState().healthRecordingAction(taggedWith: nil, startedAt: started, now: waited) == .discard)
+}
+
+@Test func aRecordingAContextNamesAsLiveOrTaggedWithTheRunningSessionIsNeverThrownAway() throws {
+    let started = minute(10)
+    let hoursLater = minute(10 + 180)
+
+    // Named as live before the recording began: adopted, so it is that session's.
+    var named = WatchAppState()
+    named.apply(try context(sentAt: minute(9.9), live: live("w-1", sentAt: minute(9.9))))
+    #expect(named.healthRecordingAction(taggedWith: nil, startedAt: started, now: hoursLater) == .tag("w-1"))
+    #expect(named.healthRecordingAction(taggedWith: "w-1", startedAt: started, now: hoursLater) == .keep)
+
+    // Named as live, but not adopted here (ended here, the phone not caught up).
+    var ended = WatchAppState()
+    ended.apply(try context(sentAt: minute(5), live: live("w-1")))
+    _ = ended.logSet(weight: 100, reps: 5, at: minute(6))
+    _ = ended.finish(at: minute(7))
+    ended.apply(try context(sentAt: minute(9.9), live: live("w-1", sentAt: minute(9.9))))
+    #expect(ended.healthRecordingAction(taggedWith: nil, startedAt: started, now: hoursLater) == .keep)
+}
+
 @Test func anUntaggedRecordingWhoseWorkoutWasFinishedOnThePhoneIsSavedUnderItUnlessItIsSeconds() throws {
     var state = WatchAppState()
     state.apply(try context(sentAt: minute(40), closed: [closed("w-1", "finished", at: minute(39))]))

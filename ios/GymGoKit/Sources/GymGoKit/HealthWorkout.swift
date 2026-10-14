@@ -27,6 +27,12 @@ extension WatchAppState {
     public static let strayRecordingSlack: TimeInterval = 120
     /// A recording shorter than this is a mistaken start, never saved.
     public static let shortestRecordingSaved: TimeInterval = 60
+    /// How long an untagged recording with no session waits for a context to
+    /// explain it. A phone start names its workout within seconds; past this,
+    /// the workout it was opened for has ended, even when the only word of
+    /// that (a discard within seconds of the start) left the phone before the
+    /// recording began. The heartbeat asks again every 30 s while it records.
+    public static let strayRecordingWait: TimeInterval = 120
 
     /// The Health workout recording now, tagged with `tagged` (nil when it is
     /// not tagged yet), which began at `startedAt`: is it this session's, or
@@ -39,9 +45,11 @@ extension WatchAppState {
     ///   crash mid-finish leaves exactly this behind.
     /// - Untagged with no session: the phone opened the app to record a
     ///   workout, and the context naming it has not arrived. Once a context
-    ///   sent after the recording began has no workout open, that workout is
+    ///   sent after the recording began has no workout open, or the recording
+    ///   has waited `strayRecordingWait` with none open, that workout is
     ///   over: saved if it ended as a finish just now and the recording is
-    ///   more than a few seconds long, otherwise thrown away.
+    ///   more than a few seconds long, otherwise thrown away. A recording a
+    ///   context names as live is never ended here.
     /// - Anything else is left alone: the idle page offers to end it.
     public func healthRecordingAction(taggedWith tagged: String?, startedAt: Date?, now: Date) -> HealthRecordingAction {
         let closed = home?.closed ?? []
@@ -53,8 +61,9 @@ extension WatchAppState {
         if let tagged { return endedAction(tagged, closed: closed) ?? .keep }
 
         // Untagged, with nothing running here.
-        guard let startedAt, liveWorkoutId == nil, let sentAt = lastSentAt,
-              WatchSession.date(sentAt) > startedAt else { return .keep }
+        guard let startedAt, liveWorkoutId == nil else { return .keep }
+        let heardSince = lastSentAt.map { WatchSession.date($0) > startedAt } ?? false
+        guard heardSince || now.timeIntervalSince(startedAt) >= Self.strayRecordingWait else { return .keep }
         let justClosed = closed
             .filter { WatchSession.date($0.at) >= startedAt.addingTimeInterval(-Self.strayRecordingSlack) }
             .max { WatchSession.date($0.at) < WatchSession.date($1.at) }
