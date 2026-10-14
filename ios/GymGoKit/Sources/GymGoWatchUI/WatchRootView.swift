@@ -42,7 +42,9 @@ public struct WatchRootView: View {
                             SessionListView(session: session)
                         } label: {
                             Image(systemName: "list.bullet")
+                                .foregroundStyle(Theme.chalk)
                         }
+                        .tint(Theme.raised)
                         .accessibilityLabel("Show the whole session")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
@@ -50,7 +52,9 @@ public struct WatchRootView: View {
                             confirmingFinish = true
                         } label: {
                             Image(systemName: "flag.checkered")
+                                .foregroundStyle(Theme.chalk)
                         }
+                        .tint(Theme.raised)
                         .accessibilityLabel("Finish")
                     }
                 }

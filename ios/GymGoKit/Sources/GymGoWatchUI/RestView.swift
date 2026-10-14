@@ -52,10 +52,11 @@ public struct RestView: View {
 
             HStack(spacing: 6) {
                 Button("+30s") { store.adjustRest(by: 30) }
-                    .font(Theme.display(15))
+                    .font(Theme.display(17))
                     .tint(Theme.raised)
                 Button("Skip") { store.skipRest() }
-                    .font(Theme.display(15))
+                    .font(Theme.display(17))
+                    .textCase(.uppercase)
                     .tint(Theme.chalk)
                     .foregroundStyle(Theme.ground)
                     #if os(watchOS)

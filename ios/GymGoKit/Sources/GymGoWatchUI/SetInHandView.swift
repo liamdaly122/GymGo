@@ -81,6 +81,7 @@ public struct SetInHandView: View {
             #endif
             .accessibilityLabel(ready ? "Mark \(hand.set.label) done, \(formatWeight(weight))kg × \(repCount)" : "Set the reps first")
         }
+        .padding(.horizontal, 6)
         .focusable()
         .focused($focused)
         #if os(watchOS)
