@@ -270,6 +270,13 @@ public struct WatchAppState: Codable, Sendable, Equatable {
                 switch running.receive(live) {
                 case .updated:
                     session = running
+                    // The phone may have moved what comes next during a rest
+                    // (an exercise moved, swapped or added, a set added):
+                    // the rest says what is next now, as after a move here.
+                    if var current = rest {
+                        current.upNext = running.upNext(after: current)
+                        rest = current
+                    }
                     change.updated = true
                 case .replaced where isAdoptable(live.workoutId, closed: context.home.closed):
                     session = running

@@ -325,6 +325,61 @@ private func firstHalfLogged() throws -> WatchAppState {
     #expect(state.rest?.upNext == UpNext(name: "Lift a", detail: "Set 2 of 3 · 100 × 5"))
 }
 
+@Test func aRestSaysWhatIsNextAfterThePhoneMovesAnExerciseEarlier() throws {
+    let original = try snapshotObject("a plan, last time, a step down and an AMRAP set")
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: original))
+    _ = state.logSet(weight: 90, reps: 8, at: minute(6))
+    _ = state.skipRest(at: minute(7))
+    _ = state.logSet(weight: 90, reps: 8, at: minute(8))
+    #expect(state.rest?.upNext == UpNext(name: "Incline Dumbbell Press", detail: "Dumbbell · 3 × 8–12"))
+
+    // The incline bench is taken: on the companion, Move earlier on the pull-ups.
+    var moved = original
+    var stations = moved["stations"] as! [[String: Any]]
+    stations.swapAt(1, 2)
+    moved["stations"] = stations
+    let sets = (moved["sets"] as! [[String: Any]]).map { set -> [String: Any] in
+        var set = set
+        set["station"] = set["exerciseId"] as! String == "ex-c" ? 1 : set["exerciseId"] as! String == "ex-b" ? 2 : 0
+        return set
+    }
+    moved["sets"] = sets.filter { $0["station"] as! Int == 0 } + sets.filter { $0["station"] as! Int == 1 }
+        + sets.filter { $0["station"] as! Int == 2 }
+    moved["sentAt"] = iso(minute(8.5))
+    let applied = state.apply(try context(sentAt: minute(8.5), live: moved))
+    #expect(applied.updated)
+    #expect(state.setInHand?.lift.name == "Pull-up")
+    #expect(state.rest?.upNext == UpNext(name: "Pull-up", detail: "Bodyweight · 2 × 6–10"))
+    // What the phone and the Live Activity hear.
+    let report = state.report(at: minute(8.6), heartRate: nil, activeKcal: nil, health: .recording)
+    #expect(report.rest?.upNext == UpNext(name: "Pull-up", detail: "Bodyweight · 2 × 6–10"))
+}
+
+@Test func aRestSaysWhatIsNextAfterThePhoneAddsASet() throws {
+    let original = try snapshotObject("two straight lifts")
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: original))
+    for m in 6...8 {
+        _ = state.skipRest(at: minute(Double(m)))
+        _ = state.logSet(weight: 100, reps: 5, at: minute(Double(m)))
+    }
+    #expect(state.rest?.upNext == UpNext(name: "Lift b", detail: "Dumbbell · 3 × 10"))
+
+    // Add set on the lift just finished, mid-rest.
+    var added = original
+    var sets = added["sets"] as! [[String: Any]]
+    var extra = sets[2]
+    extra["id"] = "a-s3"
+    extra["label"] = "Set 4 of 4"
+    sets.insert(extra, at: 3)
+    added["sets"] = sets
+    added["sentAt"] = iso(minute(8.5))
+    state.apply(try context(sentAt: minute(8.5), live: added))
+    #expect(state.setInHand?.set.id == "a-s3")
+    #expect(state.rest?.upNext == UpNext(name: "Lift a", detail: "Set 4 of 4 · 100 × 5"))
+}
+
 @Test func aSkippedSetNeverHoldsBackTheLastSetCue() throws {
     var state = WatchAppState()
     state.apply(try context(sentAt: minute(5), live: snapshotObject("two straight lifts")))
