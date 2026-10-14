@@ -107,7 +107,7 @@ public final class WatchSessionStore {
             stopRestCues()
             if ended.how == .finished {
                 captureMetricsInSummary()
-                endHealthWorkout(saving: true)
+                endHealthWorkout()
             } else {
                 health { await self.workout.discard() }
             }
@@ -116,6 +116,9 @@ public final class WatchSessionStore {
             if change.replaced != nil { stopRestCues() }
             if change.replaced == nil, change.ended == nil { haptics.play(.workoutStarted) }
             health {
+                // One left over from a workout already over is ended, never
+                // relabelled; one untagged is this session's.
+                await self.settleHealthRecording()
                 if self.workout.isRunning {
                     await self.workout.tag(adopted)
                 } else if self.isForeground {
@@ -124,6 +127,9 @@ public final class WatchSessionStore {
             }
         }
         if change.claimed { stopRestCues() }
+        // A Health workout recording with nothing behind it any more: the
+        // phone ended the workout it was opened for before this watch adopted it.
+        health { await self.settleHealthRecording() }
         scheduleRest()
         save()
         keepReporting()
@@ -201,7 +207,7 @@ public final class WatchSessionStore {
         save()
         keepReporting()
         reportIfChanged()
-        endHealthWorkout(saving: true)
+        endHealthWorkout()
     }
 
     /// Discard, before the first set, after the screen has asked.
@@ -231,9 +237,11 @@ public final class WatchSessionStore {
     }
 
     /// The Health workout runs with no GymGo session behind it (the phone
-    /// opened the app, and no workout followed): end it, saved.
+    /// opened the app, and no workout followed): end it, not saved. A
+    /// workout that ended as a finish is saved without asking
+    /// (`settleHealthRecording`); what is left here has nothing to save.
     public func endStrayRecording() {
-        endHealthWorkout(saving: true)
+        health { await self.workout.discard() }
     }
 
     // MARK: - The app and the screen
@@ -280,6 +288,7 @@ public final class WatchSessionStore {
             if let session = self.state.session, !self.workout.isRunning, self.healthRetry.mayStart(session.workoutId) {
                 await self.startHealth(for: session.workoutId)
             }
+            await self.settleSavingSummary()
             await self.restAlerts.requestPermissionOnce()
         }
         reportIfChanged()
@@ -290,6 +299,7 @@ public final class WatchSessionStore {
     /// app may do so from the background; the context names the workout.
     public func phoneStartedWorkout() {
         health {
+            await self.settleHealthRecording()
             let ok = await self.workout.start(workoutId: self.state.session?.workoutId)
             // Expected while Health has not been asked yet: the next foreground asks.
             if !ok, self.workout.authorization == .authorized { self.haptics.play(.failed) }
@@ -300,9 +310,9 @@ public final class WatchSessionStore {
     public func recoverWorkout() {
         health {
             await self.workout.recover()
-            if let id = self.state.session?.workoutId, self.workout.isRunning, self.workout.workoutId == nil {
-                await self.workout.tag(id)
-            }
+            // Tagged for the running session, or ended if the GymGo workout
+            // it recorded is over: a crash mid-finish leaves one behind.
+            await self.settleHealthRecording()
         }
     }
 
@@ -326,6 +336,9 @@ public final class WatchSessionStore {
             askedForHealth = true
             if await workout.authorize() { healthRetry.granted() }
         }
+        // A Health workout left over from a workout already over is ended
+        // first, so it is never relabelled as this one.
+        await settleHealthRecording()
         let ok = await workout.start(workoutId: workoutId)
         // Failing while Health is allowed is not retried on every wake. Not
         // asked yet, refused or unavailable is read afresh next time.
@@ -333,6 +346,35 @@ public final class WatchSessionStore {
             healthRetry.failed(workoutId, authorized: true)
             haptics.play(.failed)
         }
+    }
+
+    /// The Health workout recording now, set straight: tagged with the
+    /// running session, or ended when the GymGo workout it recorded is over
+    /// (`WatchAppState.healthRecordingAction`).
+    private func settleHealthRecording() async {
+        guard workout.isRunning else { return }
+        switch state.healthRecordingAction(taggedWith: workout.workoutId, startedAt: workout.startDate, now: Date()) {
+        case .keep:
+            break
+        case .tag(let workoutId):
+            await workout.tag(workoutId)
+        case .finish(let tag):
+            if let tag { await workout.tag(tag) }
+            await saveHealthWorkout()
+        case .discard:
+            await workout.discard()
+        }
+    }
+
+    /// A summary still "Saving to Health…" with nothing saving it now: the
+    /// app was relaunched mid-save and no workout session came back. Health
+    /// says whether the save landed.
+    private func settleSavingSummary() async {
+        guard let summary = state.summary, summary.health == .saving, !workout.isRunning else { return }
+        let saved = await workout.isSaved(summary.workoutId)
+        guard state.summary?.workoutId == summary.workoutId, state.summary?.health == .saving else { return }
+        state.updateSummary { $0.health = saved == true ? .saved : .notSaved }
+        save()
     }
 
     private func captureMetricsInSummary() {
@@ -345,22 +387,29 @@ public final class WatchSessionStore {
         }
     }
 
-    private func endHealthWorkout(saving: Bool) {
-        health {
-            guard self.workout.isRunning else { return }
-            let summaryFor = self.state.summary?.workoutId
-            let saved = await self.workout.finish()
-            if let summaryFor, self.state.summary?.workoutId == summaryFor {
-                let average = self.workout.averageHeartRate, kcal = self.workout.activeKcal
-                self.state.updateSummary {
-                    $0.health = saved ? .saved : .notSaved
-                    if let average { $0.averageHeartRate = average }
-                    if let kcal { $0.activeKcal = kcal }
-                }
-                self.save()
+    private func endHealthWorkout() {
+        health { await self.saveHealthWorkout() }
+    }
+
+    /// Ends the Health workout, saved, and says so on the summary of the
+    /// workout it recorded.
+    private func saveHealthWorkout() async {
+        guard workout.isRunning else { return }
+        let summaryFor = state.summary?.workoutId
+        let tagged = workout.workoutId
+        var saved = await workout.finish()
+        // A save begun before a relaunch may have landed already.
+        if !saved, let tagged, await workout.isSaved(tagged) == true { saved = true }
+        if let summaryFor, state.summary?.workoutId == summaryFor, tagged == nil || tagged == summaryFor {
+            let average = workout.averageHeartRate, kcal = workout.activeKcal
+            state.updateSummary {
+                $0.health = saved ? .saved : .notSaved
+                if let average { $0.averageHeartRate = average }
+                if let kcal { $0.activeKcal = kcal }
             }
-            self.haptics.play(saved ? .savedToHealth : .failed)
+            save()
         }
+        haptics.play(saved ? .savedToHealth : .failed)
     }
 
     // MARK: - The rest's cues

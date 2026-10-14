@@ -251,6 +251,28 @@ public final class WorkoutController: NSObject {
         #endif
     }
 
+    /// Whether Health holds a saved workout for this GymGo workout, found by
+    /// its sync identifier. Nil when it cannot tell.
+    public func isSaved(_ workoutId: String) async -> Bool? {
+        #if os(watchOS)
+        guard HKHealthStore.isHealthDataAvailable() else { return nil }
+        let store = healthStore
+        return await withTimeout(5, otherwise: nil as Bool?) {
+            await withCheckedContinuation { continuation in
+                let predicate = HKQuery.predicateForObjects(
+                    withMetadataKey: HKMetadataKeySyncIdentifier, allowedValues: ["gymgo.workout.\(workoutId)"]
+                )
+                let query = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: 1, sortDescriptors: nil) { _, samples, error in
+                    continuation.resume(returning: error == nil ? !(samples ?? []).isEmpty : nil)
+                }
+                store.execute(query)
+            }
+        }
+        #else
+        return nil
+        #endif
+    }
+
     // MARK: - Internals
 
     #if os(watchOS)
