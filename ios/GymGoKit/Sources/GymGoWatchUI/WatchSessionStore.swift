@@ -35,18 +35,23 @@ public final class WatchSessionStore {
     @ObservationIgnored private var lastTouch = Date.distantPast
     @ObservationIgnored private var askedForHealth = false
     /// A workout whose Health workout would not start: not retried on every wake.
-    @ObservationIgnored private var healthFailedFor: String?
+    @ObservationIgnored private var healthRetry = HealthRetry()
 
     public init(workout: WorkoutController = .shared, fileURL: URL? = WatchSessionStore.defaultFileURL) {
         self.workout = workout
         self.fileURL = fileURL
         state = Self.load(from: fileURL)
         haptics.enabled = state.settings.vibrate
-        workout.onFailure = { [weak self] in
+        workout.onFailure = { [weak self] failure in
             guard let self else { return }
-            // Not retried on every wake: once refused, this workout runs without Health.
-            self.healthFailedFor = self.state.session?.workoutId
-            self.haptics.play(.failed)
+            // A failure while Health is allowed is not retried on every wake:
+            // this workout runs without it. Not asked yet is asked on the
+            // next foreground, and then tried again.
+            self.healthRetry.failed(
+                self.state.session?.workoutId, authorized: self.workout.authorization == .authorized,
+                notDetermined: failure == .notDetermined
+            )
+            if failure != .notDetermined { self.haptics.play(.failed) }
             self.keepReporting()
             self.reportIfChanged()
         }
@@ -254,12 +259,15 @@ public final class WatchSessionStore {
             reportIfChanged()
         }
         health {
+            // Health can be turned on or off in Settings at any time.
+            self.workout.refreshAuthorization()
             if !self.askedForHealth, await self.workout.needsAuthorization() {
                 self.askedForHealth = true
-                await self.workout.authorize()
+                if await self.workout.authorize() { self.healthRetry.granted() }
             }
-            if let session = self.state.session, !self.workout.isRunning, self.healthFailedFor != session.workoutId,
-               self.workout.authorization != .denied, self.workout.authorization != .unavailable {
+            // `start` reads the authorisation afresh: refused or unavailable
+            // returns at once, and a grant since the last wake starts it.
+            if let session = self.state.session, !self.workout.isRunning, self.healthRetry.mayStart(session.workoutId) {
                 await self.startHealth(for: session.workoutId)
             }
         }
@@ -272,7 +280,8 @@ public final class WatchSessionStore {
     public func phoneStartedWorkout() {
         health {
             let ok = await self.workout.start(workoutId: self.state.session?.workoutId)
-            if !ok, self.workout.health == .off { self.haptics.play(.failed) }
+            // Expected while Health has not been asked yet: the next foreground asks.
+            if !ok, self.workout.authorization == .authorized { self.haptics.play(.failed) }
         }
     }
 
@@ -303,11 +312,13 @@ public final class WatchSessionStore {
     private func startHealth(for workoutId: String) async {
         if !askedForHealth, await workout.needsAuthorization() {
             askedForHealth = true
-            await workout.authorize()
+            if await workout.authorize() { healthRetry.granted() }
         }
         let ok = await workout.start(workoutId: workoutId)
-        if !ok, workout.authorization != .denied, workout.authorization != .unavailable {
-            healthFailedFor = workoutId
+        // Failing while Health is allowed is not retried on every wake. Not
+        // asked yet, refused or unavailable is read afresh next time.
+        if !ok, workout.authorization == .authorized {
+            healthRetry.failed(workoutId, authorized: true)
             haptics.play(.failed)
         }
     }

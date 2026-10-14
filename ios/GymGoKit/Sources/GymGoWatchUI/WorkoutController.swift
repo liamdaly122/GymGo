@@ -25,6 +25,14 @@ public final class WorkoutController: NSObject {
     public static let shared = WorkoutController()
 
     public enum Authorization: Sendable, Equatable { case unknown, authorized, denied, unavailable }
+    /// Why a workout session failed, as far as trying again goes.
+    public enum Failure: Sendable, Equatable {
+        /// Health has not been asked yet: the next foreground asks.
+        case notDetermined
+        case denied
+        /// Another workout app took over, watchOS ended it, or HealthKit refused.
+        case other
+    }
 
     /// A HealthKit workout session is running (started, recovered, not yet ended).
     public private(set) var isRunning = false
@@ -40,7 +48,7 @@ public final class WorkoutController: NSObject {
     public private(set) var lastError: String?
 
     /// Called when a session the app did not end fails or ends.
-    @ObservationIgnored public var onFailure: (@MainActor () -> Void)?
+    @ObservationIgnored public var onFailure: (@MainActor (Failure) -> Void)?
 
     /// What the state report says about the Health workout.
     public var health: WatchStateReport.Health {
@@ -119,8 +127,10 @@ public final class WorkoutController: NSObject {
         #endif
     }
 
-    #if os(watchOS)
-    private func refreshAuthorization() {
+    /// Reads the authorisation afresh: Health can be turned on or off for
+    /// GymGo in Settings at any time.
+    public func refreshAuthorization() {
+        #if os(watchOS)
         guard HKHealthStore.isHealthDataAvailable() else {
             authorization = .unavailable
             return
@@ -130,8 +140,10 @@ public final class WorkoutController: NSObject {
         case .sharingDenied: authorization = .denied
         default: authorization = .unknown
         }
+        #else
+        authorization = .unavailable
+        #endif
     }
-    #endif
 
     // MARK: - Lifecycle
 
@@ -337,7 +349,7 @@ public final class WorkoutController: NSObject {
             let unexpected = !ending
             teardown()
             resolve(false)
-            if unexpected { onFailure?() }
+            if unexpected { onFailure?(.other) }
         default:
             break
         }
@@ -355,7 +367,12 @@ public final class WorkoutController: NSObject {
             teardown()
             resolve(false)
         }
-        onFailure?()
+        let failure: Failure = switch code {
+        case HKError.Code.errorAuthorizationNotDetermined.rawValue: .notDetermined
+        case HKError.Code.errorAuthorizationDenied.rawValue: .denied
+        default: .other
+        }
+        onFailure?(failure)
     }
 
     fileprivate func collected(from source: HKLiveWorkoutBuilder, heartRate: Double?, average: Double?, kcal: Double?) {
