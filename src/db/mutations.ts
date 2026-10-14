@@ -30,12 +30,13 @@ import { nowIso } from '@/lib/dates';
 import type { BodyMetricKind, Goal, Readiness, SetType, Technique } from '@/domain/types';
 import type { GeneratedPlan } from '@/domain/programmes/plan';
 import { roleForPrescription, wasGeneratedRest } from '@/domain/programmes/prescribe';
-import { DEFAULT_BLOCK_WEEKS, setsForWeek, weekModifier } from '@/domain/programmes/block';
+import { DEFAULT_BLOCK_WEEKS, weekModifier } from '@/domain/programmes/block';
 import { buildSchedule, currentWeek, runningPlan, slotForRoutine } from '@/domain/schedule';
 import { loadableWeight, loadingProfileFor, nextLoadableBelow, type LoadingProfile } from '@/domain/plates';
 import { warmupRamp } from '@/domain/warmup';
 import { planSwapTargets } from '@/domain/search';
 import { schemeSetTypes } from '@/domain/schemes';
+import { layoutFromRoutine, rowsFromLayout, type StartFiling, type StartLayout } from '@/domain/startLayout';
 import { baseBlockName, defaultGym, nextBlockNumber, nextBlockRotation } from './blocks';
 
 /** Thrown when something tries to edit a workout that has already been finished. */
@@ -117,30 +118,24 @@ export async function startFreestyleWorkout(options: {
 }
 
 /**
- * Starts a workout from a routine by COPYING the routine's exercises into
- * workout_exercises.
+ * Which slot of the block a workout started from this routine would fill, and
+ * which week the block is in. Reads only.
  *
- * This copy is the whole point. The workout holds a snapshot, never a live
- * reference, which is what makes editing a routine afterwards unable to change
- * a session already performed. Do not "optimise" this into a join.
+ * The slot is the earliest session still to do for the routine, wherever it
+ * has rolled to. Reading the week off "where the block is up to" instead could
+ * name a week whose session for this routine was already trained, and the new
+ * workout would overwrite it. Null when every session for the routine is done,
+ * so an extra workout never steals a slot.
+ *
+ * This used to write `current_week` as a side effect, which is why it is split
+ * from `refreshCurrentWeek`: the watch's ready session is laid out from it
+ * without writing anything.
  */
-/**
- * Which slot of the block a workout started from this routine fills.
- *
- * The earliest session still to do for the routine, wherever it has rolled to.
- * Reading the week off "where the block is up to" instead could name a week
- * whose session for this routine was already trained, and the new workout
- * would overwrite it. Null when every session for the routine is done, so an
- * extra workout never steals a slot.
- *
- * `current_week` is kept as a cache for display and refreshed here, derived
- * from what has been trained rather than read from the counter, so one that
- * was never bumped — a crash, an import — cannot hold the block at week 1.
- */
-async function resolvePlanSlot(
+async function planSlot(
   plan: Plan,
   routineId: string,
-): Promise<{ week: number; sessionIndex: number } | null> {
+  today?: Date,
+): Promise<{ slot: { week: number; sessionIndex: number } | null; week: number }> {
   const routines = await db.routines.bulkGet(plan.routine_ids);
   const routineNames = new Map(
     routines.filter(Boolean).map((routine) => [routine!.id, routine!.name]),
@@ -149,21 +144,27 @@ async function resolvePlanSlot(
     (workout) => workout.deleted_at === null,
   );
 
-  const schedule = buildSchedule({ plan, routineNames, workouts });
+  const schedule = buildSchedule({ plan, routineNames, workouts, today });
   const week = schedule.length > 0 ? currentWeek(schedule) : plan.current_week;
-
-  if (week !== plan.current_week) {
-    const patch = {
-      current_week: week,
-      phase_name: weekModifier(week, plan.block_weeks).label,
-      updated_at: nowIso(),
-    };
-    await db.plans.update(plan.id, patch);
-    await enqueue('plans', plan.id, 'put', patch);
-  }
-
   const slot = slotForRoutine(schedule, routineId);
-  return slot ? { week: slot.week, sessionIndex: slot.sessionIndex } : null;
+  return { slot: slot ? { week: slot.week, sessionIndex: slot.sessionIndex } : null, week };
+}
+
+/**
+ * `current_week` is kept as a cache for display, refreshed whenever a session
+ * starts, derived from what has been trained rather than read from the
+ * counter, so one that was never bumped (a crash, an import) cannot hold the
+ * block at week 1.
+ */
+async function refreshCurrentWeek(plan: Plan, week: number): Promise<void> {
+  if (week === plan.current_week) return;
+  const patch = {
+    current_week: week,
+    phase_name: weekModifier(week, plan.block_weeks).label,
+    updated_at: nowIso(),
+  };
+  await db.plans.update(plan.id, patch);
+  await enqueue('plans', plan.id, 'put', patch);
 }
 
 /**
@@ -174,14 +175,19 @@ async function runningPlanFor(routineId: string): Promise<Plan | undefined> {
   return runningPlan(await db.plans.toArray(), routineId) ?? undefined;
 }
 
-export async function startWorkoutFromRoutine(
-  routineId: string,
-  options: { gymId?: string | null; readiness?: Readiness | null } = {},
-): Promise<string> {
-  const routine = await db.routines.get(routineId);
-  if (!routine) throw new Error(`Routine ${routineId} not found`);
+/** A routine's start, laid out, with what writing it needs to know. */
+interface PlannedStart {
+  layout: StartLayout;
+  plan: Plan | undefined;
+  /** The week the block is in now, for `refreshCurrentWeek`. */
+  week: number | null;
+}
 
-  const routineExercises = (await db.routine_exercises.where({ routine_id: routineId }).toArray())
+async function prepareStart(routineId: string, today?: Date): Promise<PlannedStart | null> {
+  const routine = await db.routines.get(routineId);
+  if (!routine) return null;
+
+  const rows = (await db.routine_exercises.where({ routine_id: routineId }).toArray())
     .filter((re) => re.deleted_at === null)
     .sort((a, b) => a.position - b.position);
 
@@ -189,96 +195,157 @@ export async function startWorkoutFromRoutine(
   // of the rotation, so the calendar can mark it done and the progression engine
   // knows which week's targets applied.
   const plan = await runningPlanFor(routineId);
-  const slot = plan ? await resolvePlanSlot(plan, routineId) : null;
-  const week = slot?.week ?? null;
+  const placed = plan ? await planSlot(plan, routineId, today) : null;
+  const slot = plan && placed?.slot ? { planId: plan.id, ...placed.slot } : null;
 
-  const workout: Workout = {
-    id: newId(),
-    routine_id: routineId,
-    plan_id: plan?.id ?? null,
-    plan_week: week,
-    plan_session_index: slot?.sessionIndex ?? null,
-    gym_id: options.gymId ?? (await defaultGymId()),
-    started_at: nowIso(),
-    finished_at: null,
-    bodyweight_kg: null,
-    readiness: options.readiness ?? null,
-    notes: null,
-    ...freshSyncFields(),
-  };
-
-  const copied: WorkoutExercise[] = routineExercises.map((re, index) => ({
-    id: newId(),
-    workout_id: workout.id,
-    exercise_id: re.exercise_id,
-    position: index,
-    superset_group: re.superset_group,
-    technique: re.technique,
-    notes: null,
-    // Copied, not referenced: editing the routine's rest later must not change
-    // what this session was performed under.
-    rest_seconds: re.rest_seconds,
-    tempo: re.tempo,
-    ...freshSyncFields(),
-  }));
-
-  /*
-   * Lay out the sets the routine plans for, empty and unticked.
-   *
-   * The routine says "3 sets of 5 to 8"; starting it should put three rows on
-   * screen ready to type into, not an exercise with nothing under it. They
-   * count for nothing until ticked, and finishWorkout discards any left
-   * untouched, so an abandoned plan never becomes fake history.
-   */
   // A block week reshapes the session: week 3 adds two sets to every exercise,
   // the deload halves them. Without this the block would be five identical weeks.
-  const modifier = plan && week ? weekModifier(week, plan.block_weeks) : null;
+  const modifier = plan && slot ? weekModifier(slot.week, plan.block_weeks) : null;
 
-  const plannedSets: WorkoutSet[] = copied.flatMap((we, index) => {
-    const source = routineExercises[index];
-    const base = Math.max(1, source?.target_sets ?? 1);
-    const targetSets = modifier ? setsForWeek(base, modifier) : base;
-    // A pyramid lays out one working top set and back-off sets around it.
-    const types = schemeSetTypes(we.technique, targetSets);
-    return Array.from({ length: targetSets }, (_unused, setIndex) => ({
-      id: newId(),
-      workout_exercise_id: we.id,
-      parent_set_id: null,
-      set_index: setIndex,
-      type: types[setIndex] ?? ('working' as const),
-      weight_kg: 0,
-      reps: 0,
-      /*
-       * Null, always. `rir` means "what the lifter assessed", and nothing else.
-       *
-       * This used to be seeded with `modifier?.targetRir ?? source?.target_rir`,
-       * so every set of every plan session arrived carrying the block week's
-       * PRESCRIBED reps-in-reserve — a number nobody had judged. The moment the
-       * progression engine started reading rir back, that turned into the engine
-       * reading its own prescription as evidence and handing out a double jump
-       * in week one on the strength of it. The target still reaches the lifter,
-       * from `routine_exercises.target_rir` and `weekModifier.targetRir`, shown
-       * as a target rather than pre-filled as an answer.
-       */
-      rir: null,
-      is_amrap: false,
-      completed: false,
-      completed_at: null,
-      ...freshSyncFields(),
-    }));
+  const layout = layoutFromRoutine(rows, { routineId, gymId: await defaultGymId(), slot }, modifier, newId);
+  return { layout, plan, week: placed?.week ?? null };
+}
+
+/**
+ * A routine's session laid out as it would start now, with fresh IDs, and
+ * nothing written: no rows, no outbox entry, no `current_week`. What the
+ * watch is sent as its ready session. Null when the routine does not exist.
+ */
+export async function planRoutineStart(
+  routineId: string,
+  options: { today?: Date } = {},
+): Promise<StartLayout | null> {
+  return (await prepareStart(routineId, options.today))?.layout ?? null;
+}
+
+/**
+ * Writes a laid-out start: the workout, its exercises and its sets, in one
+ * transaction with every row queued for backup, then refreshes the block's
+ * week.
+ */
+async function persistStart(
+  layout: StartLayout,
+  filing: StartFiling,
+  options: { startedAt: string; readiness: Readiness | null; refresh: { plan: Plan; week: number } | null },
+): Promise<string> {
+  const { workout, workoutExercises, sets } = rowsFromLayout(layout, filing, {
+    startedAt: options.startedAt,
+    now: nowIso(),
+    readiness: options.readiness,
   });
 
   await db.transaction('rw', db.workouts, db.workout_exercises, db.sets, db.outbox, async () => {
     await db.workouts.add(workout);
-    if (copied.length > 0) await db.workout_exercises.bulkAdd(copied);
-    if (plannedSets.length > 0) await db.sets.bulkAdd(plannedSets);
+    if (workoutExercises.length > 0) await db.workout_exercises.bulkAdd(workoutExercises);
+    if (sets.length > 0) await db.sets.bulkAdd(sets);
+    await enqueue('workouts', workout.id, 'put', workout);
+    for (const we of workoutExercises) await enqueue('workout_exercises', we.id, 'put', we);
+    for (const set of sets) await enqueue('sets', set.id, 'put', set);
   });
 
-  await enqueue('workouts', workout.id, 'put', workout);
-  for (const we of copied) await enqueue('workout_exercises', we.id, 'put', we);
-  for (const set of plannedSets) await enqueue('sets', set.id, 'put', set);
-
+  if (options.refresh) await refreshCurrentWeek(options.refresh.plan, options.refresh.week);
   return workout.id;
+}
+
+/**
+ * Starts a workout from a routine by COPYING the routine's exercises into
+ * workout_exercises.
+ *
+ * This copy is the whole point. The workout holds a snapshot, never a live
+ * reference, which is what makes editing a routine afterwards unable to change
+ * a session already performed. Do not "optimise" this into a join. The copy
+ * itself is `layoutFromRoutine` (src/domain/startLayout.ts), shared with a
+ * start made on the watch.
+ */
+export async function startWorkoutFromRoutine(
+  routineId: string,
+  options: { gymId?: string | null; readiness?: Readiness | null } = {},
+): Promise<string> {
+  const planned = await prepareStart(routineId);
+  if (!planned) throw new Error(`Routine ${routineId} not found`);
+  const { layout, plan, week } = planned;
+
+  return persistStart(
+    { ...layout, gymId: options.gymId ?? layout.gymId },
+    { planId: plan?.id ?? null, week: layout.slot?.week ?? null, sessionIndex: layout.slot?.sessionIndex ?? null },
+    { startedAt: nowIso(), readiness: options.readiness ?? null, refresh: plan && week !== null ? { plan, week } : null },
+  );
+}
+
+/**
+ * Writes a session the watch started from its ready session, as the phone
+ * laid it out (`planRoutineStart`), with `started_at` the moment Start was
+ * pressed on the wrist. Applied once: anything that would make it wrong is
+ * settled here rather than refused.
+ *
+ * - Skipped if a workout with that ID exists already, even a deleted one: a
+ *   start applied twice is harmless, and a workout the phone discarded never
+ *   comes back.
+ * - Exercises no longer in the library are dropped with their sets, or the
+ *   backup's foreign key would refuse the upload.
+ * - An empty workout open on the phone is discarded first, so the watch's
+ *   takes its slot. One with sets logged is kept, and both stay open.
+ * - Filed under the slot it was offered for only if that is still the slot
+ *   `planSlot` gives now. Otherwise (the slot was trained meanwhile, the
+ *   block moved on or ended) it is filed with the plan but no week or session,
+ *   as an extra workout is, and never takes another week's slot.
+ * - The gym it was laid out for, if that gym still exists, else the default.
+ */
+export async function replayWatchStart(
+  layout: StartLayout,
+  at: string,
+  options: {
+    /**
+     * Open workouts that must not be discarded as empty, whatever they hold
+     * now: the watch's own, whose sets are still on their way in the same
+     * inbox drain.
+     */
+    keepOpen?: ReadonlySet<string>;
+  } = {},
+): Promise<'applied' | 'skipped'> {
+  if (Number.isNaN(Date.parse(at))) throw new Error(`Cannot start a workout at ${at}`);
+  if (await db.workouts.get(layout.workoutId)) return 'skipped';
+
+  const known = await db.exercises.bulkGet([...new Set(layout.exercises.map((entry) => entry.exerciseId))]);
+  const inLibrary = new Set(known.filter(Boolean).map((exercise) => exercise!.id));
+  const exercises = layout.exercises.filter((entry) => inLibrary.has(entry.exerciseId));
+
+  // An empty workout open on the phone gives way, so its slot is free again.
+  const open = (await db.workouts.toArray()).filter(
+    (workout) => workout.deleted_at === null && workout.finished_at === null && !options.keepOpen?.has(workout.id),
+  );
+  for (const workout of open) {
+    const rows = await db.workout_exercises.where({ workout_id: workout.id }).toArray();
+    const sets = rows.length > 0 ? await db.sets.where('workout_exercise_id').anyOf(rows.map((row) => row.id)).toArray() : [];
+    if (!sets.some((set) => set.completed && set.deleted_at === null)) await discardWorkout(workout.id);
+  }
+
+  const plan = await runningPlanFor(layout.routineId);
+  const placed = plan ? await planSlot(plan, layout.routineId) : null;
+  const offered = layout.slot;
+  const now = placed?.slot ?? null;
+  const filed =
+    plan && offered && now && offered.planId === plan.id && offered.week === now.week && offered.sessionIndex === now.sessionIndex
+      ? offered
+      : null;
+
+  const gym = layout.gymId ? await db.gyms.get(layout.gymId) : undefined;
+  const gymId = gym && gym.deleted_at === null ? gym.id : await defaultGymId();
+
+  await persistStart(
+    { ...layout, gymId, exercises },
+    {
+      planId: plan?.id ?? null,
+      week: filed?.week ?? null,
+      sessionIndex: filed?.sessionIndex ?? null,
+    },
+    {
+      startedAt: new Date(at).toISOString(),
+      readiness: null,
+      refresh: plan && placed ? { plan, week: placed.week } : null,
+    },
+  );
+  return 'applied';
 }
 
 export async function updateWorkout(
