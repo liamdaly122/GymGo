@@ -44,7 +44,7 @@ export default function HomeScreen() {
   const repeatable = useRepeatCandidate();
   const repeatName = useWorkoutName(repeatable?.workout.id);
   const today = useToday();
-  const finishedOnWatch = useWatchCelebration();
+  const watchFinish = useWatchCelebration();
 
   const next = planned?.current ?? null;
 
@@ -99,7 +99,7 @@ export default function HomeScreen() {
           <DoneTodayRow key={row.workout.id} row={row} />
         ))}
 
-        {finishedOnWatch ? <FinishedOnWatch workout={finishedOnWatch} /> : null}
+        {watchFinish ? <WatchFinishBanner workout={watchFinish} /> : null}
 
         <LevelStrip />
 
@@ -345,7 +345,7 @@ function DaySheet({
  * is a quiet button, because chalk is the next session's Start. Gone once the
  * poster has shown (src/lib/celebrate.ts), and after twelve hours.
  */
-function FinishedOnWatch({ workout }: { workout: Workout }) {
+function WatchFinishBanner({ workout }: { workout: Workout }) {
   const headingId = useId();
   const name = useWorkoutName(workout.id);
   const duration =
