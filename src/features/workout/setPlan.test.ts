@@ -3,7 +3,7 @@ import type { WorkoutExerciseView } from '@/db/queries';
 import type { WorkoutExercise, WorkoutSet } from '@/db/schema';
 import type { LoadingProfile } from '@/domain/plates';
 import { makeSet } from '@/domain/testFactories';
-import { LIGHTER, setPlan, stepDownReason, VERB } from './setPlan';
+import { LIGHTER, lighterReason, setPlan, stepDownReason, VERB } from './setPlan';
 
 /**
  * What the set in hand's plan line says, on the phone and on the companion.
@@ -66,5 +66,24 @@ describe('the plan line when a set falls short', () => {
   it("keeps the engine's words for everything else", () => {
     expect(VERB.add_weight).toBe('Go up');
     expect(VERB.deload).toBe('Back off');
+  });
+});
+
+describe('the Lighter line, once the lifter has typed', () => {
+  it('says the step only while the numbers on screen are the step', () => {
+    const sets = [done(0, 100, 5), todo(1)];
+    const plan = setPlan(entry(sets, { low: 8, high: 10 }), sets[1]!, 1, null, null);
+    // Both fields still show their placeholders: 90 × 8, the step.
+    expect(lighterReason(plan, false)).toBe('5 was under 8, so 90kg for 8.');
+    // A stepper nudged the weight to 92.5, or 10 reps were typed: the screen
+    // and Done say the lifter's numbers, so the line must not claim 90 for 8.
+    expect(lighterReason(plan, true)).toBeNull();
+  });
+
+  it('says nothing where there was no step', () => {
+    const fine = [done(0, 100, 8), todo(1)];
+    expect(lighterReason(setPlan(entry(fine, { low: 8, high: 10 }), fine[1]!, 1, null, null), false)).toBeNull();
+    const first = [todo(0)];
+    expect(lighterReason(setPlan(entry(first, { low: 8, high: 10 }), first[0]!, 0, null, null), false)).toBeNull();
   });
 });

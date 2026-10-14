@@ -13,7 +13,7 @@ import PercentageTable, { tableMax } from '@/features/exercises/PercentageTable'
 import SetupNotesField from '@/features/exercises/SetupNotesField';
 import { EQUIPMENT_LABELS } from '@/features/exercises/labels';
 import PlateDiagram from './PlateDiagram';
-import { LIGHTER, LIGHTER_TONE, setPlan, stepDownReason, VERB, VERB_TONE } from './setPlan';
+import { LIGHTER, LIGHTER_TONE, lighterReason, setPlan, VERB, VERB_TONE } from './setPlan';
 import { describeTempo, formatLogged, formatNumber } from './setNames';
 
 /**
@@ -63,8 +63,13 @@ export default function ExerciseInfo({
 
   // What the watch shows: each field what was typed into the set, else its
   // placeholder, by the same function that builds the watch's list.
-  const { weight, reps } =
-    set && plan ? startingNumbers(set, plan, bodyweight) : { weight: null as number | null, reps: null as number | null };
+  const { weight, reps, weightTyped, repsTyped } =
+    set && plan
+      ? startingNumbers(set, plan, bodyweight)
+      : { weight: null as number | null, reps: null as number | null, weightTyped: false, repsTyped: false };
+  // "Lighter" describes the placeholders, as on the phone's set in hand; the
+  // watch does not step a set with a field typed (its `carries` is false).
+  const lighter = plan ? lighterReason(plan, weightTyped || repsTyped) : null;
 
   const muscles = [
     exercise?.primary_muscle,
@@ -124,10 +129,10 @@ export default function ExerciseInfo({
       {/* The plan behind the numbers, one line, the full reason a tap away;
           "Lighter" when the set just done fell short of the range, as the
           phone's own set in hand and the watch's header say. */}
-      {plan?.hintable && plan.stepDown && plan.weightHint !== null ? (
+      {lighter !== null ? (
         <div className="b-plan">
           <span className={`chip ${LIGHTER_TONE}`}>{LIGHTER}</span>
-          <span className="plan-reason">{stepDownReason(plan.stepDown, plan.weightHint)}</span>
+          <span className="plan-reason">{lighter}</span>
         </div>
       ) : plan?.hintable && suggestion ? (
         <div className="b-plan">

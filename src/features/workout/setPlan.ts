@@ -31,6 +31,20 @@ export function stepDownReason(stepDown: StepDown, weight: number): string {
   return `${stepDown.from.reps} was under ${stepDown.repLow}, so ${formatNumber(weight)}kg for ${stepDown.repLow}.`;
 }
 
+/**
+ * The "Lighter" line's words, or null when it should not show. It describes
+ * the stepped placeholders, so it shows only while both fields still show
+ * them: once either is typed into (a stepper tap is typing), the numbers on
+ * screen, and the ones Done logs, are the lifter's, and the line would claim
+ * a weight and reps that are not there. The watch drops its "Lighter" for a
+ * typed set too (`carries` is false). The plan line then falls back to what
+ * it shows for any other set.
+ */
+export function lighterReason(plan: Pick<SetPlan, 'hintable' | 'stepDown' | 'weightHint'>, typed: boolean): string | null {
+  if (typed || !plan.hintable || !plan.stepDown || plan.weightHint === null) return null;
+  return stepDownReason(plan.stepDown, plan.weightHint);
+}
+
 /** What a set is meant to be, before anything is typed into it. */
 export interface SetPlan {
   /** A drop, rest-pause, myo or cluster piece hanging off another set. */

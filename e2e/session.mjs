@@ -412,6 +412,26 @@ await step('a short set on a ranged lift starts the next one lighter, and says s
     throw new Error('the companion should say Lighter too');
   }
   await p.evaluate(() => window.__gymgoWatch.clear());
+
+  // One tap up and the numbers are the lifter's, not the step's: the line no
+  // longer claims "90kg for 8" under a field and a Done bar that say otherwise.
+  await p.getByRole('region', { name: 'On your watch' }).waitFor({ state: 'detached', timeout: 5000 });
+  await p.getByRole('button', { name: /^Set 2 weight up/ }).click();
+  await p.waitForTimeout(400);
+  const nudged = await p.getByLabel('Set 2 weight in kilograms').inputValue();
+  if (!(Number(nudged) > 90)) throw new Error(`one tap up should move set 2 above 90, it reads ${nudged}`);
+  await p.getByRole('button', { name: new RegExp(`^Mark set 2 done, ${nudged}kg × 8$`) }).waitFor({ timeout: 3000 });
+  if (await p.locator('main').getByText(/was under 8/).count()) {
+    throw new Error(`after a nudge to ${nudged}, the plan line should not describe the step`);
+  }
+  // The companion reads the set as typed, and the watch would not step it either.
+  await p.evaluate((id) => window.__gymgoWatch.report({ workoutId: id, setId: null }), workoutId);
+  await watching.waitFor({ timeout: 5000 });
+  await watching.getByText(`${nudged}kg × 8`, { exact: true }).waitFor({ timeout: 3000 });
+  if (await watching.getByText(/was under 8/).count()) {
+    throw new Error('the companion should not describe the step for a set with its weight typed');
+  }
+  await p.evaluate(() => window.__gymgoWatch.clear());
 });
 
 console.log(errs.length ? '\nBrowser errors:\n' + errs.join('\n') : '\nNo browser errors.');

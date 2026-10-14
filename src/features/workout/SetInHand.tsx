@@ -13,7 +13,7 @@ import { playRecordTone, RECORD_VIBRATION, vibrate } from '@/lib/feedback';
 import { useWriteQueue } from '@/hooks/useWriteQueue';
 import { useRestTimer } from './RestTimer';
 import PlateDiagram from './PlateDiagram';
-import { LIGHTER, LIGHTER_TONE, setPlan, stepDownReason, VERB, VERB_TONE } from './setPlan';
+import { LIGHTER, LIGHTER_TONE, lighterReason, setPlan, VERB, VERB_TONE } from './setPlan';
 import {
   CONTINUATION_REST_SECONDS,
   describeRecord,
@@ -110,6 +110,11 @@ export default function SetInHand({
   // What is on screen: the typed number, else the placeholder.
   const weight = parseEntry(weightText) ?? weightHint ?? (bodyweight ? 0 : null);
   const reps = parseEntry(repsText) ?? repsHint;
+  // "Lighter" describes the placeholders, so it goes once either field is typed.
+  const lighter = lighterReason(
+    { hintable, stepDown, weightHint },
+    parseEntry(weightText) !== null || parseEntry(repsText) !== null,
+  );
   const steps = stepFrom(weight ?? 0, entry.loading);
 
   const ready = weight !== null && reps !== null && reps > 0;
@@ -308,11 +313,12 @@ export default function SetInHand({
       {/* The suggestion is the placeholder; this is the plain-language plan
           that goes with it — one line, the full reason a tap away. When the
           set just done fell short of the range, the placeholder is that set
-          a notch lighter instead, and the line says so. */}
-      {hintable && stepDown && weightHint !== null ? (
+          a notch lighter instead, and the line says so while that is still
+          what the fields show. */}
+      {lighter !== null ? (
         <div className="b-plan">
           <span className={`chip ${LIGHTER_TONE}`}>{LIGHTER}</span>
-          <span className="plan-reason">{stepDownReason(stepDown, weightHint)}</span>
+          <span className="plan-reason">{lighter}</span>
         </div>
       ) : hintable && suggestion ? (
         <div className="b-plan">
