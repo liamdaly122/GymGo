@@ -886,3 +886,30 @@ because the app moves across unchanged, they come with it:
     The watch's logic and screens live in a Swift package, `GymGoKit`
     (`ios/GymGoKit`), which builds and tests without Xcode's interface; the
     watch target Liam adds in Xcode (guide 9.2) is a thin shell around it.
+
+## Feedback from build 4 on real devices (14 October 2026)
+
+The first build with the watch app, used on the iPhone 14 Pro and the Ultra 2:
+
+1. **The day's workout cannot be started from the watch.** With no workout
+   running the watch only says to start one on the iPhone. It needs pages of
+   its own: today's (next) session, its exercises, and Start.
+2. **No workout reaches Apple Health or Fitness.** The watch never starts a
+   workout session, so nothing is recorded, the screen sleeps when the wrist
+   drops, and heart rate and calories are not shown. They should be, live, on
+   the watch.
+3. **The vibrations are too weak.** Strong cues for the start and end of a
+   rest, and for any other event worth one.
+4. **The set screen wastes space.** "Set the reps" is a disabled button that
+   reads as broken. Wanted: -/+ buttons that switch between the weight and
+   the reps, and better use of the main screen.
+5. **Finish or Discard on the phone does not reach the watch**, which keeps
+   the workout running.
+6. **The phone mirrors the watch.** While the watch logs, the phone should
+   show different, useful things: the exercise's details, what is coming up,
+   swaps and difficulty or Pro settings (decision 8, Phase 5.1).
+7. **Finish on the watch had to be done again on the phone** before the
+   workout was saved.
+
+Items 1, 2, 3 and 4 complete Phase 4; 5 and 7 are bugs in the link; 6 is
+Phase 5.1, brought forward. All seven are the next round of work.
