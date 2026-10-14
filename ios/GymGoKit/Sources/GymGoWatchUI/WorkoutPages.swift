@@ -67,6 +67,9 @@ struct MainPage: View {
                 LoggingOnPhoneView(store: store)
             } else if let rest = store.rest, !restCollapsed {
                 RestView(store: store, rest: rest) { restCollapsed = true }
+                    .overlay(alignment: .top) {
+                        if store.workout.isPaused { PausedLine(store: store) }
+                    }
             } else if let hand = store.setInHand {
                 SetInHandView(store: store, hand: hand) { restCollapsed = false }
                     .overlay(alignment: .top) {
@@ -83,8 +86,11 @@ struct MainPage: View {
 /// the clock shares: "PAUSED" in blue (a state) and RESUME in chalk (the
 /// thing to press), over the lift's name until the pause ends. The set's
 /// label stays under it, and Done stays below and keeps the double tap;
-/// logging a set resumes too. Laid over `SetInHandView` from here, one line
-/// high, on the ground colour; the whole line is the button.
+/// logging a set resumes too, once its Undo window has closed, so the line
+/// stays beside "Logged · Undo" until then. Laid over `SetInHandView` and `RestView` (over
+/// the rest's "Rest" and heart rate; the countdown stays) from here, one
+/// line high, on the ground colour; the whole line is the button.
+/// `AllLoggedView` puts it above its heading.
 struct PausedLine: View {
     let store: WatchSessionStore
 
@@ -154,6 +160,7 @@ struct AllLoggedView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if store.workout.isPaused { PausedLine(store: store) }
             Text(store.session?.nothingLeftTitle ?? "All sets logged")
                 .font(Theme.display(26, extraBold: true))
                 .textCase(.uppercase)
@@ -184,7 +191,9 @@ struct AllLoggedView: View {
     }
 }
 
-/// The phone took logging back. The Health workout keeps recording here.
+/// The phone took logging back. The Health workout keeps recording here,
+/// which the claim makes so; paused since (both buttons, the controls), it
+/// says so, with Resume, since no set logged on the phone resumes it.
 struct LoggingOnPhoneView: View {
     let store: WatchSessionStore
 
@@ -200,10 +209,36 @@ struct LoggingOnPhoneView: View {
                 .foregroundStyle(Theme.chalk)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            Text("Health keeps recording on your watch.")
-                .font(Theme.text(12))
-                .foregroundStyle(Theme.muted)
-                .fixedSize(horizontal: false, vertical: true)
+            if store.workout.isPaused {
+                // As PausedLine: the state in blue, the thing to press in chalk.
+                Button {
+                    store.resumeWorkout()
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Health paused")
+                            .font(Theme.text(12, semiBold: true))
+                            .foregroundStyle(Theme.hot)
+                            .lineLimit(1)
+                        Text("Resume")
+                            .font(Theme.display(14, extraBold: true))
+                            .textCase(.uppercase)
+                            .lineLimit(1)
+                            .foregroundStyle(Theme.ground)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Theme.chalk))
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Health paused. Resume the workout")
+            } else {
+                Text("Health keeps recording on your watch.")
+                    .font(Theme.text(12))
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Spacer(minLength: 4)
             Button {
                 store.reclaim()

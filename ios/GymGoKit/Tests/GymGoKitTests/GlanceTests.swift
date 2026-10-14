@@ -308,8 +308,9 @@ private func midnight(_ day: String) -> Date {
     var state = WatchAppState()
     state.apply(try context(ready: readyObject()))
     let windows = glance(state, at: minute(6)).relevantWindows(from: minute(6), timeZone: london)
-    // Wednesday (today, the session on offer) and Friday; Monday is done.
-    #expect(windows.map { localDay($0.start, timeZone: london) } == ["2026-10-14", "2026-10-16"])
+    // Wednesday (today, the session on offer) and every day it may roll
+    // onto while it is open; Friday is planned anyway; Monday is done.
+    #expect(windows.map { localDay($0.start, timeZone: london) } == (14...20).map { "2026-10-\($0)" })
     let wednesday = try #require(windows.first)
     #expect(wednesday.start == midnight("2026-10-14").addingTimeInterval(5 * 3600))
     #expect(wednesday.end == midnight("2026-10-14").addingTimeInterval(22 * 3600))
@@ -317,7 +318,7 @@ private func midnight(_ day: String) -> Date {
     // Late at night today's window is over.
     let late = midnight("2026-10-14").addingTimeInterval(23 * 3600)
     let lateDays = glance(state, at: late).relevantWindows(from: late, timeZone: london).map { localDay($0.start, timeZone: london) }
-    #expect(lateDays == ["2026-10-16"])
+    #expect(lateDays == (15...20).map { "2026-10-\($0)" })
 
     // Done on the wrist: today drops out.
     _ = state.start(try #require(state.home?.ready), at: minute(6), eventId: "start")
@@ -326,6 +327,31 @@ private func midnight(_ day: String) -> Date {
     _ = state.finish(at: minute(30))
     let done = glance(state, at: minute(31), previous: running)
     #expect(done.trainingDays(from: minute(31), timeZone: london) == ["2026-10-16"])
+}
+
+@Test func aMissedSessionKeepsTheSmartStackOnTheDaysItRollsOnto() throws {
+    // The phone's last context, on Wednesday, offers Wednesday's session.
+    var state = WatchAppState()
+    state.apply(try context(ready: readyObject()))
+
+    // The Smart Stack works its windows out at 06:00 on Wednesday, and keeps
+    // them: nothing invalidates them while the session stays open.
+    let wednesdaySix = midnight("2026-10-14").addingTimeInterval(6 * 3600)
+    let windows = glance(state, at: wednesdaySix).relevantWindows(from: wednesdaySix, timeZone: london)
+
+    // Wednesday is missed. On Thursday the face says it is due today, and
+    // a window worked out on Wednesday covers Thursday morning.
+    let thursdayNine = midnight("2026-10-15").addingTimeInterval(9 * 3600)
+    let thursday = glance(state, at: wednesdaySix).moment(at: thursdayNine, timeZone: london)
+    #expect(thursday.card.kind == .ready && thursday.card.startLabel == "Start")
+    #expect(windows.contains { $0.contains(thursdayNine) })
+    // So do Saturday's, and every day up to six from Wednesday.
+    #expect(windows.contains { $0.contains(midnight("2026-10-17").addingTimeInterval(9 * 3600)) })
+    #expect(windows.map { localDay($0.start, timeZone: london) }.last == "2026-10-20")
+
+    // Worked out at 06:00 on Thursday, the missed day after: from Thursday on.
+    let thursdaySix = midnight("2026-10-15").addingTimeInterval(6 * 3600)
+    #expect(glance(state, at: thursdaySix).trainingDays(from: thursdaySix, timeZone: london) == (15...21).map { "2026-10-\($0)" })
 }
 
 // MARK: - Done on the wrist, days later
@@ -373,7 +399,8 @@ private func midnight(_ day: String) -> Date {
     let morning = noonOn("2026-10-15").addingTimeInterval(-3 * 3600)
     #expect(state.todayCard(now: morning, timeZone: london).startLabel == "Start early")
     let before = glance(state, at: morning)
-    #expect(before.trainingDays(from: morning, timeZone: london) == ["2026-10-16"])
+    // Friday, and the days it would roll onto if missed.
+    #expect(before.trainingDays(from: morning, timeZone: london) == (16...21).map { "2026-10-\($0)" })
 
     // Started early, and finished, on Thursday morning.
     _ = state.start(try #require(state.home?.ready), at: morning, eventId: "start")

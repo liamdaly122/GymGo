@@ -53,9 +53,12 @@ import Testing
 
 // MARK: - A press mid-session
 
-@Test func aPressWhileThePhoneLogsDoesNothing() {
-    #expect(ActionPress.decide(phoneLogs: true, paused: true, resting: true, setInHand: true) == .nothing)
+@Test func aPressWhileThePhoneLogsDoesNothingButResume() {
+    #expect(ActionPress.decide(phoneLogs: true, paused: false, resting: true, setInHand: true) == .nothing)
     #expect(ActionPress.decide(phoneLogs: true, paused: false, resting: false, setInHand: false) == .nothing)
+    // Resuming touches no sets, so it cannot fight the phone, and no set
+    // logged on the phone resumes Health.
+    #expect(ActionPress.decide(phoneLogs: true, paused: true, resting: true, setInHand: true) == .resume)
 }
 
 @Test func aPressWhilePausedResumesWhateverElseIsOnScreen() {

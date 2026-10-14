@@ -18,6 +18,8 @@ import Testing
     #expect(kinds(.endedOnPhone) == ["0:stop", "500:directionDown"])
     #expect(kinds(.savedToHealth) == ["0:success"])
     #expect(kinds(.failed) == ["0:failure"])
+    #expect(kinds(.paused) == ["0:stop"])
+    #expect(kinds(.resumed) == ["0:start"])
 }
 
 @Test func tapsAreSpacedSoNoneIsCutOff() {

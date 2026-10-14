@@ -309,23 +309,32 @@ public struct WatchSession: Codable, Sendable, Equatable {
     }
 
     /// The rest a set takes when it has none only because the sets after it
-    /// in its round were skipped: the first rest among them. A superset's
-    /// first half skipped past its partner rests as the partner would have.
+    /// in its round are not still to do: skipped, or already logged on the
+    /// wrist. The first rest among them. A superset's first half skipped past
+    /// its partner rests as the partner would have, and so does one brought
+    /// back after its partner was done (the phone's `restsAfterSet`: rest
+    /// unless a later member still has this round's set to do). The list
+    /// carries no rest for a first half, so it is the partner's.
     func restHandedOn(after set: WatchSet) -> Int? {
         guard set.restAfter == nil, let index = snapshot.sets.firstIndex(where: { $0.id == set.id }) else { return nil }
+        return restHandedOn(from: index + 1, at: set.station)
+    }
+
+    /// The rest handed on when the wrist skips `follower`, the set straight
+    /// after one that rested only because this one followed: the first rest
+    /// from it on, while the sets at its station are not still to do.
+    func restHandedOn(skipping follower: WatchSet) -> Int? {
+        guard let index = snapshot.sets.firstIndex(where: { $0.id == follower.id }) else { return nil }
+        return restHandedOn(from: index, at: follower.station)
+    }
+
+    private func restHandedOn(from start: Int, at station: Int) -> Int? {
         let skipped = Set(self.skipped)
-        for later in snapshot.sets[(index + 1)...] {
-            guard later.station == set.station, skipped.contains(later.id), logged[later.id] == nil else { return nil }
+        for later in snapshot.sets[start...] {
+            guard later.station == station, skipped.contains(later.id) || logged[later.id] != nil else { return nil }
             if let rest = later.restAfter { return rest }
         }
         return nil
-    }
-
-    /// The set logged most recently on the wrist that the phone has not yet
-    /// confirmed, if it is still on the list.
-    var lastLoggedSet: WatchSet? {
-        guard let latest = logged.values.max(by: { $0.completedAt < $1.completedAt }) else { return nil }
-        return snapshot.sets.first { $0.id == latest.setId }
     }
 
     /// The set IDs done in this workout, on either device.

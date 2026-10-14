@@ -42,6 +42,12 @@ struct SetInHandView: View {
     /// The system clock sits at the top right, in the name's row.
     private var clockWidth: CGFloat { compact ? 44 : 50 }
 
+    /// What is dialled now, read from the screen's own state rather than
+    /// `store.draft`, which is written after the body is worked out.
+    private var dialledNow: SetDraft {
+        SetDraft(setId: hand.set.id, weightIndex: weightIndex, reps: reps, onReps: field == .reps)
+    }
+
     private var weightText: String {
         weight == 0 && hand.lift.unit == "kg added" ? "BW" : formatWeight(weight)
     }
@@ -93,7 +99,7 @@ struct SetInHandView: View {
             }
         }
         .sheet(isPresented: $showingLift) {
-            LiftSheet(store: store, hand: hand)
+            LiftSheet(store: store, hand: hand, draft: dialledNow)
         }
         .onAppear(perform: reset)
         .onChange(of: hand.set.id) { reset() }
@@ -156,9 +162,9 @@ struct SetInHandView: View {
                         .accessibilityLabel("New record. \(recordLine(record))")
                 } else {
                     // "Set 1 of 4 · Go up" while the numbers are the plan's
-                    // suggestion, "Set 2 of 4 · Lighter" after a step-down,
-                    // else "Set 2 of 4 · 2/6".
-                    Text(hand.headerLine(stations: store.session?.snapshot.stations.count ?? 1))
+                    // suggestion, "Set 2 of 4 · Lighter" while they are a
+                    // step-down's, else "Set 2 of 4 · 2/6".
+                    Text(hand.headerLine(stations: store.session?.snapshot.stations.count ?? 1, draft: dialledNow))
                         .font(Theme.text(12))
                         .foregroundStyle(Theme.muted)
                         .lineLimit(1)
@@ -308,6 +314,9 @@ struct RepsGrid: View {
 struct LiftSheet: View {
     let store: WatchSessionStore
     let hand: SetInHand
+    /// What the set screen has dialled: the step-down's reason shows only
+    /// while those are still its numbers.
+    let draft: SetDraft?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -323,9 +332,10 @@ struct LiftSheet: View {
                     .font(Theme.text(12))
                     .foregroundStyle(Theme.muted)
 
-                if hand.stepDownReason != nil || hand.lift.plan != nil {
+                let stepDownReason = hand.stepDownReason(draft: draft)
+                if stepDownReason != nil || hand.lift.plan != nil {
                     heading("Plan")
-                    if let reason = hand.stepDownReason {
+                    if let reason = stepDownReason {
                         why("Lighter", reason)
                     }
                     if let plan = hand.lift.plan {

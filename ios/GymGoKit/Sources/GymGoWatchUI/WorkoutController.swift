@@ -75,9 +75,17 @@ public final class WorkoutController: NSObject {
     /// Called when the Health session pauses or resumes, however that came
     /// about: an intent, a button, both of the watch's buttons, a recovery.
     @ObservationIgnored public var onPauseChanged: (@MainActor () -> Void)?
+    /// Called when both of the watch's buttons together pause or resume the
+    /// session (`pauseOrResumeRequest`), with which: the lifter asked for it
+    /// on the wrist, so the store taps for it, as it does for Pause and
+    /// Resume. `onPauseChanged` follows once HealthKit has done it.
+    @ObservationIgnored public var onButtonsPausedOrResumed: (@MainActor (PauseRequest.Answer) -> Void)?
     /// When a pause or resume was last asked for directly. A
     /// `pauseOrResumeRequest` soon after is its echo (`PauseRequest`).
     @ObservationIgnored private var lastAsked: Date?
+    /// Which was last asked for directly. Internal for the tests, where
+    /// HealthKit is compiled out and nothing pauses or resumes.
+    @ObservationIgnored private(set) var lastAskedFor: PauseRequest.Answer?
     /// Until when no Health permission sheet may show (`holdHealthPrompts`).
     @ObservationIgnored private var promptsHeldUntil: Date?
 
@@ -316,6 +324,7 @@ public final class WorkoutController: NSObject {
     /// follows when HealthKit reports the new state, not before.
     public func pause() {
         lastAsked = Date()
+        lastAskedFor = .pause
         #if os(watchOS)
         guard let session, session.state == .running else { return }
         session.pause()
@@ -326,6 +335,7 @@ public final class WorkoutController: NSObject {
     /// button, or a set logged while paused.
     public func resume() {
         lastAsked = Date()
+        lastAskedFor = .resume
         #if os(watchOS)
         guard let session, session.state == .paused else { return }
         session.resume()
@@ -338,6 +348,21 @@ public final class WorkoutController: NSObject {
     func answerRequest(_ phase: HealthSessionPhase, now: Date) -> PauseRequest.Answer? {
         PauseRequest.answer(phase, lastAsked: lastAsked, now: now)
     }
+
+    /// Both of the watch's buttons together: the answer (`answerRequest`),
+    /// told to `onButtonsPausedOrResumed`. Internal for the tests.
+    func answerButtons(_ phase: HealthSessionPhase, now: Date) -> PauseRequest.Answer? {
+        let answer = answerRequest(phase, now: now)
+        if let answer { onButtonsPausedOrResumed?(answer) }
+        return answer
+    }
+
+    #if !os(watchOS)
+    /// The Mac has no HealthKit: a test says a Health workout is recording.
+    func recordForTests() {
+        isRunning = true
+    }
+    #endif
 
     /// The session paused or resumed, as HealthKit reports it or recovery
     /// finds it. Internal for the tests, which have no HealthKit.
@@ -390,6 +415,7 @@ public final class WorkoutController: NSObject {
         pausedAt = nil
         activeTime = nil
         lastAsked = nil
+        lastAskedFor = nil
     }
 
     /// Health's active time, read now from the builder.
@@ -516,7 +542,7 @@ public final class WorkoutController: NSObject {
         case .paused: .paused
         default: .other
         }
-        switch answerRequest(phase, now: Date()) {
+        switch answerButtons(phase, now: Date()) {
         case .pause: source.pause()
         case .resume: source.resume()
         case nil: break

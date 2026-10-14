@@ -4,12 +4,25 @@ import Foundation
 // GymGoWatchUI lays it out; nothing here knows about views.
 
 extension SetInHand {
+    /// The numbers on screen are still the step-down's: a stepped set, with
+    /// nothing dialled away from where it opened. "Lighter" and its reason
+    /// show only while this holds, as the phone drops its Lighter chip once
+    /// a field is typed: dialled to 100 × 5, the set is no longer "90kg for
+    /// 8". Judged against what is dialled (`draft`), not whether anything
+    /// was, so the Crown turned away and back shows it again.
+    public func showsStep(_ draft: SetDraft?) -> Bool {
+        guard source == "stepped", stepped != nil else { return false }
+        return numbersOnScreen(draft) == numbersOnScreen(nil)
+    }
+
     /// Why the numbers are what they are, in a word: the plan's own verb
-    /// ("Go up") while they are still the list's suggestion, "Lighter" after
-    /// a step-down, and nothing after a plain carry, when the numbers are
-    /// simply what was just done.
-    public var verb: String? {
-        if source == "stepped", stepped != nil { return "Lighter" }
+    /// ("Go up") while they are still the list's suggestion, "Lighter" while
+    /// the numbers on screen are still a step-down's (`showsStep`), and
+    /// nothing after a plain carry, when the numbers are simply what was just
+    /// done. The plan's verb stays whatever is dialled: it is the plan's
+    /// advice, and the phone keeps it after typing too.
+    public func verb(draft: SetDraft?) -> String? {
+        if source == "stepped" { return showsStep(draft) ? "Lighter" : nil }
         guard source == "suggestion", set.isTopWorkingSet, let plan = lift.plan, !plan.verb.isEmpty else { return nil }
         return plan.verb
     }
@@ -17,14 +30,15 @@ extension SetInHand {
     /// The line under the lift's name on the set screen: "Set 1 of 4 · Go up"
     /// while a verb shows, else "Set 2 of 4 · 2/6". The station's place is
     /// dropped for the verb, so the line fits a 41 mm screen.
-    public func headerLine(stations: Int) -> String {
-        if let verb { return "\(set.label) · \(verb)" }
+    public func headerLine(stations: Int, draft: SetDraft?) -> String {
+        if let verb = verb(draft: draft) { return "\(set.label) · \(verb)" }
         return "\(set.label) · \(set.station + 1)/\(max(1, stations))"
     }
 
-    /// Why a stepped set is lighter: "5 was under 8, so 90kg for 8."
-    public var stepDownReason: String? {
-        guard let stepped else { return nil }
+    /// Why a stepped set is lighter: "5 was under 8, so 90kg for 8.", while
+    /// those are still the numbers on screen (`showsStep`).
+    public func stepDownReason(draft: SetDraft?) -> String? {
+        guard let stepped, showsStep(draft) else { return nil }
         let weight = numbersOnScreen(nil).weight
         return "\(stepped.from.reps) was under \(stepped.repLow), so \(formatWeight(weight))kg for \(stepped.repLow)."
     }

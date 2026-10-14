@@ -43,8 +43,10 @@ private final class Reloads {
     _ = state.start(try #require(state.home?.ready), at: minute(10), eventId: "start")
     publisher.publish(state, now: minute(10), timeZone: london)
     #expect(reloads.count == 2)
-    // Today stays relevant while its session runs, and stops once it is done.
-    #expect(reloads.relevance == 1)
+    // Started, the session will not roll on: the days after today that it
+    // could have rolled onto drop out. Today stays relevant while it runs,
+    // and stops once it is done.
+    #expect(reloads.relevance == 2)
     _ = state.logSet(weight: 100, reps: 5, at: minute(12))
     let rest = try #require(state.rest)
     publisher.publish(state, now: minute(12), timeZone: london)
@@ -59,7 +61,7 @@ private final class Reloads {
 
     _ = state.finish(at: minute(40))
     publisher.publish(state, now: minute(40), timeZone: london)
-    #expect(reloads.count == 4 && reloads.relevance == 2)
+    #expect(reloads.count == 4 && reloads.relevance == 3)
 }
 
 @MainActor

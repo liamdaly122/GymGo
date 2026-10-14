@@ -125,7 +125,7 @@ private struct LockScreen: View {
                         .textCase(.uppercase)
                         .foregroundStyle(Look.hot)
                 }
-                Elapsed(startedAt: context.attributes.startedAt, pausedAt: state.pausedAt)
+                Elapsed(startedAt: context.attributes.startedAt)
                     .font(Look.text(14))
                     .foregroundStyle(Look.muted)
                     .frame(maxWidth: 72, alignment: .trailing)
@@ -193,16 +193,18 @@ private struct LiftName: View {
 }
 
 /// Time since the session began, counting up with nothing sent to keep it
-/// going, and standing still while the watch is paused.
+/// going: wall-clock time, pauses included, as the phone's own duration
+/// (`finished_at − started_at`) and the watch face count it. It never
+/// stands still for a pause: nothing sent says how long earlier pauses
+/// were, so it would leap forward by the whole pause on Resume. The blue
+/// "Paused" beside it says the watch is paused.
 private struct Elapsed: View {
     let startedAt: Date
-    let pausedAt: Date?
 
     var body: some View {
         // A Live Activity lasts at most twelve hours, so the range never runs out.
         Text(
             timerInterval: startedAt...startedAt.addingTimeInterval(12 * 3600),
-            pauseTime: pausedAt.map { max($0, startedAt) },
             countsDown: false
         )
         .monospacedDigit()

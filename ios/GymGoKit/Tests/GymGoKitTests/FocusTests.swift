@@ -213,6 +213,104 @@ private func log(_ session: inout WatchSession, _ weight: Double, _ reps: Int, a
     #expect(state.rest == nil)
 }
 
+/// The superset station with b-s0 logged on the wrist and confirmed by the
+/// phone: gone from the list, and in Lift b's `doneToday`.
+private func confirmingTheFirstHalf(at sentAt: Date) throws -> WatchContext {
+    var object = try snapshotObject("a superset and a pyramid")
+    object["sentAt"] = iso(sentAt)
+    object["sets"] = (object["sets"] as! [[String: Any]]).filter { $0["id"] as! String != "b-s0" }
+    var lifts = object["lifts"] as! [String: Any]
+    var liftB = lifts["ex-b"] as! [String: Any]
+    liftB["doneToday"] = [["setId": "b-s0", "weight": 40, "reps": 12, "completedAt": iso(minute(10))]]
+    lifts["ex-b"] = liftB
+    object["lifts"] = lifts
+    return try context(sentAt: sentAt, live: object)
+}
+
+/// The superset first, its first half logged and its Undo window closed.
+private func firstHalfLogged() throws -> WatchAppState {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: snapshotObject("a superset and a pyramid")))
+    _ = state.go(toStation: 1, at: minute(6))
+    let half = state.logSet(weight: 40, reps: 12, at: minute(10))
+    #expect(half?.outcome.restSeconds == nil && state.rest == nil)
+    let closed = state.closeUndo()
+    let held = try #require(closed)
+    state.acknowledge([held.id])
+    return state
+}
+
+@Test func skippingThePartnerStartsItsRestAfterThePhoneConfirmedTheFirstHalf() throws {
+    var state = try firstHalfLogged()
+    // The phone, awake, applies the set and sends a newer list without it.
+    let applied = state.apply(try confirmingTheFirstHalf(at: minute(10.2)))
+    #expect(applied.updated)
+    #expect(state.setInHand?.set.id == "c-s0")
+
+    let skipped = state.skipSetInHand(at: minute(11), restId: "handed")
+    #expect(skipped)
+    let rest = try #require(state.rest)
+    #expect(rest.id == "handed" && rest.seconds == 90 && rest.startedAt == minute(11))
+    #expect(rest.upNext == UpNext(name: "Lift b", detail: "Set 2 of 3 · 40 × 12"))
+    // Once.
+    #expect(state.handOffFrom == nil)
+}
+
+@Test func doneWithThisLiftStartsThePartnersRestAfterThePhoneConfirmedTheFirstHalf() throws {
+    var state = try firstHalfLogged()
+    state.apply(try confirmingTheFirstHalf(at: minute(10.2)))
+
+    let doneWith = state.skipStationInHand(at: minute(11), restId: "handed")
+    #expect(doneWith)
+    let rest = try #require(state.rest)
+    #expect(rest.id == "handed" && rest.seconds == 90)
+    #expect(rest.upNext == UpNext(name: "Lift a", detail: "Barbell · 3 × 5"))
+    #expect(state.setInHand?.set.id == "a-s0")
+}
+
+@Test func anUndoneSetGivesTheHandOffBackToTheSetBeforeIt() throws {
+    var state = try firstHalfLogged()
+    // The partner logged, then taken back: skipping it now hands the first
+    // half's rest on, as it would have before.
+    _ = state.logSet(weight: 25, reps: 15, at: minute(11))
+    #expect(state.handOffFrom == nil && state.rest?.seconds == 90)
+    _ = state.undoLastSet(at: minute(11.05))
+    #expect(state.rest == nil && state.handOffFrom == "c-s0")
+    let skipped = state.skipSetInHand(at: minute(12))
+    #expect(skipped && state.rest?.seconds == 90)
+}
+
+@Test func aFirstHalfBroughtBackAfterItsPartnerWasDoneRestsAsThePartner() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: snapshotObject("a superset and a pyramid")))
+    _ = state.go(toStation: 1, at: minute(6))
+    // Lift b's machine is busy: its first set is skipped, the rest done.
+    _ = state.skipSetInHand(at: minute(6))
+    for m in 7...11 {
+        _ = state.skipRest(at: minute(Double(m)))
+        _ = state.logSet(weight: 40, reps: 12, at: minute(Double(m)))
+    }
+    _ = state.skipRest(at: minute(12))
+    #expect(state.session?.stationProgress(1) == StationProgress(done: 5, left: 0, skipped: 1))
+    // Brought back from This session, and logged: the partner's rest, not
+    // straight on to the next lift.
+    let back = state.go(toStation: 1, at: minute(13))
+    #expect(back && state.setInHand?.set.id == "b-s0")
+    let result = state.logSet(weight: 40, reps: 12, at: minute(14))
+    let logged = try #require(result)
+    #expect(logged.outcome.set.restAfter == nil)
+    #expect(logged.outcome.restSeconds == 90)
+    #expect(state.rest?.seconds == 90)
+    #expect(state.rest?.upNext == UpNext(name: "Lift a", detail: "Barbell · 3 × 5"))
+
+    // A first half whose partner is still to do still goes straight on.
+    var inOrder = WatchAppState()
+    inOrder.apply(try context(sentAt: minute(5), live: snapshotObject("a superset and a pyramid")))
+    _ = inOrder.go(toStation: 1, at: minute(6))
+    let half = inOrder.logSet(weight: 40, reps: 12, at: minute(7))
+    #expect(half?.outcome.restSeconds == nil && inOrder.rest == nil)
+}
+
 @Test func aSkipDuringARestSaysWhatIsNextNow() throws {
     var state = WatchAppState()
     state.apply(try context(sentAt: minute(5), live: snapshotObject("two straight lifts")))
@@ -225,6 +323,61 @@ private func log(_ session: inout WatchSession, _ weight: Double, _ reps: Int, a
     let back = state.go(toStation: 0, at: minute(7))
     #expect(back)
     #expect(state.rest?.upNext == UpNext(name: "Lift a", detail: "Set 2 of 3 · 100 × 5"))
+}
+
+@Test func aRestSaysWhatIsNextAfterThePhoneMovesAnExerciseEarlier() throws {
+    let original = try snapshotObject("a plan, last time, a step down and an AMRAP set")
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: original))
+    _ = state.logSet(weight: 90, reps: 8, at: minute(6))
+    _ = state.skipRest(at: minute(7))
+    _ = state.logSet(weight: 90, reps: 8, at: minute(8))
+    #expect(state.rest?.upNext == UpNext(name: "Incline Dumbbell Press", detail: "Dumbbell · 3 × 8–12"))
+
+    // The incline bench is taken: on the companion, Move earlier on the pull-ups.
+    var moved = original
+    var stations = moved["stations"] as! [[String: Any]]
+    stations.swapAt(1, 2)
+    moved["stations"] = stations
+    let sets = (moved["sets"] as! [[String: Any]]).map { set -> [String: Any] in
+        var set = set
+        set["station"] = set["exerciseId"] as! String == "ex-c" ? 1 : set["exerciseId"] as! String == "ex-b" ? 2 : 0
+        return set
+    }
+    moved["sets"] = sets.filter { $0["station"] as! Int == 0 } + sets.filter { $0["station"] as! Int == 1 }
+        + sets.filter { $0["station"] as! Int == 2 }
+    moved["sentAt"] = iso(minute(8.5))
+    let applied = state.apply(try context(sentAt: minute(8.5), live: moved))
+    #expect(applied.updated)
+    #expect(state.setInHand?.lift.name == "Pull-up")
+    #expect(state.rest?.upNext == UpNext(name: "Pull-up", detail: "Bodyweight · 2 × 6–10"))
+    // What the phone and the Live Activity hear.
+    let report = state.report(at: minute(8.6), heartRate: nil, activeKcal: nil, health: .recording)
+    #expect(report.rest?.upNext == UpNext(name: "Pull-up", detail: "Bodyweight · 2 × 6–10"))
+}
+
+@Test func aRestSaysWhatIsNextAfterThePhoneAddsASet() throws {
+    let original = try snapshotObject("two straight lifts")
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: original))
+    for m in 6...8 {
+        _ = state.skipRest(at: minute(Double(m)))
+        _ = state.logSet(weight: 100, reps: 5, at: minute(Double(m)))
+    }
+    #expect(state.rest?.upNext == UpNext(name: "Lift b", detail: "Dumbbell · 3 × 10"))
+
+    // Add set on the lift just finished, mid-rest.
+    var added = original
+    var sets = added["sets"] as! [[String: Any]]
+    var extra = sets[2]
+    extra["id"] = "a-s3"
+    extra["label"] = "Set 4 of 4"
+    sets.insert(extra, at: 3)
+    added["sets"] = sets
+    added["sentAt"] = iso(minute(8.5))
+    state.apply(try context(sentAt: minute(8.5), live: added))
+    #expect(state.setInHand?.set.id == "a-s3")
+    #expect(state.rest?.upNext == UpNext(name: "Lift a", detail: "Set 4 of 4 · 100 × 5"))
 }
 
 @Test func aSkippedSetNeverHoldsBackTheLastSetCue() throws {

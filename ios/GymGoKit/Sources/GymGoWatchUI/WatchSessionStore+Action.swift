@@ -66,12 +66,12 @@ extension WatchSessionStore {
         return workout.isRunning
     }
 
-    /// A press while the session runs: the donated next action. The phone
-    /// logging → nothing; paused → resume; resting → skip the rest; a set in
-    /// hand → Done with the numbers on screen, or the failure tap when that
-    /// has no reps yet (the screen would ask for them; a press never logs
-    /// 0 × 0; `logSetOnScreen` plays the tap, once); anything else →
-    /// nothing. A press never finishes a workout.
+    /// A press while the session runs: the donated next action. Paused →
+    /// resume, whoever logs; the phone logging → nothing; resting → skip
+    /// the rest; a set in hand → Done with the numbers on screen, or the
+    /// failure tap when that has no reps yet (the screen would ask for them;
+    /// a press never logs 0 × 0; `logSetOnScreen` plays the tap, once);
+    /// anything else → nothing. A press never finishes a workout.
     @discardableResult
     public func actionButtonPressed() -> ActionPress {
         let press = ActionPress.decide(
@@ -93,25 +93,47 @@ extension WatchSessionStore {
 
     /// Pause: the pause intent (the Action and side buttons together), or
     /// Pause on the metrics or controls page. The rest keeps its wall-clock
-    /// end; while paused, its rest-over notification is on.
+    /// end; while paused, its rest-over notification is on. Asked for on
+    /// the wrist, so it taps (`.paused`): wrist-down that is the only sign
+    /// it worked. Only a recording that runs pauses, so only that taps.
     public func pauseWorkout() {
         touched()
+        let pauses = workout.isRunning && !workout.isPaused
+        // Asked for now: a resume a logged set held back is overtaken.
+        resumeAfterUndo = nil
         workout.pause()
+        if pauses { haptics.play(.paused) }
         syncRestAlert()
     }
 
     /// Resume: the resume intent, a press while paused, or Resume on screen.
+    /// Asked for on the wrist, so it taps (`.resumed`). The resume a logged
+    /// set causes is not this: the set's own cue says that.
     public func resumeWorkout() {
         touched()
+        let resumes = workout.isPaused
+        resumeAfterUndo = nil
         workout.resume()
+        if resumes { haptics.play(.resumed) }
         syncRestAlert()
+    }
+
+    /// Both of the watch's buttons together paused or resumed the Health
+    /// workout (`WorkoutController.onButtonsPausedOrResumed`): asked for on
+    /// the wrist, so it taps, as Pause and Resume do.
+    func buttonsPausedOrResumed(_ answer: PauseRequest.Answer) {
+        touched()
+        resumeAfterUndo = nil
+        haptics.play(answer == .pause ? .paused : .resumed)
     }
 
     /// The Health session paused or resumed, however it came about
     /// (`WorkoutController.onPauseChanged`, wired in the watch target): the
     /// rest-over notification follows, and the phone hears of it now, once.
     /// `syncRestAlert` reports, since the report's `paused` changed; another
-    /// report here would wake the phone twice for one pause.
+    /// report here would wake the phone twice for one pause. No cue: this
+    /// also runs for a recovery and for the resume a logged set causes; the
+    /// cues are played where the lifter asked.
     public func workoutPauseChanged() {
         syncRestAlert()
     }

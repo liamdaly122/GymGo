@@ -61,20 +61,22 @@ public struct ActiveTime: Sendable, Equatable {
 ///
 /// | State | A press |
 /// |---|---|
+/// | Paused | resumes, whoever logs the sets |
 /// | The phone logs sets | nothing |
-/// | Paused | resumes |
 /// | Resting | skips the rest |
 /// | A set in hand | Done with the numbers on screen |
 /// | Anything else | nothing |
 ///
 /// A press never finishes a workout (Apple's guidance: a later press should
-/// carry the workout on, not stop it).
+/// carry the workout on, not stop it). Paused comes first: a resume touches
+/// no sets, so it cannot fight the phone, and no set logged on the phone
+/// resumes Health the way one logged on the wrist does.
 public enum ActionPress: Sendable, Equatable {
     case nothing, resume, skipRest, logSet
 
     public static func decide(phoneLogs: Bool, paused: Bool, resting: Bool, setInHand: Bool) -> ActionPress {
-        if phoneLogs { return .nothing }
         if paused { return .resume }
+        if phoneLogs { return .nothing }
         if resting { return .skipRest }
         if setInHand { return .logSet }
         return .nothing
