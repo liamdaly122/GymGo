@@ -66,12 +66,12 @@ extension WatchSessionStore {
         return workout.isRunning
     }
 
-    /// A press while the session runs: the donated next action. The phone
-    /// logging → nothing; paused → resume; resting → skip the rest; a set in
-    /// hand → Done with the numbers on screen, or the failure tap when that
-    /// has no reps yet (the screen would ask for them; a press never logs
-    /// 0 × 0; `logSetOnScreen` plays the tap, once); anything else →
-    /// nothing. A press never finishes a workout.
+    /// A press while the session runs: the donated next action. Paused →
+    /// resume, whoever logs; the phone logging → nothing; resting → skip
+    /// the rest; a set in hand → Done with the numbers on screen, or the
+    /// failure tap when that has no reps yet (the screen would ask for them;
+    /// a press never logs 0 × 0; `logSetOnScreen` plays the tap, once);
+    /// anything else → nothing. A press never finishes a workout.
     @discardableResult
     public func actionButtonPressed() -> ActionPress {
         let press = ActionPress.decide(

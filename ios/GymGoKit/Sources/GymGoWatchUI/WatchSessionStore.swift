@@ -131,6 +131,13 @@ public final class WatchSessionStore {
             undoTask?.cancel()
             sendEvent(released)
         }
+        if change.claimed, workout.isPaused {
+            // "Log on this phone": training carries on there, and a set
+            // logged on the phone never passes through `done`, so nothing
+            // would ever resume Health. Silent: asked for on the phone.
+            resumeAfterUndo = nil
+            workout.resume()
+        }
         settleHeldResume()
 
         if let ended = change.ended {

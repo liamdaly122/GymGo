@@ -269,6 +269,40 @@ private func liveContext(reps: Int? = 5, claim: [String: Any]? = nil) throws -> 
 }
 
 @MainActor
+@Test func logOnThisPhoneWhilePausedResumesHealth() throws {
+    let store = store()
+    store.receive(try liveContext())
+    store.workout.pauseChanged(paused: true, at: Date())
+    var cues: [WatchCue] = []
+    store.haptics.observe = { cues.append($0) }
+    store.receive(try liveContext(claim: ["workoutId": "w-1", "at": iso(Date())]))
+    #expect(store.state.owner == .phone)
+    #expect(store.workout.lastAskedFor == .resume)
+    // Asked for on the phone: no tap on the wrist.
+    #expect(!cues.contains(.resumed))
+
+    // Not paused: the claim leaves Health alone.
+    let recording = WatchSessionStore(workout: WorkoutController(), fileURL: nil, restAlerts: RestAlerts())
+    recording.receive(try liveContext())
+    recording.receive(try liveContext(claim: ["workoutId": "w-1", "at": iso(Date())]))
+    #expect(recording.workout.lastAskedFor == nil)
+}
+
+@MainActor
+@Test func aPressWhileThePhoneLogsAndHealthIsPausedResumes() throws {
+    let store = store()
+    store.receive(try liveContext(claim: ["workoutId": "w-1", "at": iso(Date())]))
+    // Paused after the claim: both buttons, or the controls page.
+    store.workout.pauseChanged(paused: true, at: Date())
+    var cues: [WatchCue] = []
+    store.haptics.observe = { cues.append($0) }
+    #expect(store.actionButtonPressed() == .resume)
+    #expect(store.workout.lastAskedFor == .resume)
+    #expect(cues == [.resumed])
+    #expect(store.session?.progress.done == 0)
+}
+
+@MainActor
 @Test func aPauseOrResumeIsReportedToThePhoneAtOnceAndOnlyOnce() throws {
     let store = store()
     // As the watch target wires it.

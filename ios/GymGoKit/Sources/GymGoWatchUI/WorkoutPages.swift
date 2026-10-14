@@ -191,7 +191,9 @@ struct AllLoggedView: View {
     }
 }
 
-/// The phone took logging back. The Health workout keeps recording here.
+/// The phone took logging back. The Health workout keeps recording here,
+/// which the claim makes so; paused since (both buttons, the controls), it
+/// says so, with Resume, since no set logged on the phone resumes it.
 struct LoggingOnPhoneView: View {
     let store: WatchSessionStore
 
@@ -207,10 +209,36 @@ struct LoggingOnPhoneView: View {
                 .foregroundStyle(Theme.chalk)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
-            Text("Health keeps recording on your watch.")
-                .font(Theme.text(12))
-                .foregroundStyle(Theme.muted)
-                .fixedSize(horizontal: false, vertical: true)
+            if store.workout.isPaused {
+                // As PausedLine: the state in blue, the thing to press in chalk.
+                Button {
+                    store.resumeWorkout()
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Health paused")
+                            .font(Theme.text(12, semiBold: true))
+                            .foregroundStyle(Theme.hot)
+                            .lineLimit(1)
+                        Text("Resume")
+                            .font(Theme.display(14, extraBold: true))
+                            .textCase(.uppercase)
+                            .lineLimit(1)
+                            .foregroundStyle(Theme.ground)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Theme.chalk))
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Health paused. Resume the workout")
+            } else {
+                Text("Health keeps recording on your watch.")
+                    .font(Theme.text(12))
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Spacer(minLength: 4)
             Button {
                 store.reclaim()
