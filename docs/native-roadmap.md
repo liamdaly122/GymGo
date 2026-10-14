@@ -872,3 +872,17 @@ because the app moves across unchanged, they come with it:
     with every rule ported. Until then nothing more is built on the phone
     side beyond what the week needs. The watch app is native Swift either
     way, and signing, TestFlight, Xcode Cloud and Apple Health carry over.
+
+## Decisions (14 October 2026)
+
+12. **The shell stays.** Four days into the trial Liam found the app "pretty
+    much the same as the Vercel app", which was the whole test. No SwiftUI
+    rewrite of the phone screens.
+13. **The watch comes next.** Phase 4 (the watch runs the session) starts
+    now. Phase 2's remaining steps (Xcode Cloud, retiring Vercel) and Phase 3
+    (rest alerts with the phone locked, the Live Activity) wait until after
+    the watch: builds already reach TestFlight by hand, and once the watch
+    runs the session Phase 3 is only the phone-only fallback.
+    The watch's logic and screens live in a Swift package, `GymGoKit`
+    (`ios/GymGoKit`), which builds and tests without Xcode's interface; the
+    watch target Liam adds in Xcode (guide 9.2) is a thin shell around it.
