@@ -32,6 +32,8 @@
 	<string>GymGo reads your body weight from Apple Health and your heart rate during a workout.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>GymGo saves your finished workouts to Apple Health.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
