@@ -440,8 +440,12 @@ public struct WatchAppState: Codable, Sendable, Equatable {
 
     // MARK: - To the phone
 
-    /// The next state report. Every one carries a higher `seq`.
-    public mutating func report(at date: Date, heartRate: Double?, activeKcal: Double?, health: WatchStateReport.Health) -> WatchStateReport {
+    /// The next state report. Every one carries a higher `seq`. `paused` is
+    /// when the Health workout was paused (`WorkoutController.pausedAt`), or
+    /// nil while it records.
+    public mutating func report(
+        at date: Date, heartRate: Double?, activeKcal: Double?, health: WatchStateReport.Health, paused: Date? = nil
+    ) -> WatchStateReport {
         seq += 1
         let running = session
         return WatchStateReport(
@@ -452,16 +456,20 @@ public struct WatchAppState: Codable, Sendable, Equatable {
             owner: owner,
             seenPhoneClaim: seenPhoneClaim,
             setId: setInHand?.set.id,
-            // Build 7's watch logic words the set in hand here; until then, none.
-            inHand: nil,
+            inHand: inHandReport,
             rest: rest.map { .init(endsAt: WatchSession.isoString($0.endsAt), startedAt: WatchSession.isoString($0.startedAt), upNext: $0.upNext) },
             skipped: running?.skipped ?? [],
-            // Pause arrives with build 7's WorkoutController; until then, never paused.
-            paused: nil,
+            paused: running != nil ? paused.map(WatchSession.isoString) : nil,
             heartRate: running != nil ? heartRate : nil,
             activeKcal: running != nil ? activeKcal : nil,
             health: health
         )
+    }
+
+    /// The set in hand as its screen shows it: the lift, and "Set 2 of 4 ·
+    /// 100 × 5". Nil while the phone logs, or with nothing in hand.
+    var inHandReport: WatchStateReport.InHand? {
+        setInHand.map { WatchStateReport.InHand(name: $0.lift.name, detail: $0.screenDetail) }
     }
 
     /// What a state report says, less its clock, its number and the live
@@ -472,15 +480,24 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         var owner: WatchStateReport.Owner
         var seenPhoneClaim: String?
         var setId: String?
+        var inHand: WatchStateReport.InHand?
         var restEndsAt: Date?
+        var restUpNext: UpNext?
+        var skipped: [String]
+        var paused: Date?
     }
 
-    public var reportKey: ReportKey {
+    /// The report's key with the workout recording, or paused at `paused`.
+    public func reportKey(paused: Date?) -> ReportKey {
         ReportKey(
             workoutId: session?.workoutId ?? lastEnded, running: session != nil, owner: owner,
-            seenPhoneClaim: seenPhoneClaim, setId: setInHand?.set.id, restEndsAt: rest?.endsAt
+            seenPhoneClaim: seenPhoneClaim, setId: setInHand?.set.id, inHand: inHandReport,
+            restEndsAt: rest?.endsAt, restUpNext: rest?.upNext, skipped: session?.skipped ?? [],
+            paused: session != nil ? paused : nil
         )
     }
+
+    public var reportKey: ReportKey { reportKey(paused: nil) }
 
     // MARK: - Session lifecycle
 
