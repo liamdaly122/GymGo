@@ -209,6 +209,58 @@ private func claim(_ workoutId: String, at: Date) -> [String: Any] {
     #expect(state.session?.workoutId == "w-again")
 }
 
+@Test func aWristStartThePhoneDiscardedCanBeStartedAgainFromTheWrist() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), ready: readyObject()))
+    let stale = try #require(state.home?.ready)
+    _ = state.start(stale, at: minute(6), eventId: "start")
+    #expect(state.session?.workoutId == "w-ready")
+
+    // Discard on the phone: the session ends here, and the phone offers the
+    // same slot again with new IDs.
+    let change = state.apply(try context(
+        sentAt: minute(8), ready: readyObject(workoutId: "w-again"), closed: [closed("w-ready", "discarded", at: minute(7))]
+    ))
+    #expect(change.ended?.how == .discarded)
+    #expect(state.session == nil)
+    #expect(state.usedReadyKeys.isEmpty)
+    let card = state.todayCard(now: minute(9), timeZone: london)
+    #expect(card.canStart)
+    #expect(card.heading != "Done today")
+    #expect(state.start(state.home!.ready!, at: minute(9)) != nil)
+    #expect(state.session?.workoutId == "w-again")
+}
+
+@Test func aWristStartThePhoneDeletedFromHistoryCanBeStartedAgain() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), ready: readyObject()))
+    _ = state.start(state.home!.ready!, at: minute(6), eventId: "start")
+    _ = state.logSet(weight: 100, reps: 5, at: minute(7))
+    _ = state.finish(at: minute(30), eventId: "fin")
+    #expect(state.todayCard(now: minute(31), timeZone: london).kind == .started)
+
+    // The phone has applied the start and the finish (it lists the workout),
+    // and still offers that slot: the workout was deleted from history.
+    state.apply(try context(
+        sentAt: minute(40), ready: readyObject(workoutId: "w-again"), closed: [closed("w-ready", "finished", at: minute(30))]
+    ))
+    #expect(state.todayCard(now: minute(41), timeZone: london).canStart)
+    #expect(state.start(state.home!.ready!, at: minute(41)) != nil)
+}
+
+@Test func aWristStartIsNotOfferedAgainBeforeThePhoneHasIt() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), ready: readyObject()))
+    _ = state.start(state.home!.ready!, at: minute(6), eventId: "start")
+    _ = state.finish(at: minute(30), eventId: "fin")
+    // A context from before the drain, with another workout closed: the key stays used.
+    state.apply(try context(
+        sentAt: minute(31), ready: readyObject(workoutId: "w-new"), closed: [closed("w-other", "discarded", at: minute(2))]
+    ))
+    #expect(!state.todayCard(now: minute(32), timeZone: london).canStart)
+    #expect(state.start(state.home!.ready!, at: minute(32)) == nil)
+}
+
 @Test func nothingStartsWhileASessionRuns() throws {
     var state = WatchAppState()
     state.apply(try context(live: live("w-1"), ready: readyObject()))

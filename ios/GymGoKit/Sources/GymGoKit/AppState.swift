@@ -165,10 +165,22 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         phoneClaim = context.phoneClaim
         liveWorkoutId = context.live?.workoutId
 
-        // Finish or Discard on the phone ends the session here.
+        // Finish or Discard on the phone ends the session here. A start on the
+        // wrist that the phone threw away did not use its ready key, as a
+        // Discard here does not: the phone offers that session again.
         if let running = session, let closed = context.home.closed.first(where: { $0.workoutId == running.workoutId }) {
+            if closed.how == .discarded { releaseReadyKey(of: running.workoutId) }
             endSession(summary: closed.how == .finished ? .finishedOnPhone : nil, at: closed.at)
             change.ended = closed
+        }
+
+        // The phone has the workout the wrist started from this offer, and
+        // still offers the same slot: it was deleted, or filed elsewhere, and
+        // the slot is open again. The phone decides what is next.
+        if let offer = context.home.ready, let started = startedFrom, started.key == offer.key,
+           session?.workoutId != started.workoutId,
+           context.home.closed.contains(where: { $0.workoutId == started.workoutId }) {
+            releaseReadyKey(of: started.workoutId)
         }
 
         if let live = context.live {
@@ -302,11 +314,15 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public mutating func discard(at date: Date, eventId: String = UUID().uuidString) -> WatchEvent? {
         guard var running = session, let event = running.discard(at: date, eventId: eventId) else { return nil }
         session = running
-        if let started = startedFrom, started.workoutId == running.workoutId {
-            usedReadyKeys.removeAll { $0 == started.key }
-        }
+        releaseReadyKey(of: running.workoutId)
         endSession(summary: nil, at: WatchSession.isoString(date))
         return event
+    }
+
+    /// The ready key a workout was started from on the wrist may start again.
+    private mutating func releaseReadyKey(of workoutId: String) {
+        guard let started = startedFrom, started.workoutId == workoutId else { return }
+        usedReadyKeys.removeAll { $0 == started.key }
     }
 
     /// "Log here instead": the watch takes logging back, having seen the
