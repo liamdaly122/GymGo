@@ -56,7 +56,7 @@ to be applied.
 | Kind | Sent when | Phone applies it by |
 |---|---|---|
 | `startWorkout` | Start on the watch's Today page | `replayWatchStart(layout, at)`: writes exactly the workout, exercise and set rows in the layout, with `started_at = at`. Skipped if a workout with that ID already exists, even a deleted one. Filed under the block slot the layout was offered for only if that slot is still the one `planSlot` gives now; otherwise filed with the plan but no week or session index. If an empty workout is open on the phone, it is discarded first; one with sets is kept and both stay open. Exercises missing from the library are dropped with their sets. |
-| `completeSet` | Done, double tap or the Action button | `completeSetWith(setId, {weight, reps}, {completedAt: at})`. **Deferred** (left in the inbox, not acknowledged) while the workout row does not exist yet. Skipped if the set or workout is gone or finished, or if the set was completed at a time `>=` this one. |
+| `completeSet` | Done or double tap (the Action button is not wired up yet: it needs an App Intent, roadmap 4.4) | `completeSetWith(setId, {weight, reps}, {completedAt: at})`. **Deferred** (left in the inbox, not acknowledged) while the workout row does not exist yet. Skipped if the set or workout is gone or finished, or if the set was completed at a time `>=` this one. |
 | `skipRest` | Skip on the rest | Nothing to write. Acknowledged. |
 | `finish` | Finish and save on the watch | First applies `sets` (the watch's unconfirmed completeSets), deduped by ID, then `finishWorkout`. Then writes the phone's snapshot (`snapshotEverything`). |
 | `discard` | Discard on the watch (offered only before the first set is logged) | `discardWorkout`. |
