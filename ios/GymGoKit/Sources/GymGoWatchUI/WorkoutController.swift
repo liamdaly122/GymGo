@@ -60,6 +60,9 @@ public final class WorkoutController: NSObject {
     @ObservationIgnored private var ending = false
     @ObservationIgnored private var closed = false
     @ObservationIgnored private var waiters: [CheckedContinuation<Bool, Never>] = []
+    /// Closes the session being ended if `.stopped` never arrives. Tied to
+    /// that session: it can never close a later one.
+    @ObservationIgnored private var fallback: Task<Void, Never>?
 
     static let share: Set<HKSampleType> = [
         HKObjectType.workoutType(),
@@ -240,6 +243,8 @@ public final class WorkoutController: NSObject {
 
     #if os(watchOS)
     private func adopt(_ session: HKWorkoutSession, _ builder: HKLiveWorkoutBuilder) {
+        fallback?.cancel()
+        fallback = nil
         self.session = session
         self.builder = builder
         isRunning = true
@@ -262,21 +267,25 @@ public final class WorkoutController: NSObject {
             switch session.state {
             case .running, .paused:
                 session.stopActivity(with: Date())
-                // If `.stopped` never arrives, close anyway.
-                Task { [weak self] in
+                // If `.stopped` never arrives, close anyway: this session,
+                // and never one started after it.
+                fallback?.cancel()
+                fallback = Task { [weak self] in
                     try? await Task.sleep(for: .seconds(8))
-                    await self?.close(at: Date())
+                    guard !Task.isCancelled, let self, self.session === session else { return }
+                    await self.close(session, at: Date())
                 }
             default:
-                Task { await self.close(at: Date()) }
+                Task { await self.close(session, at: Date()) }
             }
         }
     }
 
     /// Runs once the session has stopped: end the collection, save or
-    /// discard, end the session.
-    private func close(at date: Date) async {
-        guard !closed, let session, let builder else { return }
+    /// discard, end the session. Only for the session it is given, while it
+    /// is still the one here.
+    private func close(_ target: HKWorkoutSession, at date: Date) async {
+        guard !closed, let session, session === target, let builder else { return }
         closed = true
         var saved = false
         // Each step bounded, so a HealthKit call that never answers cannot
@@ -295,6 +304,9 @@ public final class WorkoutController: NSObject {
             if !saved { lastError = "The Health workout was not saved" }
         }
         session.end()
+        // Ended meanwhile (`.ended` already tore it down and answered), or
+        // another session is here now: neither is this close's to touch.
+        guard self.session === target else { return }
         teardown()
         resolve(saved)
     }
@@ -306,6 +318,8 @@ public final class WorkoutController: NSObject {
     }
 
     private func teardown() {
+        fallback?.cancel()
+        fallback = nil
         session = nil
         builder = nil
         isRunning = false
@@ -316,7 +330,7 @@ public final class WorkoutController: NSObject {
         guard changed === session else { return }
         switch state {
         case .stopped:
-            await close(at: date)
+            await close(changed, at: date)
         case .ended:
             // Ended without Finish or Discard here: another workout app took
             // over, or watchOS ended it. What it collected is not saved.
