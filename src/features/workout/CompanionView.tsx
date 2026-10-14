@@ -31,6 +31,7 @@ export default function CompanionView({
   pro,
   defaultRest,
   watchSetId,
+  skipped,
   onAdd,
   onToast,
 }: {
@@ -44,6 +45,8 @@ export default function CompanionView({
   defaultRest: number;
   /** The set the watch has in hand. */
   watchSetId: string | null;
+  /** Sets the watch skipped, from its report: it will not ask for them. */
+  skipped: readonly string[];
   onAdd: () => void;
   onToast: (message: string) => void;
 }) {
@@ -87,6 +90,7 @@ export default function CompanionView({
         pro={pro}
         defaultRest={defaultRest}
         watchSetId={watchSetId}
+        skipped={skipped}
         kicker={kicker}
         following={following}
         onBack={following ? null : () => show(null)}
