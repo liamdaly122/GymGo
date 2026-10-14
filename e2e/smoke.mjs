@@ -90,8 +90,14 @@ await step('the logged set is a chip showing what was done', async () => {
 await step('add a second set carries the weight forward', async () => {
   await page.getByRole('button', { name: 'Add set' }).click();
   await page.waitForTimeout(300);
-  const v = await page.getByLabel('Set 2 weight in kilograms').inputValue();
-  if (v !== '100') throw new Error(`expected prefilled 100, got "${v}"`);
+  // Carried as the placeholder, not typed into the set: Done logs it, and
+  // after a set short of a range it would start a notch lighter.
+  const field = page.getByLabel('Set 2 weight in kilograms');
+  const v = await field.inputValue();
+  const placeholder = await field.getAttribute('placeholder');
+  if (v !== '' || placeholder !== '100') {
+    throw new Error(`expected 100 carried as the placeholder, got value "${v}" and placeholder "${placeholder}"`);
+  }
 });
 
 await page.screenshot({ path: 'e2e/shot-workout.png' });
