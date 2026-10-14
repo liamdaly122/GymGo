@@ -30,6 +30,7 @@
 		5A1C0DE0A0000000000000B1 /* WatchLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE0A0000000000000B0 /* WatchLink.swift */; };
 		5A1C0DE0A0000000000000B3 /* WatchBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE0A0000000000000B2 /* WatchBridgePlugin.swift */; };
 		5A1C0DE0A0000000000000B5 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE0A0000000000000B4 /* MainViewController.swift */; };
+		5A1C0DE0A0000000000000B7 /* LiveSessionActivities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0DE0A0000000000000B6 /* LiveSessionActivities.swift */; };
 		9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9582B6822FE993A50072D4E8 /* SceneDelegate.swift */; };
 /* End PBXBuildFile section */
 
@@ -116,6 +117,7 @@
 		5A1C0DE0A0000000000000B0 /* WatchLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchLink.swift; sourceTree = "<group>"; };
 		5A1C0DE0A0000000000000B2 /* WatchBridgePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBridgePlugin.swift; sourceTree = "<group>"; };
 		5A1C0DE0A0000000000000B4 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		5A1C0DE0A0000000000000B6 /* LiveSessionActivities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSessionActivities.swift; sourceTree = "<group>"; };
 		9582B6822FE993A50072D4E8 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
@@ -228,6 +230,7 @@
 				5A1C0DE0A0000000000000B0 /* WatchLink.swift */,
 				5A1C0DE0A0000000000000B2 /* WatchBridgePlugin.swift */,
 				5A1C0DE0A0000000000000B4 /* MainViewController.swift */,
+				5A1C0DE0A0000000000000B6 /* LiveSessionActivities.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -459,6 +462,7 @@
 				5A1C0DE0A0000000000000B1 /* WatchLink.swift in Sources */,
 				5A1C0DE0A0000000000000B3 /* WatchBridgePlugin.swift in Sources */,
 				5A1C0DE0A0000000000000B5 /* MainViewController.swift in Sources */,
+				5A1C0DE0A0000000000000B7 /* LiveSessionActivities.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

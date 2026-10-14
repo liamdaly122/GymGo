@@ -14,5 +14,9 @@
 	<array>
 		<string>workout-processing</string>
 	</array>
+	<key>WKSupportsLiveActivityLaunchAttributeTypes</key>
+	<array>
+		<string>GymGoSessionAttributes</string>
+	</array>
 </dict>
 </plist>

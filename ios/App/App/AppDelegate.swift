@@ -1,11 +1,15 @@
 import UIKit
 import AVFoundation
 import Capacitor
+import HealthKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
+    /// Holds the mirroring handler below for the life of the app: a store
+    /// made and dropped inside a function would take the handler with it.
+    private let health = HKHealthStore()
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // The rest beep and the record tone play over whatever is already
@@ -20,10 +24,48 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         } catch {
             print("GymGo: audio session not configured: \(error)")
         }
+        // The Live Activity is wired before the watch link starts, so the
+        // first report of a launch reaches it: a launch in the background (a
+        // watch's message, a mirrored workout) never loads the web view or
+        // the plugin, and the web app is frozen while the phone is locked.
+        wireLiveActivity()
         // The watch link starts in native code, so the watch can reach the
         // phone while the web view is frozen.
         WatchLink.shared.start()
         return true
+    }
+
+    private func wireLiveActivity() {
+        let live = LiveSessionActivities.shared
+        let link = WatchLink.shared
+        live.source = .init(
+            lastState: { link.lastState() },
+            inbox: { link.inbox() },
+            lastContext: { link.lastContext() }
+        )
+        // WatchLink calls these on the main queue.
+        link.onStateNative = { state in
+            MainActor.assumeIsolated { LiveSessionActivities.shared.receive(json: state.json, receivedAt: state.receivedAt) }
+        }
+        link.onStartingWatchWorkout = { context in
+            MainActor.assumeIsolated { LiveSessionActivities.shared.phoneStarting(context: context) }
+        }
+        link.onWatchWorkoutNotStarted = { context in
+            MainActor.assumeIsolated { LiveSessionActivities.shared.phoneStartFailed(context: context) }
+        }
+        live.begin()
+
+        // The watch mirrors its workout session to the phone once it runs.
+        // HealthKit then launches GymGo in the background, if it is not
+        // running, with a one-time permission to start a Live Activity: the
+        // only way one can start for a session begun on the wrist while the
+        // phone is locked. HealthKit asks for this to be set promptly at every
+        // launch. It is called on a background queue.
+        health.workoutSessionMirroringStartHandler = { session in
+            DispatchQueue.main.async {
+                LiveSessionActivities.shared.mirroredSessionStarted(session)
+            }
+        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

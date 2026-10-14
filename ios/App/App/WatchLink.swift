@@ -20,12 +20,17 @@ import WatchConnectivity
 /// - **From the watch, state:** the newest report, by `seq` (a later `at` lets
 ///   a lower `seq` through, as `reportFromWatch` does), stamped with the
 ///   phone's clock and kept on disk, so the web app can read it at launch.
+///   It also goes to the Live Activity (`onStateNative`), which is native
+///   because the web app is frozen while the phone is locked.
+/// - **The last context** the web app handed over is kept on disk too, so the
+///   Live Activity can name the session after a background launch, when
+///   WatchConnectivity's own copy may not be there yet.
 ///
 /// Every WatchConnectivity delegate method is called on a background queue.
 /// They copy the strings out and hand them to one serial queue, which is the
-/// only place the state below is read or written; the two callbacks are set
-/// and called on the main queue. That confinement is what the unchecked
-/// Sendable stands for.
+/// only place the state below is read or written; the callbacks are set and
+/// called on the main queue. That confinement is what the unchecked Sendable
+/// stands for.
 final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     static let shared = WatchLink()
 
@@ -42,13 +47,26 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     /// Called on the main queue when something new lands in the inbox.
     var onInbox: (() -> Void)?
     /// Called on the main queue with a newer state report: its JSON, and when it arrived (phone clock, epoch ms).
+    /// Set by WatchBridgePlugin, which loads only with the web view.
     var onState: ((_ json: String, _ receivedAt: Double) -> Void)?
+    /// The same report for native code: the Live Activity. Set in the app
+    /// delegate before `start()`, because a background launch (a watch's
+    /// message, a mirrored workout) may never load the web view or the plugin.
+    var onStateNative: ((ReceivedState) -> Void)?
+    /// Called on the main queue at the phone's Start, just before the watch is
+    /// asked to open GymGo, with the context just sent. The app is in the
+    /// foreground then, which is when a Live Activity may start.
+    var onStartingWatchWorkout: ((_ context: String?) -> Void)?
+    /// Called on the main queue when the watch could not be asked to open GymGo after all.
+    var onWatchWorkoutNotStarted: ((_ context: String?) -> Void)?
 
     private let queue = DispatchQueue(label: "com.liamdaly.gymgo.watchlink")
     private let health = HKHealthStore()
 
     // Only touched on `queue`.
     private var pendingContext: String?
+    private var contextLoaded = false
+    private var latestContext: String?
     private var retryTimer: DispatchSourceTimer?
     private var pendingAcks: [String] = []
     private var reacknowledged: Set<String> = []
@@ -57,8 +75,9 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     private var stateLoaded = false
     private var latestState: ReceivedState?
 
-    /// A state report as the phone holds it.
-    private struct ReceivedState: Codable {
+    /// A state report as the phone holds it: the watch's JSON, and when it
+    /// arrived (phone clock, epoch ms).
+    struct ReceivedState: Codable {
         var json: String
         var receivedAt: Double
     }
@@ -69,6 +88,7 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     private var inboxURL: URL { Self.folder.appendingPathComponent("watch-inbox.json") }
     private var appliedURL: URL { Self.folder.appendingPathComponent("watch-applied.json") }
     private var stateURL: URL { Self.folder.appendingPathComponent("watch-state.json") }
+    private var contextURL: URL { Self.folder.appendingPathComponent("watch-context.json") }
 
     func start() {
         guard WCSession.isSupported() else { return }
@@ -99,9 +119,33 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     /// The whole context, as JSON. Replaces any that has not gone yet.
     func send(context json: String) {
         queue.async {
+            self.remember(context: json)
             self.pendingContext = json
             self.flushContext()
         }
+    }
+
+    /// The newest context the web app handed over, sent or still waiting to
+    /// go; nil if it never has. Kept on disk, because a launch in the
+    /// background may come before WatchConnectivity has its own copy.
+    func lastContext() -> String? {
+        queue.sync { loadContext() }
+    }
+
+    /// On `queue`.
+    private func remember(context json: String) {
+        guard json != loadContext() else { return }
+        latestContext = json
+        write(json, to: contextURL)
+    }
+
+    /// On `queue`.
+    private func loadContext() -> String? {
+        if !contextLoaded {
+            latestContext = read(String.self, from: contextURL)
+            contextLoaded = true
+        }
+        return latestContext
     }
 
     /// On `queue`.
@@ -159,6 +203,13 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         guard session.isWatchAppInstalled else { return done(false, "GymGo is not installed on the watch.") }
         guard HKHealthStore.isHealthDataAvailable() else { return done(false, "Health is not available on this iPhone.") }
         let store = health
+        // The web app sent the context naming this workout just before asking:
+        // `send(context:)` queued it on `queue`, so reading it there comes after.
+        let context = lastContext()
+        // At the tap, while the app is certainly in the foreground: the Live
+        // Activity goes up now, not when the watch first reports, by which time
+        // the phone may be locked in a pocket.
+        DispatchQueue.main.async { self.onStartingWatchWorkout?(context) }
         Task {
             // Made here, where it is used: a workout configuration is not Sendable.
             let configuration = HKWorkoutConfiguration()
@@ -168,6 +219,7 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
                 try await store.startWatchApp(toHandle: configuration)
                 done(true, nil)
             } catch {
+                DispatchQueue.main.async { self.onWatchWorkoutNotStarted?(context) }
                 done(false, error.localizedDescription)
             }
         }
@@ -310,7 +362,10 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
         let record = ReceivedState(json: json, receivedAt: receivedAt)
         latestState = record
         write(record, to: stateURL)
-        DispatchQueue.main.async { self.onState?(json, receivedAt) }
+        DispatchQueue.main.async {
+            self.onState?(json, receivedAt)
+            self.onStateNative?(record)
+        }
     }
 
     /// On `queue`.
