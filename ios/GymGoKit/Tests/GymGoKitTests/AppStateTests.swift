@@ -200,7 +200,9 @@ private func claim(_ workoutId: String, at: Date) -> [String: Any] {
     #expect(state.summary == nil)
     #expect(state.unconfirmed.map(\.id) == ["start", "discard"])
 
-    // The stale offer, with the discarded workout's IDs, stays refused.
+    // The stale offer, with the discarded workout's IDs, stays refused when
+    // its layout is not one the watch can lay out again (this helper's does
+    // not list the snapshot's sets; FreshIdsTests has one that can).
     #expect(state.start(ready, at: minute(8)) == nil)
     #expect(state.todayCard(now: minute(8), timeZone: london).heading == "Discarded")
     // The phone's fresh offer of the same slot starts.

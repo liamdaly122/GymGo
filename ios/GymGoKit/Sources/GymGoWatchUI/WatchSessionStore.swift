@@ -140,7 +140,8 @@ public final class WatchSessionStore {
         save()
         keepReporting()
         reportIfChanged()
-        let workoutId = ready.snapshot.workoutId
+        // The session's own ID: a start again after a Discard here runs under new ones.
+        let workoutId = event.workoutId
         health { await self.startHealth(for: workoutId) }
     }
 
