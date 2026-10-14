@@ -19,7 +19,15 @@ import {
 import { exerciseSessions, planScheduleFor, sessionPreview, setSuggestion, suggestionFor } from './queries';
 import type { Plan, Workout, WorkoutExercise, WorkoutSet } from './schema';
 import { seedIfEmpty } from './seed';
-import { applyWatchEvent, applyWatchEvents, watchContextFor, watchSnapshotFor, WATCH_EVENT_TTL_MS, type WatchEvent } from './watch';
+import {
+  applyWatchEvent,
+  applyWatchEvents,
+  CLOSED_KEPT,
+  watchContextFor,
+  watchSnapshotFor,
+  WATCH_EVENT_TTL_MS,
+  type WatchEvent,
+} from './watch';
 import { buildPlan } from '@/domain/programmes/plan';
 import { localIsoDate } from '@/domain/schedule';
 import { parseStartLayout, type StartLayout } from '@/domain/startLayout';
@@ -84,6 +92,8 @@ const event = (overrides: Partial<WatchEvent>): WatchEvent => ({
 
 const startOf = (ready: WatchReady, at = new Date().toISOString()): WatchEvent =>
   event({ kind: 'startWorkout', workoutId: ready.snapshot.workoutId, at, routineId: ready.routineId, layout: ready.layout });
+
+const DAY = 24 * 60 * 60 * 1000;
 
 /** A minute apart, oldest first, ending now. */
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -797,24 +807,55 @@ describe('what the watch shows at home', () => {
     expect(home.week.some((day) => day.state === 'done')).toBe(true);
   });
 
-  it('lists the workouts that ended on the phone in the last day, finished or thrown away', async () => {
+  it('lists the workouts that ended on the phone, finished or thrown away, newest first', async () => {
     const finished = (await session()).workoutId;
     await completeSet((await rowsOf(finished)).sets[0]!.id);
     await finishWorkout(finished);
     const discarded = (await session()).workoutId;
     await discardWorkout(discarded);
-    const old = (await session()).workoutId;
-    await finishWorkout(old);
-    await db.workouts.update(old, { finished_at: new Date(Date.now() - 26 * 3_600_000).toISOString() });
+    await db.workouts.update(discarded, { deleted_at: new Date(Date.now() - 3_600_000).toISOString() });
+    const open = (await session()).workoutId;
 
     const { home } = await context();
 
-    expect(home.closed.map(({ workoutId, how }) => ({ workoutId, how })).sort((a, b) => a.how.localeCompare(b.how))).toEqual([
-      { workoutId: discarded, how: 'discarded' },
+    expect(home.closed.map(({ workoutId, how }) => ({ workoutId, how }))).toEqual([
       { workoutId: finished, how: 'finished' },
+      { workoutId: discarded, how: 'discarded' },
     ]);
+    expect(home.closed.some((entry) => entry.workoutId === open)).toBe(false);
     const stamped = (await db.workouts.get(finished))!.finished_at;
     expect(home.closed.find((entry) => entry.workoutId === finished)!.at).toBe(stamped);
+  });
+
+  /**
+   * The watch ends a session only when its workout is listed. Listed for a
+   * day only, a Finish on the phone never reached a watch that heard nothing
+   * that day, and its session ran on, holding Start back for good.
+   */
+  it('lists them by count, not by age, so a watch out of touch for days still hears', async () => {
+    const days = (count: number) => new Date(Date.now() - count * DAY).toISOString();
+    const finishedLongAgo = (await session()).workoutId;
+    await finishWorkout(finishedLongAgo);
+    await db.workouts.update(finishedLongAgo, { finished_at: days(3) });
+    const discardedLongAgo = (await session()).workoutId;
+    await discardWorkout(discardedLongAgo);
+    await db.workouts.update(discardedLongAgo, { deleted_at: days(4) });
+
+    expect((await context()).home.closed.map(({ workoutId, how }) => ({ workoutId, how }))).toEqual([
+      { workoutId: finishedLongAgo, how: 'finished' },
+      { workoutId: discardedLongAgo, how: 'discarded' },
+    ]);
+
+    // The newest CLOSED_KEPT, however recent.
+    const newer: string[] = [];
+    for (let index = 0; index < CLOSED_KEPT; index += 1) {
+      const workoutId = (await session()).workoutId;
+      await finishWorkout(workoutId);
+      await db.workouts.update(workoutId, { finished_at: new Date(Date.now() - (index + 1) * 60_000).toISOString() });
+      newer.push(workoutId);
+    }
+    const { closed } = (await context()).home;
+    expect(closed.map((entry) => entry.workoutId)).toEqual(newer);
   });
 
   it('carries the phone\'s claim and switches through untouched', async () => {

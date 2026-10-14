@@ -126,6 +126,14 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * How many of the workouts that ended on the phone the context lists, newest
+ * first. By count, not by age: the watch ends its running session only when
+ * that workout is listed, so a watch that hears nothing for a few days must
+ * still find it. About 100 bytes each, far inside the context's limit.
+ */
+export const CLOSED_KEPT = 20;
+
+/**
  * The current calendar week as the phone's calendar strip shows it: each day
  * done, planned, today or a rest day, with the session's name. Where a day
  * holds two sessions, the one still to do is the one shown, as on the phone.
@@ -205,9 +213,9 @@ async function readySession(
  * Everything the phone sends the watch, built whole every time: the workout
  * open on the phone, and what the watch shows when none is running.
  *
- * `today` is the phone's day (any time on it). Workouts that ended on the
- * phone in the last 24 hours are listed in `closed`, which is how Finish and
- * Discard on the phone reach the watch.
+ * `today` is the phone's day (any time on it). The newest workouts that
+ * ended on the phone, however long ago, are listed in `closed`, which is how
+ * Finish and Discard on the phone reach the watch.
  */
 export async function watchContextFor(
   today: Date,
@@ -215,7 +223,6 @@ export async function watchContextFor(
   options: { phoneClaim: { workoutId: string; at: string } | null; settings: { sound: boolean; vibrate: boolean } },
 ): Promise<WatchContext> {
   const sentAt = nowIso();
-  const now = Date.parse(sentAt);
   const todayIso = localIsoDate(today);
   const stored = await db.settings.get(SETTINGS_ID);
   const snapshotOptions = { sentAt, defaultRest: stored?.default_rest_seconds };
@@ -242,18 +249,19 @@ export async function watchContextFor(
     doneToday.push({ workoutId: workout.id, name: await workoutTitle(workout) });
   }
 
-  // Finished, or thrown away after being started, in the last day. A
-  // finished workout deleted later from history still ended as a finish.
-  const recent = (iso: string | null): iso is string => iso !== null && now - Date.parse(iso) <= DAY_MS;
+  // Finished, or thrown away after being started: the newest, whatever their
+  // age. Listed only for the last day, a Finish on the phone never reached a
+  // watch that was not woken for a context within a day, and its session ran
+  // on for ever, holding Start back. A finished workout deleted later from
+  // history still ended as a finish.
   const closed: WatchHome['closed'] = workouts
     .flatMap((workout): WatchHome['closed'] => {
-      if (recent(workout.finished_at)) return [{ workoutId: workout.id, how: 'finished', at: workout.finished_at }];
-      if (workout.finished_at === null && recent(workout.deleted_at)) {
-        return [{ workoutId: workout.id, how: 'discarded', at: workout.deleted_at }];
-      }
+      if (workout.finished_at !== null) return [{ workoutId: workout.id, how: 'finished', at: workout.finished_at }];
+      if (workout.deleted_at !== null) return [{ workoutId: workout.id, how: 'discarded', at: workout.deleted_at }];
       return [];
     })
-    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .slice(0, CLOSED_KEPT);
 
   const planned = await planScheduleFor(today);
   const ready =
