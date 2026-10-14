@@ -82,6 +82,7 @@ const { applyWatchEvents, watchContextFor } = await import('@/db/watch');
 const { snapshotEverything } = await import('./snapshots');
 const { getWatchState, reportFromWatch, resetWatchState, takeLoggingBack, clearTakeBack } = await import('./watchState');
 const { drainWatchInbox, startWatchLink } = await import('./watch');
+const { finishedOnWatch, resetCelebrations } = await import('@/lib/celebrate');
 
 const applyMock = vi.mocked(applyWatchEvents);
 const contextMock = vi.mocked(watchContextFor);
@@ -182,6 +183,41 @@ describe('the link with the watch, inside the app', () => {
     applyMock.mockResolvedValue({ acknowledge: ['f'], keep: [], finished: ['w-1'], revived: [] });
     await drainWatchInbox();
     expect(snapshotEverything).toHaveBeenCalledTimes(1);
+  });
+
+  it("notes a Finish on the wrist for Today's poster, and nothing else", async () => {
+    resetCelebrations();
+    h.state.inbox = [event('late-2')];
+    applyMock.mockResolvedValue({ acknowledge: ['late-2'], keep: [], finished: [], revived: ['w-1'] });
+    await drainWatchInbox();
+    expect(finishedOnWatch()).toEqual([]);
+
+    h.state.inbox = [event('f-7', 'finish')];
+    applyMock.mockResolvedValue({ acknowledge: ['f-7'], keep: [], finished: ['w-7'], revived: [] });
+    const before = Date.now();
+    await drainWatchInbox();
+    expect(finishedOnWatch().map((entry) => entry.id)).toEqual(['w-7']);
+    expect(Date.parse(finishedOnWatch()[0]!.at)).toBeGreaterThanOrEqual(before - 1);
+    // Kept where the next launch finds it.
+    expect(JSON.parse(localStorage.getItem('gymgo.celebrate.finishedOnWatch') ?? '[]')).toHaveLength(1);
+    resetCelebrations();
+  });
+
+  it('notes the Finish even when acknowledging it fails', async () => {
+    resetCelebrations();
+    h.state.inbox = [event('f-8', 'finish')];
+    applyMock.mockResolvedValue({ acknowledge: ['f-8'], keep: [], finished: ['w-8'], revived: [] });
+    const acknowledge = h.bridge.acknowledge;
+    h.bridge.acknowledge = async () => {
+      throw new Error('the native side went away');
+    };
+    try {
+      await drainWatchInbox();
+    } finally {
+      h.bridge.acknowledge = acknowledge;
+    }
+    expect(finishedOnWatch().map((entry) => entry.id)).toEqual(['w-8']);
+    resetCelebrations();
   });
 
   it('writes it again when a drain put a late set back into a finished workout', async () => {

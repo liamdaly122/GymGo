@@ -290,6 +290,13 @@ input[type='number']::-webkit-outer-spin-button {
   .resume .btn { min-height: 40px; background: var(--color-ink); color: var(--color-chalk); }
 
   /* ---------- Today ---------- */
+  /* A session finished on the watch with no screen to say so: Today offers
+     its "Done." once. Blue, the highlight, as news is; the way in is a
+     secondary button, because chalk stays the next session's Start. */
+  .watch-done { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; border-radius: 6px; background: rgba(91, 132, 255, 0.12); }
+  .watch-done-txt { flex: 1 1 10rem; min-width: 0; }
+  .watch-done .kicker { font-size: 1.125rem; line-height: 1.1; }
+  .watch-done .t-meta { overflow-wrap: anywhere; }
   .hero { display: flex; flex-direction: column; gap: 18px; }
   .hero-title {
     margin: 4px 0 0;

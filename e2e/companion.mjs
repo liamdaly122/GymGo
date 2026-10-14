@@ -13,8 +13,9 @@
  * Pro, every way logging comes back to the phone (the watch's session ending,
  * five minutes of silence, an hour of a pause, another workout, "Log on this
  * phone"), "Paused" in the watch bar, the watch reclaiming, Finish from the
- * companion and from the watch, a workout deleted from under the screen, and
- * the routine editor refusing a second open workout.
+ * companion and from the watch, Today's "Finished on your watch" for a wrist
+ * Finish no screen showed (and none for one that was), a workout deleted from
+ * under the screen, and the routine editor refusing a second open workout.
  *
  * Display type is upper-cased by CSS and innerText sees the capitals, so text
  * checks match without case or read accessible names.
@@ -103,6 +104,16 @@ const endWatch = async () => {
 /** A mutation as a tap would make it, through the app's own module, for what the watch's drain would apply. */
 const mutate = (name, ...args) =>
   p.evaluate(async ([fn, values]) => (await import('/src/db/mutations.ts'))[fn](...values), [name, args]);
+/**
+ * The watch's Finish as the drain applies it inside the app: the workout
+ * finished, then noted for Today (`recordFinishedOnWatch`, which the browser
+ * never reaches on its own, because the drain runs only inside the app).
+ */
+const finishOnWatch = async (id) => {
+  await mutate('finishWorkout', id);
+  await p.evaluate(async (value) => (await import('/src/lib/celebrate.ts')).recordFinishedOnWatch([value]), id);
+};
+const watchFinishBanner = () => p.getByRole('region', { name: 'Finished on your watch' });
 
 const doneBar = () => p.getByRole('button', { name: /^Mark (set|warm-up|drop)/i });
 const setFields = () => p.getByLabel(/^Set \d+ weight in kilograms$/);
@@ -509,9 +520,16 @@ await step("the watch's Finish takes the open screen to the summary, once", asyn
   await report({ workoutId: watchFinished, setId: null });
   await watching().waitFor({ timeout: 5000 });
   // What the phone's drain does with the watch's Finish event.
-  await mutate('finishWorkout', watchFinished);
+  await finishOnWatch(watchFinished);
   await p.waitForURL(new RegExp(`#/history/${watchFinished}`), { timeout: 10000 });
   await p.getByRole('heading', { name: 'Done.' }).waitFor({ timeout: 10000 });
+});
+
+await step('a watch Finish the screen showed is not offered again on Today', async () => {
+  await p.goto(BASE, { waitUntil: 'networkidle' });
+  await p.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 10000 });
+  await p.waitForTimeout(800);
+  if (await watchFinishBanner().count()) throw new Error('Today offered a poster that was already shown');
 });
 
 await step('opening a finished workout goes to its summary, without the poster', async () => {
@@ -519,6 +537,46 @@ await step('opening a finished workout goes to its summary, without the poster',
   await p.waitForURL(new RegExp(`#/history/${watchFinished}`), { timeout: 10000 });
   await p.getByRole('link', { name: 'Sessions' }).waitFor({ timeout: 10000 });
   if (await p.getByRole('heading', { name: 'Done.' }).count()) throw new Error('the "Done." poster showed again');
+});
+
+await step('a Finish on the wrist that no screen showed is offered on Today, once', async () => {
+  await p.goto(BASE, { waitUntil: 'networkidle' });
+  await p.getByRole('button', { name: 'Start empty workout' }).click();
+  await p.waitForURL(/#\/workout\//, { timeout: 15000 });
+  const pocketed = workoutIdFromUrl();
+  await addExercise('barbell squat', /^Barbell Squat(?! To)/);
+  await p.getByLabel('Set 1 weight in kilograms').fill('80');
+  await p.getByLabel('Set 1 repetitions').fill('5');
+  await p.getByLabel(/Mark set 1 done/).click();
+  await p.waitForTimeout(400);
+  await skipRest();
+  // The phone goes in a pocket on Today; the watch finishes the session.
+  await p.getByRole('button', { name: 'Back to Today' }).click();
+  await p.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 10000 });
+  if (await watchFinishBanner().count()) throw new Error('the banner showed before anything finished');
+  await finishOnWatch(pocketed);
+
+  const banner = watchFinishBanner();
+  await banner.waitFor({ timeout: 5000 });
+  const link = banner.getByRole('link', { name: 'See how it went' });
+  await link.waitFor();
+  await p.setViewportSize({ width: 375, height: 667 });
+  await p.waitForTimeout(300);
+  await noSideScroll('Today with the watch banner');
+  await p.screenshot({ path: 'e2e/shot-companion-banner.png' });
+  await p.setViewportSize({ width: 390, height: 844 });
+
+  await link.click();
+  await p.waitForURL(new RegExp(`#/history/${pocketed}`), { timeout: 10000 });
+  await p.getByRole('heading', { name: 'Done.' }).waitFor({ timeout: 10000 });
+  await p.getByRole('button', { name: 'Done', exact: true }).click();
+  await p.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 10000 });
+  await p.waitForTimeout(800);
+  if (await watchFinishBanner().count()) throw new Error('the banner stayed after its poster was seen');
+  await p.reload({ waitUntil: 'networkidle' });
+  await p.getByRole('heading', { name: 'Today' }).waitFor({ timeout: 10000 });
+  await p.waitForTimeout(800);
+  if (await watchFinishBanner().count()) throw new Error('the banner came back after a reload');
 });
 
 await step('a workout discarded from under the screen says it is gone', async () => {

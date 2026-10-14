@@ -1,6 +1,8 @@
+import { useEffect } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useSessionSummary, useSettings, useWorkoutName } from '@/db/queries';
 import { BackLink, Button, Screen, ScreenHeader, SectionLabel, Stat } from '@/components/ui';
+import { markCelebrated } from '@/lib/celebrate';
 import { formatDayLabel, formatDuration } from '@/lib/dates';
 import { estimate1RMRounded } from '@/domain/epley';
 import { isChildSet } from '@/domain/sets';
@@ -15,7 +17,9 @@ const PR_BADGE = { weight: 'PR', e1rm: '1RM', reps: 'REPS' } as const;
  * One finished session — and, straight after Finish, the summary.
  *
  * The same screen either way, so the summary you see in the gym is the record
- * you find later. It reads "Done." only on the way out of a workout.
+ * you find later. It reads "Done." only on the way out of a workout, or from
+ * Today's "Finished on your watch", and showing it once is what tells Today
+ * the poster has been seen (src/lib/celebrate.ts).
  */
 export default function WorkoutDetailScreen() {
   const { workoutId } = useParams<{ workoutId: string }>();
@@ -26,6 +30,12 @@ export default function WorkoutDetailScreen() {
   const name = useWorkoutName(workoutId);
   const settings = useSettings();
   const pro = settings?.mode === 'pro';
+
+  // Seen: a Finish on the wrist that landed while no screen showed it is
+  // offered on Today until its poster has been shown, here, once.
+  useEffect(() => {
+    if (fresh && workoutId) markCelebrated(workoutId);
+  }, [fresh, workoutId]);
 
   if (data === undefined) {
     return (

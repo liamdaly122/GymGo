@@ -11,6 +11,7 @@ import {
   type WatchStateReport,
 } from '@/domain/watchProtocol';
 import { stationName, stationOutline } from '@/features/workout/outline';
+import { recordFinishedOnWatch } from '@/lib/celebrate';
 import { isNativeApp } from './native';
 import { snapshotEverything } from './snapshots';
 import { getWatchState, phoneClaim, reportFromWatch, subscribeWatchState } from './watchState';
@@ -30,7 +31,8 @@ import { getWatchState, phoneClaim, reportFromWatch, subscribeWatchState } from 
  *    (`reviveTidiedSet`). Only what was applied, or skipped for good, is
  *    acknowledged; anything deferred or that threw stays for the next drain.
  *    A drain that finished a workout, or put a set back into one, writes the
- *    phone's snapshot, as Finish on the phone does.
+ *    phone's snapshot, as Finish on the phone does. One that finished a
+ *    workout also notes it for Today's "Finished on your watch".
  *  - **The context goes out** a moment after anything it is built from
  *    changes, and at launch, on resume, at local midnight and when the phone
  *    takes logging back, but never while a drain is running: a stale `ready`
@@ -125,6 +127,10 @@ async function drainOnce(): Promise<void> {
     if (id) unreadable.push(id);
   }
   const result = readable.length > 0 ? await applyWatchEvents(readable) : NOTHING_APPLIED;
+  // A Finish on the wrist: Today offers its "Done." poster unless a screen
+  // shows it first (src/lib/celebrate.ts). Noted before anything else is
+  // awaited, so a drain cut short after applying it still leaves the note.
+  if (result.finished.length > 0) recordFinishedOnWatch(result.finished);
   const ids = [...result.acknowledge, ...unreadable];
   if (ids.length > 0) await WatchBridge.acknowledge({ ids });
   // Finish on the watch is a Finish: the phone keeps its own copy, as after Finish on the phone.
