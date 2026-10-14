@@ -376,7 +376,8 @@ export async function applyWatchEvent(event: WatchEvent, context: ApplyContext =
         seen.add(set.id);
         await applyCompleteSet(set);
       }
-      await finishWorkout(event.workoutId);
+      // Stamped when Finish was pressed on the wrist, not when the phone was opened.
+      await finishWorkout(event.workoutId, { finishedAt: event.at });
       return 'applied';
     }
     case 'discard': {
@@ -386,7 +387,7 @@ export async function applyWatchEvent(event: WatchEvent, context: ApplyContext =
       // The watch offers Discard only before its first set. Should the phone
       // have logged sets meanwhile, they are not thrown away from the wrist.
       if (await hasLoggedSets(event.workoutId)) return 'skipped';
-      await discardWorkout(event.workoutId);
+      await discardWorkout(event.workoutId, { deletedAt: event.at });
       return 'applied';
     }
     default:

@@ -11,6 +11,7 @@ import {
   completeSetWith,
   createRoutine,
   createRoutinesFromPlan,
+  discardWorkout,
   finishWorkout,
   removeExerciseFromRoutine,
   removeExerciseFromWorkout,
@@ -217,6 +218,102 @@ describe('finishing a workout', () => {
 
     expect((await db.workout_exercises.get(used))!.deleted_at).toBeNull();
     expect((await db.workout_exercises.get(unused))!.deleted_at).not.toBeNull();
+  });
+
+  /** A Finish pressed on the watch, applied when the phone is next opened. */
+  describe('at a time reported by the watch', () => {
+    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+
+    async function sessionStartedAt(startedAt: string) {
+      const workoutId = await startFreestyleWorkout();
+      await db.workouts.update(workoutId, { started_at: startedAt });
+      const we = await addExerciseToWorkout(workoutId, EXERCISE_A);
+      const done = await addSet(we, { weight_kg: 100, reps: 5 });
+      const untouched = await addSet(we);
+      const unused = await addExerciseToWorkout(workoutId, EXERCISE_B);
+      return { workoutId, we, done, untouched, unused };
+    }
+
+    it('is stamped then, tidies at that time too, and changes every row now', async () => {
+      const { workoutId, done, untouched, unused } = await sessionStartedAt(minutesAgo(130));
+      await completeSetWith(done, { weight_kg: 100, reps: 5 }, { completedAt: minutesAgo(80) });
+      const pressed = minutesAgo(75);
+      const drained = Date.now();
+      await db.outbox.clear();
+
+      expect(await finishWorkout(workoutId, { finishedAt: pressed })).toBe(true);
+
+      const workout = (await db.workouts.get(workoutId))!;
+      expect(workout.finished_at).toBe(pressed);
+      expect(Date.parse(workout.updated_at)).toBeGreaterThanOrEqual(drained);
+      for (const row of [(await db.sets.get(untouched))!, (await db.workout_exercises.get(unused))!]) {
+        expect(row.deleted_at).toBe(pressed);
+        // Last write wins on updated_at: a stamp in the past would lose to the stored row.
+        expect(Date.parse(row.updated_at)).toBeGreaterThanOrEqual(drained);
+      }
+      const queued = (await db.outbox.toArray()).map((entry) => entry.row_id);
+      expect(queued).toEqual(expect.arrayContaining([workoutId, untouched, unused]));
+    });
+
+    it('is never before the session started or its last set, nor in the future', async () => {
+      const early = await sessionStartedAt(minutesAgo(60));
+      await finishWorkout(early.workoutId, { finishedAt: minutesAgo(90) });
+      expect((await db.workouts.get(early.workoutId))!.finished_at).toBe((await db.workouts.get(early.workoutId))!.started_at);
+
+      const overtaken = await sessionStartedAt(minutesAgo(60));
+      const lastSet = minutesAgo(10);
+      await completeSetWith(overtaken.done, { weight_kg: 100, reps: 5 }, { completedAt: lastSet });
+      await finishWorkout(overtaken.workoutId, { finishedAt: minutesAgo(20) });
+      expect((await db.workouts.get(overtaken.workoutId))!.finished_at).toBe(lastSet);
+
+      const ahead = await sessionStartedAt(minutesAgo(60));
+      const before = Date.now();
+      await finishWorkout(ahead.workoutId, { finishedAt: new Date(Date.now() + 3_600_000).toISOString() });
+      const stamped = Date.parse((await db.workouts.get(ahead.workoutId))!.finished_at!);
+      expect(stamped).toBeGreaterThanOrEqual(before);
+      expect(stamped).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('refuses a time it cannot read, and writes nothing', async () => {
+      const { workoutId } = await sessionStartedAt(minutesAgo(60));
+      await expect(finishWorkout(workoutId, { finishedAt: 'after lunch' })).rejects.toThrow();
+      expect((await db.workouts.get(workoutId))!.finished_at).toBeNull();
+    });
+
+    it('discards at the time Discard was pressed, changed now', async () => {
+      const { workoutId } = await sessionStartedAt(minutesAgo(60));
+      const pressed = minutesAgo(45);
+      const drained = Date.now();
+      await discardWorkout(workoutId, { deletedAt: pressed });
+      const workout = (await db.workouts.get(workoutId))!;
+      expect(workout.deleted_at).toBe(pressed);
+      expect(Date.parse(workout.updated_at)).toBeGreaterThanOrEqual(drained);
+
+      const early = await sessionStartedAt(minutesAgo(30));
+      await discardWorkout(early.workoutId, { deletedAt: minutesAgo(90) });
+      expect((await db.workouts.get(early.workoutId))!.deleted_at).toBe((await db.workouts.get(early.workoutId))!.started_at);
+    });
+  });
+
+  /**
+   * An inbox drain can discard the very workout on screen (the watch's
+   * Discard, or a start from the watch giving an empty one way) between a
+   * check and the write. A discarded workout must not come out finished as
+   * well, or the watch is told it was finished.
+   */
+  it('leaves a discarded workout as it is, and says so', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const we = await addExerciseToWorkout(workoutId, EXERCISE_A);
+    const untouched = await addSet(we);
+    await discardWorkout(workoutId);
+    await db.outbox.clear();
+
+    expect(await finishWorkout(workoutId)).toBe(false);
+
+    expect((await db.workouts.get(workoutId))!.finished_at).toBeNull();
+    expect((await db.sets.get(untouched))!.deleted_at).toBeNull();
+    expect((await db.workout_exercises.get(we))!.deleted_at).toBeNull();
+    expect(await db.outbox.count()).toBe(0);
   });
 });
 

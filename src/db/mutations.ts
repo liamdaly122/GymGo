@@ -359,56 +359,97 @@ export async function updateWorkout(
 }
 
 /**
+ * When something happened, for a time reported by the watch and applied
+ * later: what it says, kept no earlier than `earliest` and never later than
+ * `now`, so two clocks that disagree cannot put a finish before the work it
+ * ends, or in the future. Now itself when nothing was reported.
+ */
+function reportedTime(reported: string | undefined, earliest: readonly (string | null)[], now: string): string {
+  if (reported === undefined) return now;
+  const floor = Math.max(...earliest.map((iso) => (iso === null ? Number.NaN : Date.parse(iso))).filter(Number.isFinite));
+  return new Date(Math.min(Date.parse(now), Math.max(floor, Date.parse(reported)))).toISOString();
+}
+
+/**
  * Finishes a workout. After this the session is immutable.
  *
  * Incomplete sets are discarded rather than saved as zeroes — a set you did not
  * do must not land in history as a set you did.
+ *
+ * `finishedAt` is when Finish was pressed, for a Finish on the watch applied
+ * later: a session finished at 18:55 on the wrist is not stamped with the
+ * moment the phone was next opened, or its duration and its day would be
+ * wrong. It is kept between the session's start and its last set at the
+ * earliest, and now at the latest. The tidied rows carry the same time, which
+ * is how a set the watch logged before that Finish is told apart later
+ * (`reviveTidiedSet`). `updated_at` is always now, so the change syncs
+ * forward like any other.
+ *
+ * Read and written in one transaction, so nothing can slip in between the
+ * check and the write: a workout already finished throws, and one discarded
+ * meanwhile (an inbox drain can discard the very workout on screen) is left
+ * as it is. True when this call finished it.
  */
-export async function finishWorkout(workoutId: string): Promise<void> {
-  await assertWorkoutEditable(workoutId);
-  const finishedAt = nowIso();
+export async function finishWorkout(workoutId: string, options: { finishedAt?: string } = {}): Promise<boolean> {
+  if (options.finishedAt !== undefined && Number.isNaN(Date.parse(options.finishedAt))) {
+    throw new Error(`Cannot finish a workout at ${options.finishedAt}`);
+  }
+  const now = nowIso();
 
-  const tidied: Array<['sets' | 'workout_exercises', string]> = [];
-  await db.transaction('rw', db.workouts, db.workout_exercises, db.sets, db.outbox, async () => {
+  return db.transaction('rw', db.workouts, db.workout_exercises, db.sets, db.outbox, async () => {
+    const workout = await db.workouts.get(workoutId);
+    if (!workout) throw new Error(`Workout ${workoutId} not found`);
+    if (workout.finished_at !== null) throw new ImmutableWorkoutError(workoutId);
+    // Thrown away: a discarded workout is never finished as well.
+    if (workout.deleted_at !== null) return false;
+
     const workoutExercises = await db.workout_exercises.where({ workout_id: workoutId }).toArray();
     const exerciseIds = workoutExercises.map((we) => we.id);
     const sets = await db.sets.where('workout_exercise_id').anyOf(exerciseIds).toArray();
+    const finishedAt = reportedTime(
+      options.finishedAt,
+      [workout.started_at, ...sets.filter((set) => set.completed && set.deleted_at === null).map((set) => set.completed_at)],
+      now,
+    );
 
+    // The tidying is queued too. Left out, the backup kept every untouched
+    // planned set as a live row, and a restore brought them back as empty sets
+    // in a finished workout.
     const abandoned = sets.filter((set) => !set.completed && set.deleted_at === null);
     for (const set of abandoned) {
-      await db.sets.update(set.id, { deleted_at: finishedAt, updated_at: finishedAt });
-      tidied.push(['sets', set.id]);
+      await db.sets.update(set.id, { deleted_at: finishedAt, updated_at: now });
+      await enqueue('sets', set.id, 'delete', { deleted_at: finishedAt });
     }
 
     // Drop exercises left with nothing logged against them at all.
     for (const we of workoutExercises) {
       const kept = sets.some((set) => set.workout_exercise_id === we.id && set.completed);
       if (!kept && we.deleted_at === null) {
-        await db.workout_exercises.update(we.id, {
-          deleted_at: finishedAt,
-          updated_at: finishedAt,
-        });
-        tidied.push(['workout_exercises', we.id]);
+        await db.workout_exercises.update(we.id, { deleted_at: finishedAt, updated_at: now });
+        await enqueue('workout_exercises', we.id, 'delete', { deleted_at: finishedAt });
       }
     }
 
-    await db.workouts.update(workoutId, { finished_at: finishedAt, updated_at: finishedAt });
+    await db.workouts.update(workoutId, { finished_at: finishedAt, updated_at: now });
+    await enqueue('workouts', workoutId, 'put', { finished_at: finishedAt });
+    return true;
   });
-
-  // The tidying is queued too. Left out, the backup kept every untouched
-  // planned set as a live row, and a restore brought them back as empty sets
-  // in a finished workout.
-  for (const [table, rowId] of tidied) {
-    await enqueue(table, rowId, 'delete', { deleted_at: finishedAt });
-  }
-  await enqueue('workouts', workoutId, 'put', { finished_at: finishedAt });
 }
 
-/** Soft-deletes an in-progress workout the user abandoned. */
-export async function discardWorkout(workoutId: string): Promise<void> {
+/**
+ * Soft-deletes an in-progress workout the user abandoned. `deletedAt` is
+ * when Discard was pressed, for one pressed on the watch and applied later,
+ * kept between the workout's start and now; `updated_at` is always now.
+ */
+export async function discardWorkout(workoutId: string, options: { deletedAt?: string } = {}): Promise<void> {
+  if (options.deletedAt !== undefined && Number.isNaN(Date.parse(options.deletedAt))) {
+    throw new Error(`Cannot discard a workout at ${options.deletedAt}`);
+  }
   const now = nowIso();
-  await db.workouts.update(workoutId, { deleted_at: now, updated_at: now });
-  await enqueue('workouts', workoutId, 'delete', { deleted_at: now });
+  const workout = options.deletedAt === undefined ? undefined : await db.workouts.get(workoutId);
+  const deletedAt = reportedTime(options.deletedAt, [workout?.started_at ?? null], now);
+  await db.workouts.update(workoutId, { deleted_at: deletedAt, updated_at: now });
+  await enqueue('workouts', workoutId, 'delete', { deleted_at: deletedAt });
 }
 
 // ---------------------------------------------------------------------------

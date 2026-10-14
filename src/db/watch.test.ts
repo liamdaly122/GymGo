@@ -399,6 +399,46 @@ describe('a session laid out for the watch', () => {
     expect((await db.workouts.get(workoutId))!.finished_at).not.toBeNull();
   });
 
+  /**
+   * The phone stays locked while the watch runs the session, so its drain
+   * comes long after the Finish. Stamped at the drain, a 55-minute session
+   * read as two hours and ten, and one drained next morning fell on the next day.
+   */
+  it('finishes when Finish was pressed on the wrist, not when the phone drained it', async () => {
+    await blockToday();
+    const ready = await readyNow();
+    const layout = layoutOf(ready);
+    const workoutId = layout.workoutId;
+    const t0 = Date.now() - 130 * 60_000;
+    const at = (minutes: number) => new Date(t0 + minutes * 60_000).toISOString();
+    const drained = Date.now();
+
+    const result = await applyWatchEvents([
+      startOf(ready, at(0)),
+      event({ workoutId, setId: layout.exercises[0]!.sets[0]!.id, weight: 60, reps: 10, at: at(50) }),
+      event({ workoutId, kind: 'finish', at: at(55) }),
+    ]);
+
+    expect(result.finished).toEqual([workoutId]);
+    const { workout, sets } = await rowsOf(workoutId);
+    expect(workout).toMatchObject({ started_at: at(0), finished_at: at(55) });
+    expect(Date.parse(workout.updated_at)).toBeGreaterThanOrEqual(drained);
+    const tidied = sets.filter((set) => set.deleted_at !== null);
+    expect(tidied.length).toBeGreaterThan(0);
+    expect(tidied.every((set) => set.deleted_at === at(55) && Date.parse(set.updated_at) >= drained)).toBe(true);
+    expect((await context()).home.closed).toContainEqual({ workoutId, how: 'finished', at: at(55) });
+  });
+
+  it('discards when Discard was pressed on the wrist', async () => {
+    await blockToday();
+    const ready = await readyNow();
+    const workoutId = ready.snapshot.workoutId;
+    const pressed = minutesAgo(40);
+    await applyWatchEvents([startOf(ready, minutesAgo(45)), event({ workoutId, kind: 'discard', at: pressed })]);
+    expect((await db.workouts.get(workoutId))!.deleted_at).toBe(pressed);
+    expect((await context()).home.closed).toContainEqual({ workoutId, how: 'discarded', at: pressed });
+  });
+
   it('keeps a set that arrives before its start, and applies it once the start lands', async () => {
     await blockToday();
     const ready = await readyNow();
