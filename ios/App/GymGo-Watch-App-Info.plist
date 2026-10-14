@@ -6,10 +6,13 @@
 	<string>GymGo reads your body weight from Apple Health and your heart rate during a workout.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>GymGo saves your finished workouts to Apple Health.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>WKBackgroundModes</key>
 	<array>
 		<string>workout-processing</string>
-		<string>audio</string>
 	</array>
 </dict>
 </plist>

@@ -154,9 +154,13 @@ main actor.
   `recoverActiveWorkoutSession`, with the delegates and data source set again.
 - **Live metrics:** the most recent heart rate (count/min) and the summed
   active energy (kcal), shown on the watch and reported to the phone.
-- Requires `WKBackgroundModes` `workout-processing` **and** `audio` (haptics
-  during a workout need the second), and a `@WKApplicationDelegateAdaptor` in
-  the watch app.
+- Requires `WKBackgroundModes` `workout-processing` **and** `UIBackgroundModes`
+  `audio` (haptics during a workout need the second), and a
+  `@WKApplicationDelegateAdaptor` in the watch app. `audio` must not go under
+  `WKBackgroundModes`, which takes only session types (`workout-processing`,
+  `self-care`, `mindfulness`, `physical-therapy`, `alarm`): App Store Connect
+  refuses the upload (ITMS-90362, "Invalid Info.plist value"), which is what
+  stopped build 5's first upload.
 
 ## Haptics on the watch
 
