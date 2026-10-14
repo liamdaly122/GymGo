@@ -6,16 +6,15 @@ import { formatSetSummary, type PreviousPerformance } from '@/domain/previousPer
 import type { Suggestion } from '@/domain/progression';
 import { setBreaksRecord, type RecordMarks } from '@/domain/prs';
 import { stepFrom } from '@/domain/plates';
-import { isChildSet, latestWorkingSet } from '@/domain/sets';
-import { schemeTarget, stepsFromTop, SCHEME_LOAD_STEP, SCHEME_REP_STEP } from '@/domain/schemes';
+import { SCHEME_LOAD_STEP, SCHEME_REP_STEP } from '@/domain/schemes';
 import { restsAfterSet } from '@/domain/supersets';
 import { formatDayLabel, nowIso } from '@/lib/dates';
 import { playRecordTone, RECORD_VIBRATION, vibrate } from '@/lib/feedback';
 import { useWriteQueue } from '@/hooks/useWriteQueue';
 import { useRestTimer } from './RestTimer';
 import PlateDiagram from './PlateDiagram';
+import { setPlan } from './setPlan';
 import {
-  CHILD_NAMES,
   CONTINUATION_REST_SECONDS,
   describeRecord,
   describeTempo,
@@ -103,42 +102,20 @@ export default function SetInHand({
   const [showTempo, setShowTempo] = useState(false);
 
   const name = setName(set, ordinal);
-  const child = isChildSet(set);
   const exerciseName = entry.exercise?.name ?? 'Exercise';
   const equipment = entry.exercise?.equipment;
   const bodyweight = equipment === 'bodyweight';
 
-  // Only a top-level working set is something a suggestion or last time's
-  // numbers apply to. A warm-up arrives filled in; a drop carries its weight.
-  const hintable = !child && set.type === 'working';
-  const lastTime = hintable ? previous?.working_sets[ordinal] : undefined;
-
-  // A pyramid's other sets aim off its top set: lighter and longer the further
-  // away they sit. One added by hand off a straight set arrives filled in.
-  const technique = entry.workoutExercise.technique;
-  const nonWarmups = entry.sets.filter((candidate) => candidate.parent_set_id === null && candidate.type !== 'warmup');
-  const fromTop = stepsFromTop(
-    technique,
-    nonWarmups.map((candidate) => candidate.type),
-    nonWarmups.findIndex((candidate) => candidate.id === set.id),
+  // What the set starts at, and what it is called: shared with the companion
+  // screen, so the phone and the watch never disagree about the next set.
+  const { child, hintable, fromTop, schemeRole, weightHint, repsHint, label } = setPlan(
+    entry,
+    set,
+    ordinal,
+    suggestion,
+    previous,
   );
-  // Today's top set once it is done — a reverse pyramid's comes first — else
-  // what it is meant to be.
-  const workingSets = nonWarmups.filter((candidate) => candidate.type === 'working');
-  const topSet = technique === 'reverse_pyramid' ? workingSets[0] : workingSets.at(-1);
-  const topDone = topSet?.completed && (topSet.weight_kg > 0 || topSet.reps > 0) ? topSet : null;
-  const topTarget = topDone ?? suggestion ?? previous?.top_set ?? null;
-  const schemeHint = fromTop !== null && topTarget ? schemeTarget(topTarget, fromTop, entry.loading) : null;
-  const schemeRole = set.type === 'back_off' ? (technique === 'pyramid' ? 'Ramp' : 'Back-off') : null;
-
-  // From the second set on, the fields start at what was just done: the next
-  // set is a nudge of a stepper, not two numbers typed again. The suggestion
-  // and last time are for the first.
-  const carried = hintable ? latestWorkingSet(entry.sets) : null;
-  const weightHint =
-    schemeHint?.weight_kg ??
-    (hintable ? (carried?.weight_kg ?? suggestion?.weight_kg ?? lastTime?.weight_kg ?? null) : null);
-  const repsHint = schemeHint?.reps ?? (hintable ? (carried?.reps ?? suggestion?.reps ?? lastTime?.reps ?? null) : null);
+  const nonWarmups = entry.sets.filter((candidate) => candidate.parent_set_id === null && candidate.type !== 'warmup');
   const tempo = entry.workoutExercise.tempo;
 
   const [weightText, setWeightText] = useState(() => (set.weight_kg > 0 ? formatNumber(set.weight_kg) : ''));
@@ -148,13 +125,6 @@ export default function SetInHand({
   const weight = parseEntry(weightText) ?? weightHint ?? (bodyweight ? 0 : null);
   const reps = parseEntry(repsText) ?? repsHint;
   const steps = stepFrom(weight ?? 0, entry.loading);
-
-  const warmups = entry.sets.filter((candidate) => candidate.parent_set_id === null && candidate.type === 'warmup');
-  const label = child
-    ? `${CHILD_NAMES[set.type] ?? 'Continuation'} · set ${ordinal + 1}`
-    : set.type === 'warmup'
-      ? `Warm-up ${ordinal + 1} of ${warmups.length}`
-      : `Set ${ordinal + 1} of ${nonWarmups.length}${schemeRole ? ` · ${schemeRole}` : ''}`;
 
   const ready = weight !== null && reps !== null && reps > 0;
   // "102.5 × 6" on the button, as the draft has it; "102.5kg × 6" when read out.
