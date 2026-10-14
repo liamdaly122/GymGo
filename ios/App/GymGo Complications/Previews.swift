@@ -14,16 +14,13 @@ private enum PreviewGlance {
         let plan: [(WatchWeekDay.State, String?)] = [
             (.done, "Push A"), (.rest, nil), (.planned, "Pull A"), (.rest, nil), (.planned, "Legs A"), (.rest, nil), (.rest, nil),
         ]
-        // Built as the phone sends it: the type has no public initialiser.
-        let days: [[String: Any]] = plan.enumerated().map { index, entry in
+        return plan.enumerated().map { index, entry in
             let date = calendar.date(byAdding: .day, value: index, to: monday)!
             let day = localDay(date)
             let weekday = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][index]
             let state: WatchWeekDay.State = day == localDay(today) && entry.0 == .planned ? .today : entry.0
-            return ["date": day, "weekday": weekday, "state": state.rawValue, "name": entry.1 as Any]
+            return WatchWeekDay(date: day, weekday: weekday, state: state, name: entry.1)
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: days) else { return [] }
-        return (try? JSONDecoder().decode([WatchWeekDay].self, from: data)) ?? []
     }()
 
     static var today: WatchGlance {

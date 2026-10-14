@@ -105,6 +105,13 @@ public struct WatchWeekDay: Codable, Sendable, Equatable {
     public var weekday: String
     public var state: State
     public var name: String?
+
+    public init(date: String, weekday: String, state: State, name: String?) {
+        self.date = date
+        self.weekday = weekday
+        self.state = state
+        self.name = name
+    }
 }
 
 // MARK: - Watch → phone: events
