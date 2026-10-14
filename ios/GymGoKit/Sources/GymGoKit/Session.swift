@@ -385,6 +385,21 @@ public struct WatchSession: Codable, Sendable, Equatable {
         )
     }
 
+    /// Undo inside its window (`WatchAppState.undoLastSet`): the set is no
+    /// longer logged, its event never leaves, and its station is where the
+    /// wrist is, so it is back in hand.
+    mutating func unlog(_ setId: String, eventId: String, wasRecord: Bool) -> Bool {
+        guard logged[setId] != nil, outbox.contains(where: { $0.id == eventId }) else { return false }
+        logged[setId] = nil
+        loggedHere[setId] = nil
+        outbox.removeAll { $0.id == eventId }
+        if wasRecord { records = max(0, records - 1) }
+        if let station = snapshot.sets.first(where: { $0.id == setId })?.station {
+            focus = focusKey(ofStation: station) ?? focus
+        }
+        return true
+    }
+
     @discardableResult
     public mutating func skipRest(at date: Date = Date(), eventId: String = UUID().uuidString) -> WatchEvent {
         let event = WatchEvent(id: eventId, kind: .skipRest, workoutId: snapshot.workoutId, at: Self.isoString(date))

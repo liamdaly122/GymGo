@@ -52,6 +52,9 @@ public struct ContextChange: Equatable, Sendable {
     public var updated = false
     /// The phone claimed logging for the running session.
     public var claimed = false
+    /// A set's event held for its Undo window, to send now: the session
+    /// ended, or the phone took logging over.
+    public var released: WatchEvent?
 }
 
 /// What logging a set did, beyond the session's own outcome.
@@ -61,6 +64,31 @@ public struct LogResult: Sendable, Equatable {
     public var cue: WatchCue
     /// No set of that lift is left in the session.
     public var lastOfExercise: Bool
+    /// The set logged before it, whose Undo window this one closed: its
+    /// event goes to the phone now. This set's own event is held
+    /// (`WatchAppState.undo`).
+    public var released: WatchEvent? = nil
+}
+
+/// A set logged on the wrist, in its Undo window: logged and saved at once,
+/// so the set in hand moves on and its rest runs, but its event is held back
+/// from the phone until the window closes. Undo inside it takes the set back
+/// and nothing ever reaches the phone. Saved with the state.
+public struct UndoWindow: Codable, Sendable, Equatable {
+    /// How long "Logged · Undo" shows.
+    public static let seconds: TimeInterval = 5
+
+    public var setId: String
+    /// Its `completeSet`, held.
+    public var eventId: String
+    public var until: Date
+    /// It was a record, which Undo takes back.
+    public var wasRecord: Bool
+    /// The record said before it, said again after an Undo.
+    public var recordBefore: SetRecord?
+    /// A rest it cut short, which comes back after an Undo if it has not
+    /// run out by then.
+    public var restBefore: RestState?
 }
 
 /// The whole watch app's state, as a value: the phone's latest context, the
@@ -115,6 +143,8 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public private(set) var summary: WatchSummary?
     /// The number on the last state report sent.
     public private(set) var seq = 0
+    /// The set just logged on the wrist, while it can still be undone.
+    public private(set) var undo: UndoWindow?
 
     public init() {}
 
@@ -144,7 +174,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case lastSentAt, home, settings, phoneClaim, liveWorkoutId, session, owner, seenPhoneClaim, usedReadyKeys
-        case endedWorkouts, discardedHere, startedFrom, lastEnded, pending, rest, lastRecord, summary, seq
+        case endedWorkouts, discardedHere, startedFrom, lastEnded, pending, rest, lastRecord, summary, seq, undo
     }
 
     /// Reads a state saved by any earlier build: fields added since default.
@@ -168,6 +198,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         lastRecord = try c.decodeIfPresent(SetRecord.self, forKey: .lastRecord)
         summary = try c.decodeIfPresent(WatchSummary.self, forKey: .summary)
         seq = try c.decodeIfPresent(Int.self, forKey: .seq) ?? 0
+        undo = try c.decodeIfPresent(UndoWindow.self, forKey: .undo)
     }
 
     // MARK: - What the screens read
@@ -196,6 +227,8 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         // wrist that the phone threw away did not use its ready key, as a
         // Discard here does not: the phone offers that session again.
         if let running = session, let closed = context.home.closed.first(where: { $0.workoutId == running.workoutId }) {
+            // A set in its Undo window goes now: there is nothing to undo it in.
+            change.released = closeUndo()
             if closed.how == .discarded { releaseReadyKey(of: running.workoutId) }
             endSession(summary: closed.how == .finished ? .finishedOnPhone : nil, at: closed.at)
             change.ended = closed
@@ -234,6 +267,8 @@ public struct WatchAppState: Codable, Sendable, Equatable {
 
         // "Log on this phone": a claim this watch has not seen before.
         if let claim = context.phoneClaim, let running = session, claim.workoutId == running.workoutId, isNew(claim) {
+            // The phone logs now: a set in its Undo window goes to it at once.
+            change.released = change.released ?? closeUndo()
             owner = .phone
             seenPhoneClaim = claim.at
             rest = nil
@@ -291,11 +326,15 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     }
 
     /// Logs the set in hand and starts whatever rest follows. Nil while the
-    /// phone logs, or when nothing is left to log.
+    /// phone logs, or when nothing is left to log. Its event is held for the
+    /// Undo window (`undo`); the window of the set before it closes, and that
+    /// set's event is `released`, to send now.
     public mutating func logSet(weight: Double, reps: Int, at date: Date, eventId: String = UUID().uuidString) -> LogResult? {
         guard owner == .watch, var running = session,
               let outcome = running.logSetInHand(weight: weight, reps: reps, at: date, eventId: eventId) else { return nil }
         session = running
+        let released = closeUndo()
+        let before = (record: lastRecord, rest: rest)
         // A record is said until the rest after it is over. A set with no
         // rest after it (the first half of a superset) hands its record on,
         // so the set screen says it and the rest that ends the round leads
@@ -316,7 +355,52 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         // A skipped set is never left to do, so it never holds this cue back.
         let lastOfExercise = !running.remainingSets.contains { $0.exerciseId == outcome.set.exerciseId }
         let cue = cueForLoggedSet(record: outcome.record != nil, lastOfExercise: lastOfExercise, rests: rest != nil)
-        return LogResult(outcome: outcome, cue: cue, lastOfExercise: lastOfExercise)
+        undo = UndoWindow(
+            setId: outcome.set.id, eventId: eventId, until: date.addingTimeInterval(UndoWindow.seconds),
+            wasRecord: outcome.record != nil, recordBefore: before.record, restBefore: before.rest
+        )
+        return LogResult(outcome: outcome, cue: cue, lastOfExercise: lastOfExercise, released: released)
+    }
+
+    // MARK: - Undo
+
+    /// The events to send now: every one the phone has not confirmed, less
+    /// the set held in its Undo window.
+    public func sendable(now: Date) -> [WatchEvent] {
+        guard let window = undo, window.until > now else { return unconfirmed }
+        return unconfirmed.filter { $0.id != window.eventId }
+    }
+
+    /// The Undo window closes: the set stays logged, and its event is
+    /// returned, to send now. Nil with no window open.
+    public mutating func closeUndo() -> WatchEvent? {
+        guard let window = undo else { return nil }
+        undo = nil
+        return unconfirmed.first { $0.id == window.eventId }
+    }
+
+    /// The window closes if its time is up by `now`.
+    public mutating func closeUndo(ifOverAt now: Date) -> WatchEvent? {
+        guard let window = undo, window.until <= now else { return nil }
+        return closeUndo()
+    }
+
+    /// Undo, inside the window: the set is no longer logged, its event never
+    /// leaves, and it is back in hand. The rest it started is cancelled; a
+    /// rest it cut short comes back if it has not run out, and the record
+    /// said before it is said again. Returns the set as it was logged, or nil
+    /// when there is nothing to undo (no window, or its time is up).
+    public mutating func undoLastSet(at now: Date) -> LoggedSet? {
+        guard let window = undo, window.until > now, owner == .watch, var running = session,
+              let entry = running.logged[window.setId],
+              running.unlog(window.setId, eventId: window.eventId, wasRecord: window.wasRecord) else { return nil }
+        undo = nil
+        session = running
+        lastRecord = window.recordBefore
+        // Any rest now began with this set, or after it (a partner skipped
+        // since): a later set would have closed the window.
+        rest = window.restBefore.flatMap { $0.endsAt > now ? $0 : nil }
+        return entry
     }
 
     /// "Skip this set". False while the phone logs, or with nothing in hand.
@@ -391,7 +475,8 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         return true
     }
 
-    /// Finish and save on the wrist.
+    /// Finish and save on the wrist. A set still in its Undo window is in the
+    /// finish's `sets`; the store sends its own event first (`closeUndo`).
     public mutating func finish(at date: Date, eventId: String = UUID().uuidString) -> WatchEvent? {
         guard var running = session, let event = running.finish(at: date, eventId: eventId) else { return nil }
         session = running
@@ -508,6 +593,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         rest = nil
         lastRecord = nil
         summary = nil
+        undo = nil
     }
 
     private mutating func endSession(summary how: WatchSummary.How?, at endedAt: String) {
@@ -531,6 +617,8 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         lastRecord = nil
         owner = .watch
         seenPhoneClaim = nil
+        // Its set's event is in `pending` now, and goes with the rest of them.
+        undo = nil
     }
 
     private func remember(_ value: String, in list: inout [String]) {

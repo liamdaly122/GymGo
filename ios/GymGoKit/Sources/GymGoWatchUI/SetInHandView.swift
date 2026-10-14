@@ -55,9 +55,13 @@ struct SetInHandView: View {
                     .frame(width: (Theme.screenWidth * 0.34).rounded())
             }
             if !dimmed {
-                HStack(spacing: gap) {
-                    stepper(-1)
-                    stepper(1)
+                // For 5 s after a set: "Logged · Undo" where the steppers go.
+                // The Crown still moves the numbers.
+                UndoOr(store: store, height: buttonHeight) {
+                    HStack(spacing: gap) {
+                        stepper(-1)
+                        stepper(1)
+                    }
                 }
                 doneButton
             }

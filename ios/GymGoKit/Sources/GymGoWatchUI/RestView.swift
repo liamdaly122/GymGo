@@ -88,15 +88,18 @@ struct RestView: View {
 
             if !dimmed {
                 HStack(spacing: 6) {
-                    Button {
-                        store.addRest()
-                    } label: {
-                        Text("+30s")
-                            .font(Theme.display(18))
-                            .frame(maxWidth: .infinity, minHeight: 40)
+                    // For 5 s after the set: "Logged · Undo" in the place of +30s.
+                    UndoOr(store: store, height: 40) {
+                        Button {
+                            store.addRest()
+                        } label: {
+                            Text("+30s")
+                                .font(Theme.display(18))
+                                .frame(maxWidth: .infinity, minHeight: 40)
+                        }
+                        .raisedButton()
+                        .accessibilityLabel("Add 30 seconds")
                     }
-                    .raisedButton()
-                    .accessibilityLabel("Add 30 seconds")
 
                     Button {
                         store.skipRest()

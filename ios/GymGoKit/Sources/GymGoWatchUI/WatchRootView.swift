@@ -37,6 +37,43 @@ public struct WatchRootView: View {
     }
 }
 
+/// "Logged · Undo" for the 5 s after a set is logged on the wrist, in the
+/// place of `content`, which comes back when the window closes. Raised, not
+/// chalk: it is there, but it is not the next thing to press.
+struct UndoOr<Content: View>: View {
+    let store: WatchSessionStore
+    let height: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if let window = store.state.undo, window.until > Date() {
+            // The store closes the window on time; this hides it on time
+            // even if the app was held up.
+            TimelineView(.explicit([Date(), window.until])) { context in
+                if context.date < window.until {
+                    Button {
+                        store.undoLastSet()
+                    } label: {
+                        Text("Logged · Undo")
+                            .font(Theme.display(18))
+                            .textCase(.uppercase)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .frame(maxWidth: .infinity, minHeight: height)
+                    }
+                    .raisedButton()
+                    .accessibilityLabel("Logged. Undo")
+                    .accessibilityHint("Takes the set back")
+                } else {
+                    content()
+                }
+            }
+        } else {
+            content()
+        }
+    }
+}
+
 /// A countdown to `end` that never builds a backwards range once `end` has passed.
 func countdown(to end: Date) -> Text {
     let now = Date()
