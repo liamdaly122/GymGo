@@ -728,6 +728,104 @@ describe('a session laid out for the watch', () => {
    * session actually trained became an extra and the slot stayed to do.
    */
   describe('started again on the wrist after a Discard', () => {
+    /**
+     * With the phone locked, the watch cannot be offered new IDs, so it mints
+     * its own (ios/GymGoKit/Sources/GymGoKit/FreshIds.swift): the workout's,
+     * each exercise's and each set's ID becomes a fresh lowercase v4 UUID,
+     * consistently in the layout and the snapshot, and nothing else changes.
+     * JSONSerialization writes the layout out again with its keys in an order
+     * of its own, here every object's reversed.
+     */
+    function mintedAgainOnTheWatch(ready: WatchReady): WatchReady {
+      const fresh = new Map<string, string>();
+      const renamed = (id: string) => fresh.get(id) ?? fresh.set(id, crypto.randomUUID()).get(id)!;
+      const layout = JSON.parse(ready.layout) as { workoutId: string; exercises: { id: string; sets: { id: string }[] }[] };
+      layout.workoutId = renamed(layout.workoutId);
+      for (const exercise of layout.exercises) {
+        exercise.id = renamed(exercise.id);
+        for (const set of exercise.sets) set.id = renamed(set.id);
+      }
+      const reordered = (value: unknown): unknown =>
+        Array.isArray(value)
+          ? value.map(reordered)
+          : typeof value === 'object' && value !== null
+            ? Object.fromEntries(Object.entries(value).reverse().map(([key, inner]) => [key, reordered(inner)]))
+            : value;
+      return {
+        ...ready,
+        layout: JSON.stringify(reordered(layout)),
+        snapshot: {
+          ...ready.snapshot,
+          workoutId: renamed(ready.snapshot.workoutId),
+          sets: ready.snapshot.sets.map((set) => ({
+            ...set,
+            id: renamed(set.id),
+            workoutExerciseId: renamed(set.workoutExerciseId),
+            parentSetId: set.parentSetId === null ? null : renamed(set.parentSetId),
+            scheme: set.scheme ? { ...set.scheme, topSetId: renamed(set.scheme.topSetId) } : null,
+          })),
+        },
+      };
+    }
+
+    it('writes exactly the rows of a layout the watch minted again', async () => {
+      const { plan } = await blockToday();
+      const offered = await readyNow();
+      const again = mintedAgainOnTheWatch(offered);
+      const original = layoutOf(offered);
+      const layout = parseStartLayout(JSON.parse(again.layout));
+
+      // Read as the same session under new IDs, whatever order its keys come in.
+      expect(layout).not.toBeNull();
+      const ids = (of: StartLayout) => [of.workoutId, ...of.exercises.flatMap((entry) => [entry.id, ...entry.sets.map((set) => set.id)])];
+      const withoutIds = (of: StartLayout) => ({
+        ...of,
+        workoutId: '',
+        exercises: of.exercises.map((entry) => ({ ...entry, id: '', sets: entry.sets.map((set) => ({ ...set, id: '' })) })),
+      });
+      expect(withoutIds(layout!)).toEqual(withoutIds(original));
+      expect(ids(layout!).some((id) => ids(original).includes(id))).toBe(false);
+      expect(layout!.workoutId).toBe(again.snapshot.workoutId);
+
+      await db.outbox.clear();
+      expect(await applyWatchEvent(startOf(again, minutesAgo(5)))).toBe('applied');
+
+      const { workout, exercises, sets } = await rowsOf(layout!.workoutId);
+      expect(workout).toMatchObject({ routine_id: offered.routineId, plan_id: plan.id, plan_week: 1, plan_session_index: 0 });
+      expect(exercises.map((we) => [we.id, we.exercise_id])).toEqual(layout!.exercises.map((entry) => [entry.id, entry.exerciseId]));
+      expect(sets.map((set) => [set.id, set.type])).toEqual(
+        layout!.exercises.flatMap((entry) => entry.sets.map((set) => [set.id, set.type])),
+      );
+      const queued = new Set((await db.outbox.toArray()).map((entry) => entry.row_id));
+      expect(ids(layout!).every((id) => queued.has(id))).toBe(true);
+      // Nothing under the IDs the phone offered.
+      expect(await db.workouts.get(original.workoutId)).toBeUndefined();
+    });
+
+    it('files a session the watch minted again under the slot, all in one batch', async () => {
+      const { plan } = await blockToday();
+      const first = await readyNow();
+      const second = mintedAgainOnTheWatch(first);
+      const w1 = first.snapshot.workoutId;
+      const w2 = second.snapshot.workoutId;
+      const setId = layoutOf(second).exercises[0]!.sets[0]!.id;
+      const logged = event({ workoutId: w2, setId, weight: 60, reps: 10, at: minutesAgo(20) });
+
+      const result = await applyWatchEvents([
+        startOf(first, minutesAgo(30)),
+        event({ workoutId: w1, kind: 'discard', at: minutesAgo(29) }),
+        startOf(second, minutesAgo(28)),
+        logged,
+        event({ workoutId: w2, kind: 'finish', at: minutesAgo(10) }),
+      ]);
+
+      expect(result).toMatchObject({ keep: [], finished: [w2] });
+      expect(result.acknowledge).toHaveLength(5);
+      expect((await db.workouts.get(w1))!.deleted_at).not.toBeNull();
+      expect(await db.sets.get(setId)).toMatchObject({ completed: true, weight_kg: 60, reps: 10, deleted_at: null });
+      await expectSlotTrainedBy(plan.id, w2);
+    });
+
     async function twice() {
       const { plan } = await blockToday();
       const first = await readyNow();
