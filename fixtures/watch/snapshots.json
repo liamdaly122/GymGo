@@ -217,7 +217,14 @@
               2.5,
               1.25
             ]
-          }
+          },
+          "plan": {
+            "kind": "add_weight",
+            "verb": "Go up",
+            "reason": "You hit 5 on every set at 97.5kg. Add 2.5kg."
+          },
+          "lastTime": null,
+          "repLow": null
         },
         "ex-b": {
           "name": "Lift b",
@@ -295,7 +302,14 @@
           "loading": {
             "mode": "fixed_step",
             "step": 2.5
-          }
+          },
+          "plan": {
+            "kind": "repeat",
+            "verb": "Hold",
+            "reason": "You hit 12 on every set at 22.5kg."
+          },
+          "lastTime": null,
+          "repLow": null
         }
       }
     }
@@ -582,7 +596,14 @@
               2.5,
               1.25
             ]
-          }
+          },
+          "plan": {
+            "kind": "add_weight",
+            "verb": "Go up",
+            "reason": "You hit 5 on every set at 97.5kg. Add 2.5kg."
+          },
+          "lastTime": null,
+          "repLow": null
         },
         "ex-b": {
           "name": "Lift b",
@@ -630,7 +651,14 @@
           "loading": {
             "mode": "fixed_step",
             "step": 5
-          }
+          },
+          "plan": {
+            "kind": "add_reps",
+            "verb": "More reps",
+            "reason": "Last time 40kg × 11. Go for 12."
+          },
+          "lastTime": null,
+          "repLow": null
         },
         "ex-c": {
           "name": "Lift c",
@@ -678,7 +706,416 @@
           "loading": {
             "mode": "fixed_step",
             "step": 5
+          },
+          "plan": {
+            "kind": "repeat",
+            "verb": "Hold",
+            "reason": "You hit 15 on every set at 25kg."
+          },
+          "lastTime": null,
+          "repLow": null
+        }
+      }
+    }
+  },
+  {
+    "name": "a plan, last time, a step down and an AMRAP set",
+    "snapshot": {
+      "version": 1,
+      "workoutId": "w-1",
+      "title": "Push A",
+      "startedAt": "2026-10-14T17:00:00.000Z",
+      "sentAt": "2026-10-14T17:05:00.000Z",
+      "stations": [
+        {
+          "name": "Lift a",
+          "outline": "Barbell · 3 × 8–10",
+          "exerciseIds": [
+            "ex-a"
+          ]
+        },
+        {
+          "name": "Incline Dumbbell Press",
+          "outline": "Dumbbell · 3 × 8–12",
+          "exerciseIds": [
+            "ex-b"
+          ]
+        },
+        {
+          "name": "Pull-up",
+          "outline": "Bodyweight · 2 × 6–10",
+          "exerciseIds": [
+            "ex-c"
+          ]
+        }
+      ],
+      "sets": [
+        {
+          "id": "a-s1",
+          "exerciseId": "ex-a",
+          "workoutExerciseId": "a",
+          "station": 0,
+          "type": "working",
+          "parentSetId": null,
+          "label": "Set 2 of 3",
+          "weight": 90,
+          "reps": 8,
+          "source": "stepped",
+          "carries": true,
+          "scheme": null,
+          "restAfter": 150,
+          "upNext": {
+            "name": "Lift a",
+            "detail": "Set 3 of 3 · 90 × 8"
           }
+        },
+        {
+          "id": "a-s2",
+          "exerciseId": "ex-a",
+          "workoutExerciseId": "a",
+          "station": 0,
+          "type": "working",
+          "parentSetId": null,
+          "label": "Set 3 of 3",
+          "weight": 90,
+          "reps": 8,
+          "source": "stepped",
+          "carries": true,
+          "scheme": null,
+          "restAfter": 150,
+          "upNext": {
+            "name": "Incline Dumbbell Press",
+            "detail": "Dumbbell · 3 × 8–12"
+          },
+          "amrap": true
+        },
+        {
+          "id": "b-s0",
+          "exerciseId": "ex-b",
+          "workoutExerciseId": "b",
+          "station": 1,
+          "type": "working",
+          "parentSetId": null,
+          "label": "Set 1 of 3",
+          "weight": 22.5,
+          "reps": 8,
+          "source": "suggestion",
+          "carries": true,
+          "scheme": null,
+          "restAfter": 120,
+          "upNext": {
+            "name": "Incline Dumbbell Press",
+            "detail": "Set 2 of 3 · 22.5 × 8"
+          }
+        },
+        {
+          "id": "b-s1",
+          "exerciseId": "ex-b",
+          "workoutExerciseId": "b",
+          "station": 1,
+          "type": "working",
+          "parentSetId": null,
+          "label": "Set 2 of 3",
+          "weight": 22.5,
+          "reps": 8,
+          "source": "suggestion",
+          "carries": true,
+          "scheme": null,
+          "restAfter": 120,
+          "upNext": {
+            "name": "Incline Dumbbell Press",
+            "detail": "Set 3 of 3 · 22.5 × 8"
+          }
+        },
+        {
+          "id": "b-s2",
+          "exerciseId": "ex-b",
+          "workoutExerciseId": "b",
+          "station": 1,
+          "type": "working",
+          "parentSetId": null,
+          "label": "Set 3 of 3",
+          "weight": 22.5,
+          "reps": 8,
+          "source": "suggestion",
+          "carries": true,
+          "scheme": null,
+          "restAfter": 120,
+          "upNext": {
+            "name": "Pull-up",
+            "detail": "Bodyweight · 2 × 6–10"
+          }
+        },
+        {
+          "id": "c-s1",
+          "exerciseId": "ex-c",
+          "workoutExerciseId": "c",
+          "station": 2,
+          "type": "working",
+          "parentSetId": null,
+          "label": "Set 2 of 2",
+          "weight": 0,
+          "reps": 5,
+          "source": "carried",
+          "carries": true,
+          "scheme": null,
+          "restAfter": 120,
+          "upNext": {
+            "name": "Finish",
+            "detail": "Last set done"
+          }
+        }
+      ],
+      "lifts": {
+        "ex-a": {
+          "name": "Lift a",
+          "unit": "kg",
+          "ladder": [
+            20,
+            22.5,
+            25,
+            27.5,
+            30,
+            32.5,
+            35,
+            37.5,
+            40,
+            42.5,
+            45,
+            47.5,
+            50,
+            52.5,
+            55,
+            57.5,
+            60,
+            62.5,
+            65,
+            67.5,
+            70,
+            72.5,
+            75,
+            77.5,
+            80,
+            82.5,
+            85,
+            87.5,
+            90,
+            92.5,
+            95,
+            97.5,
+            100,
+            102.5,
+            105,
+            107.5,
+            110,
+            112.5,
+            115,
+            117.5,
+            120,
+            122.5,
+            125,
+            127.5,
+            130,
+            132.5,
+            135,
+            137.5,
+            140,
+            142.5,
+            145,
+            147.5,
+            150
+          ],
+          "setupNote": null,
+          "priorMarks": {
+            "weight": 100,
+            "e1rm": 116.7,
+            "unloadedReps": 0
+          },
+          "doneToday": [
+            {
+              "setId": "a-s0",
+              "weight": 100,
+              "reps": 5,
+              "completedAt": "2026-10-14T17:03:00.000Z"
+            }
+          ],
+          "loading": {
+            "mode": "barbell",
+            "barWeight": 20,
+            "plates": [
+              25,
+              20,
+              15,
+              10,
+              5,
+              2.5,
+              1.25
+            ]
+          },
+          "plan": {
+            "kind": "add_weight",
+            "verb": "Go up",
+            "reason": "You hit 10 on every set at 97.5kg. Add 2.5kg."
+          },
+          "lastTime": {
+            "day": "2026-10-03",
+            "top": {
+              "weight": 97.5,
+              "reps": 8
+            },
+            "sets": [
+              {
+                "weight": 97.5,
+                "reps": 8
+              },
+              {
+                "weight": 97.5,
+                "reps": 8
+              },
+              {
+                "weight": 97.5,
+                "reps": 7
+              }
+            ]
+          },
+          "repLow": 8
+        },
+        "ex-b": {
+          "name": "Incline Dumbbell Press",
+          "unit": "kg each",
+          "ladder": [
+            0,
+            2.5,
+            5,
+            7.5,
+            10,
+            12.5,
+            15,
+            17.5,
+            20,
+            22.5,
+            25,
+            27.5,
+            30,
+            32.5,
+            35,
+            37.5,
+            40,
+            42.5,
+            45,
+            47.5,
+            50,
+            52.5,
+            55,
+            57.5,
+            60,
+            62.5
+          ],
+          "setupNote": null,
+          "priorMarks": null,
+          "doneToday": [],
+          "loading": {
+            "mode": "fixed_step",
+            "step": 2.5
+          },
+          "plan": {
+            "kind": "estimate",
+            "verb": "Estimate",
+            "reason": "First time on Incline Dumbbell Press. From your Barbell Bench Press, 22.5kg is a sensible first try — it is an estimate, not history, so change it to whatever it turns out to be."
+          },
+          "lastTime": null,
+          "repLow": 8
+        },
+        "ex-c": {
+          "name": "Pull-up",
+          "unit": "kg added",
+          "ladder": [
+            0,
+            1.25,
+            2.5,
+            3.75,
+            5,
+            6.25,
+            7.5,
+            8.75,
+            10,
+            11.25,
+            12.5,
+            13.75,
+            15,
+            16.25,
+            17.5,
+            18.75,
+            20,
+            21.25,
+            22.5,
+            23.75,
+            25,
+            26.25,
+            27.5,
+            28.75,
+            30,
+            31.25,
+            32.5,
+            33.75,
+            35,
+            36.25,
+            37.5,
+            38.75,
+            40,
+            41.25,
+            42.5,
+            43.75,
+            45,
+            46.25,
+            47.5,
+            48.75,
+            50,
+            51.25,
+            52.5,
+            53.75,
+            55,
+            56.25,
+            57.5,
+            58.75,
+            60
+          ],
+          "setupNote": null,
+          "priorMarks": {
+            "weight": 0,
+            "e1rm": 0,
+            "unloadedReps": 10
+          },
+          "doneToday": [
+            {
+              "setId": "c-s0",
+              "weight": 0,
+              "reps": 5,
+              "completedAt": "2026-10-14T17:20:00.000Z"
+            }
+          ],
+          "loading": {
+            "mode": "free"
+          },
+          "plan": null,
+          "lastTime": {
+            "day": "2026-10-07",
+            "top": {
+              "weight": 0,
+              "reps": 10
+            },
+            "sets": [
+              {
+                "weight": 0,
+                "reps": 10
+              },
+              {
+                "weight": 0,
+                "reps": 9
+              }
+            ]
+          },
+          "repLow": 6
         }
       }
     }

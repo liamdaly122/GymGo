@@ -4,14 +4,8 @@ import type { PreviousPerformance } from '@/domain/previousPerformance';
 import type { Suggestion } from '@/domain/progression';
 import { setHints } from '@/domain/setHints';
 
-/** The chip beside the plan line: what the engine wants you to do, in a word. */
-export const VERB: Record<string, string> = {
-  add_weight: 'Go up',
-  add_reps: 'More reps',
-  repeat: 'Hold',
-  deload: 'Back off',
-  estimate: 'Estimate',
-};
+/** The chip beside the plan line: what the engine wants you to do, in a word. The watch is sent the same words. */
+export { SUGGESTION_VERB as VERB } from '@/domain/progression';
 
 export const VERB_TONE: Record<string, string> = {
   estimate: 'chip-hot',
@@ -51,7 +45,7 @@ export function setPlan(
   previous: PreviousPerformance | null | undefined,
 ): SetPlan {
   const { child, hintable, lastTime, fromTop, schemeRole, weightHint, repsHint, label } = setHints(
-    { technique: entry.workoutExercise.technique, loading: entry.loading, sets: entry.sets },
+    { technique: entry.workoutExercise.technique, loading: entry.loading, sets: entry.sets, repRange: entry.repRange },
     set,
     ordinal,
     suggestion,

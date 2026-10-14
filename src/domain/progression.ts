@@ -17,6 +17,20 @@ import { loadableWeight, nextLoadableAbove, nextLoadableBelow, type LoadingProfi
 
 export type SuggestionKind = 'add_weight' | 'add_reps' | 'repeat' | 'deload' | 'estimate';
 
+/**
+ * What the engine wants you to do, in a word: the chip beside the plan line on
+ * the phone, and the word after the set's label on the watch. One table, so
+ * the wrist and the phone say the same thing (the watch is sent the word, never
+ * the kind to word for itself).
+ */
+export const SUGGESTION_VERB: Record<SuggestionKind, string> = {
+  add_weight: 'Go up',
+  add_reps: 'More reps',
+  repeat: 'Hold',
+  deload: 'Back off',
+  estimate: 'Estimate',
+};
+
 export interface Suggestion {
   weight_kg: number;
   reps: number;

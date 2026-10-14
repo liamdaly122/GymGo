@@ -1,0 +1,93 @@
+[
+  {
+    "name": "the next station with work left",
+    "open": [
+      true,
+      true,
+      true
+    ],
+    "from": 0,
+    "expected": 1
+  },
+  {
+    "name": "past a station already done",
+    "open": [
+      true,
+      false,
+      true
+    ],
+    "from": 0,
+    "expected": 2
+  },
+  {
+    "name": "from a station done in the middle",
+    "open": [
+      true,
+      false,
+      true,
+      true
+    ],
+    "from": 1,
+    "expected": 2
+  },
+  {
+    "name": "round to a station skipped earlier",
+    "open": [
+      true,
+      false,
+      false
+    ],
+    "from": 2,
+    "expected": 0
+  },
+  {
+    "name": "from the last station, round to the first open one",
+    "open": [
+      false,
+      true,
+      false,
+      false
+    ],
+    "from": 3,
+    "expected": 1
+  },
+  {
+    "name": "everything after it done, back to an earlier one",
+    "open": [
+      true,
+      true,
+      false,
+      false
+    ],
+    "from": 1,
+    "expected": 0
+  },
+  {
+    "name": "never the station itself",
+    "open": [
+      false,
+      true,
+      false
+    ],
+    "from": 1,
+    "expected": null
+  },
+  {
+    "name": "nothing open",
+    "open": [
+      false,
+      false,
+      false
+    ],
+    "from": 0,
+    "expected": null
+  },
+  {
+    "name": "one station, even with work left",
+    "open": [
+      true
+    ],
+    "from": 0,
+    "expected": null
+  }
+]

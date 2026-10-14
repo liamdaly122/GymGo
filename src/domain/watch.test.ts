@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkoutSet } from '@/db/schema';
-import { buildWatchSnapshot, weightLadder, type WatchEntryInput, type WatchInput } from './watch';
+import { buildWatchSnapshot, upNextFor, WATCH_FINISH, WATCH_REASON_MAX, weightLadder, type WatchEntryInput, type WatchInput } from './watch';
 import type { LoadingProfile } from './plates';
+import type { PreviousPerformance } from './previousPerformance';
 import { makeSet } from './testFactories';
 
 const BAR: LoadingProfile = { mode: 'barbell', barWeight: 20, plates: [25, 20, 15, 10, 5, 2.5, 1.25] };
@@ -16,10 +17,10 @@ function todo(we: string, index: number, overrides: Partial<WorkoutSet> = {}): W
   });
 }
 
-function done(we: string, index: number, weight: number, reps: number, at: string): WorkoutSet {
+function done(we: string, index: number, weight: number, reps: number, at: string, overrides: Partial<WorkoutSet> = {}): WorkoutSet {
   return makeSet({
     id: `${we}-s${index}`, workout_exercise_id: we, set_index: index,
-    weight_kg: weight, reps, completed: true, completed_at: at,
+    weight_kg: weight, reps, completed: true, completed_at: at, ...overrides,
   });
 }
 
@@ -34,11 +35,18 @@ function entry(we: string, overrides: Partial<WatchEntryInput> = {}): WatchEntry
     setupNote: null,
     loading: BAR,
     sets: [todo(we, 0), todo(we, 1), todo(we, 2)],
-    suggestion: { weight_kg: 100, reps: 5 },
+    suggestion: { weight_kg: 100, reps: 5, kind: 'add_weight', reason: 'You hit 5 on every set last time, so add 2.5kg.' },
     previous: null,
     priorMarks: null,
+    repRange: null,
     ...overrides,
   };
+}
+
+function previous(day: string, sets: Array<[number, number]>): PreviousPerformance {
+  const working = sets.map(([weight, reps], index) => done('old', index, weight, reps, `${day}T17:0${index}:00.000Z`));
+  const top = working.reduce((best, set) => (set.weight_kg > best.weight_kg || (set.weight_kg === best.weight_kg && set.reps > best.reps) ? set : best));
+  return { workout_id: 'w-0', performed_at: `${day}T12:00:00.000Z`, top_set: top, working_sets: working };
 }
 
 function input(entries: WatchEntryInput[], stations?: WatchInput['stations']): WatchInput {
@@ -163,6 +171,109 @@ describe('the list the watch walks', () => {
   it('sends nothing to do once every set is done', () => {
     const a = entry('a', { sets: [done('a', 0, 100, 5, '2026-10-14T17:03:00.000Z')] });
     expect(buildWatchSnapshot(input([a])).sets).toEqual([]);
+  });
+
+  it('sends the plan in the phone\'s own word, and its reason', () => {
+    const lift = buildWatchSnapshot(input([entry('a')])).lifts['ex-a']!;
+    expect(lift.plan).toEqual({ kind: 'add_weight', verb: 'Go up', reason: 'You hit 5 on every set last time, so add 2.5kg.' });
+    const none = buildWatchSnapshot(input([entry('a', { suggestion: null })])).lifts['ex-a']!;
+    expect(none.plan).toBeNull();
+  });
+
+  it('clamps a long reason, and leaves one that fits alone', () => {
+    const long = 'A'.repeat(WATCH_REASON_MAX + 40);
+    const plan = buildWatchSnapshot(input([entry('a', { suggestion: { weight_kg: 50, reps: 8, kind: 'estimate', reason: long } })])).lifts['ex-a']!.plan!;
+    expect(plan.reason).toHaveLength(WATCH_REASON_MAX);
+    expect(plan.reason.endsWith('…')).toBe(true);
+    expect(plan.verb).toBe('Estimate');
+    const fits = 'B'.repeat(WATCH_REASON_MAX);
+    expect(buildWatchSnapshot(input([entry('a', { suggestion: { weight_kg: 50, reps: 8, kind: 'repeat', reason: fits } })])).lifts['ex-a']!.plan!.reason).toBe(fits);
+  });
+
+  it('sends last time: the day it was done, its best working set, and every working set in order', () => {
+    const a = entry('a', { previous: previous('2026-10-03', [[95, 8], [97.5, 8], [97.5, 7]]) });
+    expect(buildWatchSnapshot(input([a])).lifts['ex-a']!.lastTime).toEqual({
+      day: '2026-10-03',
+      top: { weight: 97.5, reps: 8 },
+      sets: [{ weight: 95, reps: 8 }, { weight: 97.5, reps: 8 }, { weight: 97.5, reps: 7 }],
+    });
+    expect(buildWatchSnapshot(input([entry('a')])).lifts['ex-a']!.lastTime).toBeNull();
+  });
+
+  it('sends the bottom of the range, or null for freestyle', () => {
+    expect(buildWatchSnapshot(input([entry('a', { repRange: { low: 8, high: 10 } })])).lifts['ex-a']!.repLow).toBe(8);
+    expect(buildWatchSnapshot(input([entry('a')])).lifts['ex-a']!.repLow).toBeNull();
+  });
+
+  it('steps the set after a short one down a notch, as the phone does', () => {
+    const a = entry('a', {
+      repRange: { low: 8, high: 10 },
+      sets: [done('a', 0, 100, 5, '2026-10-14T17:03:00.000Z'), todo('a', 1), todo('a', 2)],
+    });
+    const snapshot = buildWatchSnapshot(input([a]));
+    expect(snapshot.sets[0]).toMatchObject({ weight: 90, reps: 8, source: 'stepped', carries: true });
+    expect(snapshot.sets[0]!.upNext.detail).toBe('Set 3 of 3 · 90 × 8');
+  });
+
+  it('marks an AMRAP set, still to do or done, and only when it is one', () => {
+    const a = entry('a', {
+      repRange: { low: 8, high: 10 },
+      sets: [done('a', 0, 100, 5, '2026-10-14T17:03:00.000Z', { is_amrap: true }), todo('a', 1), todo('a', 2, { is_amrap: true })],
+    });
+    const snapshot = buildWatchSnapshot(input([a]));
+    expect(snapshot.lifts['ex-a']!.doneToday).toEqual([
+      { setId: 'a-s0', weight: 100, reps: 5, completedAt: '2026-10-14T17:03:00.000Z', amrap: true },
+    ]);
+    // An AMRAP set that fell short is carried as done.
+    expect(snapshot.sets[0]).toMatchObject({ weight: 100, reps: 5, source: 'carried' });
+    expect('amrap' in snapshot.sets[0]!).toBe(false);
+    expect(snapshot.sets[1]!.amrap).toBe(true);
+  });
+});
+
+describe('Up next', () => {
+  const stations = [{ name: 'Bench Press', outline: 'Barbell · 3 × 6–10' }, { name: 'Fly + Raise', outline: 'Superset · Cable + Dumbbell' }];
+  const set = (station: number, name: string, label: string, weight: number | null, reps: number | null) => ({ station, name, label, weight, reps });
+
+  it('names the same lift\'s next set with the numbers it starts at', () => {
+    expect(upNextFor(0, set(0, 'Bench Press', 'Set 2 of 3', 102.5, 6), stations)).toEqual({ name: 'Bench Press', detail: 'Set 2 of 3 · 102.5 × 6' });
+  });
+
+  it('says BW for unloaded bodyweight work, and leaves the numbers off until there are reps', () => {
+    expect(upNextFor(0, set(0, 'Pull-up', 'Set 2 of 3', 0, 8), stations).detail).toBe('Set 2 of 3 · BW × 8');
+    expect(upNextFor(0, set(0, 'Pull-up', 'Set 2 of 3', 0, null), stations).detail).toBe('Set 2 of 3');
+    expect(upNextFor(0, set(0, 'Pull-up', 'Set 2 of 3', 50, 0), stations).detail).toBe('Set 2 of 3');
+  });
+
+  it('names a superset partner by its own lift', () => {
+    expect(upNextFor(1, set(1, 'Side Lateral Raise', 'Set 1 of 3', 10, 12), stations)).toEqual({ name: 'Side Lateral Raise', detail: 'Set 1 of 3 · 10 × 12' });
+  });
+
+  it('names another station by its name and outline', () => {
+    expect(upNextFor(0, set(1, 'Cable Crossover', 'Set 1 of 3', 25, 12), stations)).toEqual({ name: 'Fly + Raise', detail: 'Superset · Cable + Dumbbell' });
+  });
+
+  it('says Finish after the last set', () => {
+    expect(upNextFor(1, null, stations)).toEqual(WATCH_FINISH);
+    expect(WATCH_FINISH).toEqual({ name: 'Finish', detail: 'Last set done' });
+  });
+
+  it('is what the list says for every set', () => {
+    const a = entry('a', { sets: [todo('a', 0), todo('a', 1)] });
+    const b = entry('b', { sets: [todo('b', 0)], suggestion: null });
+    const c = entry('c', { sets: [todo('c', 0)], restSeconds: 90 });
+    const snapshot = buildWatchSnapshot(input([a, b, c], [
+      { members: [0], name: 'Lift a', outline: 'Barbell · 2 × 5' },
+      { members: [1, 2], name: 'Lift b + Lift c', outline: 'Superset · Barbell' },
+    ]));
+    snapshot.sets.forEach((current, index) => {
+      const next = snapshot.sets[index + 1];
+      expect(current.upNext, current.id).toEqual(upNextFor(
+        current.station,
+        next ? { station: next.station, name: snapshot.lifts[next.exerciseId]!.name, label: next.label, weight: next.weight, reps: next.reps } : null,
+        snapshot.stations,
+      ));
+    });
   });
 });
 

@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WatchContext, WatchEvent, WatchStateReport } from '@/domain/watchProtocol';
+import stateFixtures from '../../fixtures/watch/state.json';
 
 /**
  * The link's web side, against a stand-in for the native plugin. The native
@@ -213,6 +214,16 @@ describe('the link with the watch, inside the app', () => {
     h.emit('watchState', { json: '{"seq":"eleven"}', receivedAt: 6_000 });
     h.emit('watchState', { json: report({ seq: 11, at: '2026-10-14T18:11:00.000Z', session: 'paused' as never }), receivedAt: 6_000 });
     expect(getWatchState().report?.seq).toBe(10);
+  });
+
+  it('reads every field of the reports the watch writes (fixtures/watch/state.json)', async () => {
+    const cases = stateFixtures as unknown as Array<{ name: string; report: WatchStateReport }>;
+    expect(cases.length).toBeGreaterThan(1);
+    for (const { name, report: sent } of cases) {
+      resetWatchState();
+      h.emit('watchState', { json: JSON.stringify(sent), receivedAt: 9_000 });
+      expect(getWatchState().report, name).toEqual({ ...sent, receivedAt: 9_000 });
+    }
   });
 
   it('reads a build 6 report with nothing skipped, not paused, no set in hand and no rest start', async () => {

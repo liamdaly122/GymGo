@@ -85,6 +85,7 @@ async function snapshotFromView(
       suggestion: await suggestionFor(view.workout, exercise.id),
       previous: previousPerformance(history),
       priorMarks: recordMarks(history.flatMap((session) => session.sets)),
+      repRange: item.repRange,
     });
   }
 

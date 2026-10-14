@@ -213,7 +213,14 @@
                 2.5,
                 1.25
               ]
-            }
+            },
+            "plan": {
+              "kind": "add_weight",
+              "verb": "Go up",
+              "reason": "You hit 5 on every set at 97.5kg. Add 2.5kg."
+            },
+            "lastTime": null,
+            "repLow": null
           },
           "ex-b": {
             "name": "Lift b",
@@ -291,7 +298,14 @@
             "loading": {
               "mode": "fixed_step",
               "step": 2.5
-            }
+            },
+            "plan": {
+              "kind": "repeat",
+              "verb": "Hold",
+              "reason": "You hit 12 on every set at 22.5kg."
+            },
+            "lastTime": null,
+            "repLow": null
           }
         }
       },
@@ -721,7 +735,34 @@
                     2.5,
                     1.25
                   ]
-                }
+                },
+                "plan": {
+                  "kind": "add_weight",
+                  "verb": "Go up",
+                  "reason": "You hit 10 on every set at 80kg. Add 2.5kg."
+                },
+                "lastTime": {
+                  "day": "2026-10-07",
+                  "top": {
+                    "weight": 80,
+                    "reps": 10
+                  },
+                  "sets": [
+                    {
+                      "weight": 80,
+                      "reps": 10
+                    },
+                    {
+                      "weight": 80,
+                      "reps": 10
+                    },
+                    {
+                      "weight": 80,
+                      "reps": 10
+                    }
+                  ]
+                },
+                "repLow": 6
               },
               "ex-fly": {
                 "name": "Cable Crossover",
@@ -748,7 +789,14 @@
                 "loading": {
                   "mode": "fixed_step",
                   "step": 5
-                }
+                },
+                "plan": {
+                  "kind": "add_reps",
+                  "verb": "More reps",
+                  "reason": "Last time 25kg × 11. Go for 12."
+                },
+                "lastTime": null,
+                "repLow": 10
               },
               "ex-raise": {
                 "name": "Side Lateral Raise",
@@ -786,7 +834,10 @@
                 "loading": {
                   "mode": "fixed_step",
                   "step": 2.5
-                }
+                },
+                "plan": null,
+                "lastTime": null,
+                "repLow": 12
               }
             }
           }
@@ -1055,7 +1106,14 @@
                 2.5,
                 1.25
               ]
-            }
+            },
+            "plan": {
+              "kind": "add_weight",
+              "verb": "Go up",
+              "reason": "You hit 5 on every set at 97.5kg. Add 2.5kg."
+            },
+            "lastTime": null,
+            "repLow": null
           },
           "ex-b": {
             "name": "Lift b",
@@ -1133,7 +1191,14 @@
             "loading": {
               "mode": "fixed_step",
               "step": 2.5
-            }
+            },
+            "plan": {
+              "kind": "repeat",
+              "verb": "Hold",
+              "reason": "You hit 12 on every set at 22.5kg."
+            },
+            "lastTime": null,
+            "repLow": null
           }
         }
       },

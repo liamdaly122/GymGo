@@ -7,27 +7,35 @@
  * round by round across a superset, each child straight after its parent —
  * and sends the whole list, with every number, rest and "Up next" line the
  * phone's own screen would show. The watch follows the list, and keeps only
- * three rules of its own (docs/native-roadmap.md, 4.6):
+ * these rules of its own (docs/watch-protocol.md, "The watch's own rules"):
  *
- *  1. carry forward: from the second set on, start at the set just done;
+ *  1. carry forward: from the second set on, start at the set just done, a
+ *     notch lighter when it fell short of the range (`carryForward`);
  *  2. the back-off target: a pyramid's other sets aim off today's top set;
- *  3. the record check: the same marks and the same gate as the phone.
+ *  3. the record check: the same marks and the same gate as the phone;
+ *  4. where the session goes after a station (`nextStation`), for a station
+ *     tapped or a set skipped on the wrist;
+ *  5. how Up next words the set that follows (`upNextFor`), once the wrist
+ *     has gone off the list's order.
  *
- * Each entry carries what those rules need: whether it carries, which top set
- * it aims off, and the marks to beat. Everything else is decided here, from
- * the same functions the phone's screen uses, so a rule still lives in one
- * place. A new snapshot goes every time the phone can send one, and that
- * corrects anything the watch had to work out for itself.
+ * Each entry carries what those rules need: whether it carries, the bottom of
+ * the range and whether a set is AMRAP, which top set it aims off, and the
+ * marks to beat. Everything else is decided here, from the same functions the
+ * phone's screen uses, so a rule still lives in one place. A new snapshot goes
+ * every time the phone can send one, and that corrects anything the watch had
+ * to work out for itself.
  *
  * Pure. The database layer assembles the input.
  */
 import type { WorkoutSet } from '@/db/schema';
 import type { PreviousPerformance } from './previousPerformance';
+import { SUGGESTION_VERB, type RepRange, type Suggestion, type SuggestionKind } from './progression';
 import type { RecordMarks } from './prs';
 import {
   nextLoadableAbove,
   type LoadingProfile,
 } from './plates';
+import { localIsoDate } from './schedule';
 import { setHints, startingNumbers } from './setHints';
 import { restsAfterSet, setInHand, type OrderedSet } from './supersets';
 import { isTopWorkingSet, setOrdinals } from './sets';
@@ -48,10 +56,13 @@ export interface WatchEntryInput {
   loading: LoadingProfile;
   /** Live sets, in set order. */
   sets: WorkoutSet[];
-  suggestion: { weight_kg: number; reps: number } | null;
+  /** What the engine suggests for the lift: the numbers, and the word and reason for them. */
+  suggestion: Pick<Suggestion, 'weight_kg' | 'reps' | 'kind' | 'reason'> | null;
   previous: PreviousPerformance | null;
   /** Where the lift's records stood before today. Null for a first. */
   priorMarks: RecordMarks | null;
+  /** The range the routine prescribes (`WorkoutExerciseView.repRange`). Null for freestyle. */
+  repRange: RepRange | null;
 }
 
 export interface WatchStationInput {
@@ -72,8 +83,42 @@ export interface WatchInput {
   sentAt: string;
 }
 
-/** Where a set's starting numbers came from. */
-export type WatchHintSource = 'typed' | 'scheme' | 'carried' | 'suggestion' | 'last' | 'none';
+/**
+ * Where a set's starting numbers came from. `stepped` is the set just done, a
+ * notch lighter because it fell short of the range (`carryForward`).
+ */
+export type WatchHintSource = 'typed' | 'scheme' | 'carried' | 'stepped' | 'suggestion' | 'last' | 'none';
+
+/** What the rest screen says is next. */
+export interface WatchUpNext {
+  name: string;
+  detail: string;
+}
+
+/** The engine's plan for a lift, as the watch shows it: the phone's own word, and why. */
+export interface WatchPlan {
+  kind: SuggestionKind;
+  /** `SUGGESTION_VERB[kind]`: "Go up", "More reps", "Hold", "Back off", "Estimate". */
+  verb: string;
+  /** Plain English, clamped to `WATCH_REASON_MAX` characters. */
+  reason: string;
+}
+
+/** The last session the lift was done in (`previousPerformance`). */
+export interface WatchLastTime {
+  /**
+   * The lifter's own calendar day it was finished, YYYY-MM-DD. Never relative
+   * words: the watch may be days past the phone's last context.
+   */
+  day: string;
+  /** The best working set: the previous-performance line. The watch never re-derives that rule. */
+  top: { weight: number; reps: number };
+  /** Every top-level working set, in the order done. */
+  sets: Array<{ weight: number; reps: number }>;
+}
+
+/** The longest plan reason sent. The watch's lift sheet scrolls, so this only guards the context's size. */
+export const WATCH_REASON_MAX = 320;
 
 export interface WatchSet {
   id: string;
@@ -104,7 +149,19 @@ export interface WatchSet {
   /** Seconds of rest after this set, or null for none (a warm-up, a continuation, A1 of a pair). */
   restAfter: number | null;
   /** What the rest screen says is next. */
-  upNext: { name: string; detail: string };
+  upNext: WatchUpNext;
+  /** Marked AMRAP on the phone. Sent only when true: rule 1 never steps down off an AMRAP set. */
+  amrap?: true;
+}
+
+/** A working set of the lift already logged today. */
+export interface WatchDoneSet {
+  setId: string;
+  weight: number;
+  reps: number;
+  completedAt: string | null;
+  /** Sent only when true. */
+  amrap?: true;
 }
 
 export interface WatchLift {
@@ -116,9 +173,15 @@ export interface WatchLift {
   /** Rule 3: the marks to beat. Null for a lift never done before. */
   priorMarks: RecordMarks | null;
   /** Working sets already logged today, oldest first: the carry and the record check start from these. */
-  doneToday: Array<{ setId: string; weight: number; reps: number; completedAt: string | null }>;
-  /** Plate rounding for a back-off target on the watch. */
+  doneToday: WatchDoneSet[];
+  /** Plate rounding for a back-off target and a step-down on the watch. */
   loading: LoadingProfile;
+  /** Why the first set's numbers are what they are. Null with no suggestion. Absent from a build 6 phone. */
+  plan?: WatchPlan | null;
+  /** The last session of this lift. Null for a first. Absent from a build 6 phone. */
+  lastTime?: WatchLastTime | null;
+  /** Rule 1: the bottom of the rep range, which a short set steps down to. Null for freestyle. Absent from a build 6 phone. */
+  repLow?: number | null;
 }
 
 export interface WatchSnapshot {
@@ -133,7 +196,8 @@ export interface WatchSnapshot {
   lifts: Record<string, WatchLift>;
 }
 
-const FINISH = { name: 'Finish', detail: 'Last set done' } as const;
+/** Up next after the last set of the session. */
+export const WATCH_FINISH: WatchUpNext = { name: 'Finish', detail: 'Last set done' };
 
 function unitFor(equipment: Equipment): WatchLift['unit'] {
   if (equipment === 'dumbbell' || equipment === 'kettlebell') return 'kg each';
@@ -144,6 +208,54 @@ function unitFor(equipment: Equipment): WatchLift['unit'] {
 /** A number the way the big fields show it: no trailing zeros, no float dust. */
 function formatNumber(value: number): string {
   return String(Math.round(value * 100) / 100);
+}
+
+function clampReason(reason: string): string {
+  if (reason.length <= WATCH_REASON_MAX) return reason;
+  return `${reason.slice(0, WATCH_REASON_MAX - 1).trimEnd()}…`;
+}
+
+/** The set that comes up next, as much of it as Up next reads. */
+export interface UpNextSet {
+  /** Index into the stations. */
+  station: number;
+  /** The lift's name. */
+  name: string;
+  /** "Set 3 of 4", "Warm-up 1 of 3". */
+  label: string;
+  /** The numbers it starts at: the list's, or the watch's once its own rules have had their say. */
+  weight: number | null;
+  reps: number | null;
+}
+
+/**
+ * What the rest screen says is next, after a set at station `fromStation`.
+ *
+ * - The same station (the lift's next set, or a superset partner's): the
+ *   lift's name, and its label with the numbers it starts at, "BW" for
+ *   unloaded bodyweight work: "Set 3 of 4 · 100 × 5". No numbers until it has
+ *   reps above zero.
+ * - Another station: its name and outline, "Machine · 3 × 10–15".
+ * - Nothing left: Finish.
+ *
+ * The list carries it worked out for every set; the watch words it this way
+ * itself once a station tapped or a set skipped takes it off the list's order.
+ */
+export function upNextFor(
+  fromStation: number,
+  next: UpNextSet | null,
+  stations: ReadonlyArray<{ name: string; outline: string }>,
+): WatchUpNext {
+  if (!next) return WATCH_FINISH;
+  if (next.station === fromStation) {
+    const numbers =
+      next.weight !== null && next.reps !== null && next.reps > 0
+        ? ` · ${next.weight > 0 ? formatNumber(next.weight) : 'BW'} × ${next.reps}`
+        : '';
+    return { name: next.name, detail: `${next.label}${numbers}` };
+  }
+  const station = stations[next.station]!;
+  return { name: station.name, detail: station.outline };
 }
 
 /**
@@ -214,6 +326,7 @@ export function buildWatchSnapshot(input: WatchInput): WatchSnapshot {
     // Two entries can share a lift (the same exercise twice in a session):
     // their sets are one history for the carry and the record check.
     const existing = lifts[entry.exerciseId];
+    const { suggestion, previous } = entry;
     lifts[entry.exerciseId] = {
       name: entry.name,
       unit: unitFor(entry.equipment),
@@ -222,9 +335,26 @@ export function buildWatchSnapshot(input: WatchInput): WatchSnapshot {
       priorMarks: entry.priorMarks,
       doneToday: [
         ...(existing?.doneToday ?? []),
-        ...done.map((set) => ({ setId: set.id, weight: set.weight_kg, reps: set.reps, completedAt: set.completed_at })),
+        ...done.map((set) => ({
+          setId: set.id,
+          weight: set.weight_kg,
+          reps: set.reps,
+          completedAt: set.completed_at,
+          ...(set.is_amrap ? { amrap: true as const } : {}),
+        })),
       ],
       loading: entry.loading,
+      plan: suggestion
+        ? { kind: suggestion.kind, verb: SUGGESTION_VERB[suggestion.kind], reason: clampReason(suggestion.reason) }
+        : null,
+      lastTime: previous
+        ? {
+            day: localIsoDate(new Date(previous.performed_at)),
+            top: { weight: previous.top_set.weight_kg, reps: previous.top_set.reps },
+            sets: previous.working_sets.map((set) => ({ weight: set.weight_kg, reps: set.reps })),
+          }
+        : null,
+      repLow: entry.repRange?.low ?? null,
     };
   }
 
@@ -260,7 +390,8 @@ export function buildWatchSnapshot(input: WatchInput): WatchSnapshot {
       carries: hints.hintable && hints.fromTop === null && !weightTyped && !repsTyped,
       scheme: hints.fromTop !== null && hints.topSet ? { stepsFromTop: hints.fromTop, topSetId: hints.topSet.id } : null,
       restAfter: null,
-      upNext: FINISH,
+      upNext: WATCH_FINISH,
+      ...(set.is_amrap ? { amrap: true as const } : {}),
     };
   });
 
@@ -273,16 +404,13 @@ export function buildWatchSnapshot(input: WatchInput): WatchSnapshot {
     // is done the moment the top set ends.
     const continues = next !== undefined && next.parentSetId === current.id;
     current.restAfter = rests && !continues ? entry.restSeconds : null;
-    if (!next) return;
-    if (next.station === current.station) {
-      const logged = next.weight !== null && next.reps !== null && next.reps > 0
-        ? ` · ${next.weight > 0 ? formatNumber(next.weight) : 'BW'} × ${next.reps}`
-        : '';
-      current.upNext = { name: lifts[next.exerciseId]!.name, detail: `${next.label}${logged}` };
-    } else {
-      const station = input.stations[next.station]!;
-      current.upNext = { name: station.name, detail: station.outline };
-    }
+    current.upNext = upNextFor(
+      current.station,
+      next
+        ? { station: next.station, name: lifts[next.exerciseId]!.name, label: next.label, weight: next.weight, reps: next.reps }
+        : null,
+      input.stations,
+    );
   });
 
   return {

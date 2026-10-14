@@ -11,20 +11,26 @@
  *
  * From the second set on the placeholder is the set just done, so the next
  * set is a nudge of a stepper. In order: a pyramid's scheme target, the
- * working set done most recently today, the suggestion, last time. Warm-ups,
- * drops and back-offs are never carried.
+ * working set done most recently today (a notch lighter for the bottom of the
+ * range when it fell short of it: `carryForward` in carry.ts), the
+ * suggestion, last time. Warm-ups, drops and back-offs are never carried.
  *
  * Pure.
  */
 import type { WorkoutSet } from '@/db/schema';
+import { carryForward, type StepDown } from './carry';
 import type { LoadingProfile } from './plates';
 import type { PreviousPerformance } from './previousPerformance';
+import type { RepRange } from './progression';
 import { schemeTarget, stepsFromTop } from './schemes';
-import { CHILD_NAMES, isChildSet, latestWorkingSet } from './sets';
+import { CHILD_NAMES, isChildSet } from './sets';
 import type { Technique } from './types';
 
-/** Where a placeholder came from. */
-export type HintSource = 'scheme' | 'carried' | 'suggestion' | 'last';
+/**
+ * Where a placeholder came from. `stepped` is the set just done, a notch
+ * lighter because it fell short of the range; `carried` is it as done.
+ */
+export type HintSource = 'scheme' | 'carried' | 'stepped' | 'suggestion' | 'last';
 
 export interface SetHints {
   /** A drop, rest-pause, myo or cluster piece hanging off another set. */
@@ -45,6 +51,12 @@ export interface SetHints {
   /** Where each placeholder came from; null where there is none. */
   weightSource: HintSource | null;
   repsSource: HintSource | null;
+  /**
+   * When the placeholders are the set just done stepped down a notch (source
+   * `stepped`): what that set was, and the bottom of the range it missed.
+   * "5 was under 8, so 90kg for 8." Null otherwise.
+   */
+  stepDown: StepDown | null;
   /** "Set 3 of 4", "Warm-up 1 of 3", "Drop · set 2", "Set 3 of 3 · Back-off". */
   label: string;
 }
@@ -55,6 +67,8 @@ export interface HintEntry {
   loading: LoadingProfile;
   /** Its live sets, in set order. */
   sets: readonly WorkoutSet[];
+  /** The range the routine prescribes, for the step-down. Null for freestyle. */
+  repRange: RepRange | null;
 }
 
 type Numbers = { weight_kg: number; reps: number };
@@ -92,11 +106,12 @@ export function setHints(
   const schemeRole = set.type === 'back_off' ? (technique === 'pyramid' ? 'Ramp' : 'Back-off') : null;
 
   // From the second set on, the fields start at what was just done: the next
-  // set is a nudge of a stepper, not two numbers typed again. The suggestion
-  // and last time are for the first.
-  const carried = hintable ? latestWorkingSet(entry.sets) : null;
+  // set is a nudge of a stepper, not two numbers typed again. A notch lighter
+  // when it fell short of the range. The suggestion and last time are for the
+  // first.
+  const carried = hintable ? carryForward(entry.sets, entry.repRange?.low ?? null, entry.loading) : null;
   const candidates: Array<[HintSource, Numbers | null | undefined]> = hintable
-    ? [['scheme', schemeHint], ['carried', carried], ['suggestion', suggestion], ['last', lastTime]]
+    ? [['scheme', schemeHint], [carried?.stepped ? 'stepped' : 'carried', carried], ['suggestion', suggestion], ['last', lastTime]]
     : [['scheme', schemeHint]];
   const first = (field: keyof Numbers) => candidates.find(([, numbers]) => numbers != null && numbers[field] != null);
   const weightFrom = first('weight_kg');
@@ -120,6 +135,7 @@ export function setHints(
     repsHint: repsFrom?.[1]?.reps ?? null,
     weightSource: weightFrom?.[0] ?? null,
     repsSource: repsFrom?.[0] ?? null,
+    stepDown: weightFrom?.[0] === 'stepped' || repsFrom?.[0] === 'stepped' ? (carried?.stepped ?? null) : null,
     label,
   };
 }

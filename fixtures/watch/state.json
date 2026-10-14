@@ -1,0 +1,81 @@
+[
+  {
+    "name": "every field set: paused mid-rest, a set skipped, the next in hand",
+    "report": {
+      "v": 1,
+      "at": "2026-10-14T17:31:30.000Z",
+      "seq": 42,
+      "workoutId": "00000000-0000-4000-8000-000000000500",
+      "session": "running",
+      "owner": "watch",
+      "seenPhoneClaim": "2026-10-14T17:20:00.000Z",
+      "setId": "a-s2",
+      "inHand": {
+        "name": "Lift a",
+        "detail": "Set 3 of 3 · 100 × 5"
+      },
+      "rest": {
+        "endsAt": "2026-10-14T17:33:00.000Z",
+        "startedAt": "2026-10-14T17:30:30.000Z",
+        "upNext": {
+          "name": "Lift a",
+          "detail": "Set 3 of 3 · 100 × 5"
+        }
+      },
+      "skipped": [
+        "a-s1",
+        "b-s2"
+      ],
+      "paused": "2026-10-14T17:31:00.000Z",
+      "heartRate": 128,
+      "activeKcal": 210.5,
+      "health": "recording"
+    }
+  },
+  {
+    "name": "running with nothing new: nothing skipped, not paused, no set in hand, a rest with no start",
+    "report": {
+      "v": 1,
+      "at": "2026-10-14T17:12:00.000Z",
+      "seq": 7,
+      "workoutId": "00000000-0000-4000-8000-000000000500",
+      "session": "running",
+      "owner": "phone",
+      "seenPhoneClaim": null,
+      "setId": null,
+      "inHand": null,
+      "rest": {
+        "endsAt": "2026-10-14T17:13:30.000Z",
+        "upNext": {
+          "name": "Finish",
+          "detail": "Last set done"
+        }
+      },
+      "skipped": [],
+      "paused": null,
+      "heartRate": null,
+      "activeKcal": null,
+      "health": "denied"
+    }
+  },
+  {
+    "name": "nothing running: every nullable field null",
+    "report": {
+      "v": 1,
+      "at": "2026-10-14T19:00:00.000Z",
+      "seq": 1,
+      "workoutId": null,
+      "session": "none",
+      "owner": "watch",
+      "seenPhoneClaim": null,
+      "setId": null,
+      "inHand": null,
+      "rest": null,
+      "skipped": [],
+      "paused": null,
+      "heartRate": null,
+      "activeKcal": null,
+      "health": "off"
+    }
+  }
+]

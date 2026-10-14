@@ -20,7 +20,7 @@ const done = (index: number, weight: number, reps: number, at: string): WorkoutS
   });
 
 const entry = (sets: WorkoutSet[], overrides: Partial<HintEntry> = {}): HintEntry => ({
-  technique: 'straight', loading: BAR, sets, ...overrides,
+  technique: 'straight', loading: BAR, sets, repRange: null, ...overrides,
 });
 
 const previous = (weight: number, reps: number): PreviousPerformance => {
@@ -46,6 +46,37 @@ describe('the numbers a set starts at', () => {
     const sets = [done(0, 102.5, 6, '2026-10-14T17:03:00.000Z'), todo(1)];
     expect(setHints(entry(sets), sets[1]!, 1, { weight_kg: 100, reps: 5 }, null)).toMatchObject({
       weightHint: 102.5, repsHint: 6, weightSource: 'carried',
+    });
+  });
+
+  it('steps the set just done down a notch when it fell short of the range, and says why', () => {
+    const sets = [done(0, 100, 5, '2026-10-14T17:03:00.000Z'), todo(1)];
+    const hints = setHints(entry(sets, { repRange: { low: 8, high: 10 } }), sets[1]!, 1, { weight_kg: 100, reps: 8 }, null);
+    expect(hints).toMatchObject({
+      weightHint: 90, repsHint: 8, weightSource: 'stepped', repsSource: 'stepped',
+      stepDown: { from: { weight: 100, reps: 5 }, repLow: 8 },
+    });
+  });
+
+  it('carries the set just done as done when it made the range, or there is no range', () => {
+    const sets = [done(0, 100, 8, '2026-10-14T17:03:00.000Z'), todo(1)];
+    expect(setHints(entry(sets, { repRange: { low: 8, high: 10 } }), sets[1]!, 1, null, null)).toMatchObject({
+      weightHint: 100, repsHint: 8, weightSource: 'carried', stepDown: null,
+    });
+    const short = [done(0, 100, 5, '2026-10-14T17:03:00.000Z'), todo(1)];
+    expect(setHints(entry(short), short[1]!, 1, null, null)).toMatchObject({
+      weightHint: 100, repsHint: 5, weightSource: 'carried', stepDown: null,
+    });
+  });
+
+  it('gives the first set no step-down, and a pyramid\'s back-off set its scheme target over one', () => {
+    const first = [todo(0), todo(1)];
+    expect(setHints(entry(first, { repRange: { low: 8, high: 10 } }), first[0]!, 0, { weight_kg: 100, reps: 8 }, null)).toMatchObject({
+      weightSource: 'suggestion', stepDown: null,
+    });
+    const pyramid = [done(0, 100, 3, '2026-10-14T17:03:00.000Z'), todo(1, { type: 'back_off' })];
+    expect(setHints(entry(pyramid, { technique: 'reverse_pyramid', repRange: { low: 8, high: 10 } }), pyramid[1]!, 1, null, null)).toMatchObject({
+      weightHint: 90, repsHint: 5, weightSource: 'scheme', stepDown: null,
     });
   });
 

@@ -1,0 +1,425 @@
+[
+  {
+    "name": "the same lift's next set, with its numbers",
+    "from": 0,
+    "next": {
+      "station": 0,
+      "name": "Barbell Bench Press",
+      "label": "Set 2 of 4",
+      "weight": 82.5,
+      "reps": 8
+    },
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Barbell Bench Press",
+      "detail": "Set 2 of 4 · 82.5 × 8"
+    }
+  },
+  {
+    "name": "a weight to two places",
+    "from": 0,
+    "next": {
+      "station": 0,
+      "name": "Barbell Bench Press",
+      "label": "Set 3 of 4",
+      "weight": 101.25,
+      "reps": 5
+    },
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Barbell Bench Press",
+      "detail": "Set 3 of 4 · 101.25 × 5"
+    }
+  },
+  {
+    "name": "unloaded bodyweight work says BW",
+    "from": 2,
+    "next": {
+      "station": 2,
+      "name": "Pull-up",
+      "label": "Set 2 of 3",
+      "weight": 0,
+      "reps": 9
+    },
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Pull-up",
+      "detail": "Set 2 of 3 · BW × 9"
+    }
+  },
+  {
+    "name": "no numbers without reps",
+    "from": 0,
+    "next": {
+      "station": 0,
+      "name": "Barbell Bench Press",
+      "label": "Set 2 of 4",
+      "weight": 82.5,
+      "reps": null
+    },
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Barbell Bench Press",
+      "detail": "Set 2 of 4"
+    }
+  },
+  {
+    "name": "no numbers at zero reps",
+    "from": 0,
+    "next": {
+      "station": 0,
+      "name": "Barbell Bench Press",
+      "label": "Set 2 of 4",
+      "weight": 82.5,
+      "reps": 0
+    },
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Barbell Bench Press",
+      "detail": "Set 2 of 4"
+    }
+  },
+  {
+    "name": "no numbers without a weight",
+    "from": 0,
+    "next": {
+      "station": 0,
+      "name": "Barbell Bench Press",
+      "label": "Set 2 of 4",
+      "weight": null,
+      "reps": 8
+    },
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Barbell Bench Press",
+      "detail": "Set 2 of 4"
+    }
+  },
+  {
+    "name": "a warm-up of the same lift",
+    "from": 0,
+    "next": {
+      "station": 0,
+      "name": "Barbell Bench Press",
+      "label": "Warm-up 2 of 3",
+      "weight": 60,
+      "reps": 5
+    },
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Barbell Bench Press",
+      "detail": "Warm-up 2 of 3 · 60 × 5"
+    }
+  },
+  {
+    "name": "a superset partner, by its own name",
+    "from": 1,
+    "next": {
+      "station": 1,
+      "name": "Side Lateral Raise",
+      "label": "Set 1 of 3",
+      "weight": 7.5,
+      "reps": 15
+    },
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Side Lateral Raise",
+      "detail": "Set 1 of 3 · 7.5 × 15"
+    }
+  },
+  {
+    "name": "a new station: its name and outline",
+    "from": 0,
+    "next": {
+      "station": 1,
+      "name": "Cable Crossover",
+      "label": "Set 1 of 3",
+      "weight": 25,
+      "reps": 12
+    },
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Cable Crossover + Side Lateral Raise",
+      "detail": "Superset · Cable + Dumbbell"
+    }
+  },
+  {
+    "name": "back to an earlier station",
+    "from": 2,
+    "next": {
+      "station": 0,
+      "name": "Barbell Bench Press",
+      "label": "Set 4 of 4",
+      "weight": 82.5,
+      "reps": 8
+    },
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Barbell Bench Press",
+      "detail": "Barbell · 4 × 6–10"
+    }
+  },
+  {
+    "name": "the last set: Finish",
+    "from": 1,
+    "next": null,
+    "stations": [
+      {
+        "name": "Barbell Bench Press",
+        "outline": "Barbell · 4 × 6–10",
+        "exerciseIds": [
+          "ex-bench"
+        ]
+      },
+      {
+        "name": "Cable Crossover + Side Lateral Raise",
+        "outline": "Superset · Cable + Dumbbell",
+        "exerciseIds": [
+          "ex-fly",
+          "ex-raise"
+        ]
+      },
+      {
+        "name": "Pull-up",
+        "outline": "Bodyweight · 3 × 6–10",
+        "exerciseIds": [
+          "ex-pullup"
+        ]
+      }
+    ],
+    "expected": {
+      "name": "Finish",
+      "detail": "Last set done"
+    }
+  }
+]
