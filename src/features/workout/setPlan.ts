@@ -1,8 +1,10 @@
 import type { WorkoutExerciseView } from '@/db/queries';
 import type { WorkoutSet } from '@/db/schema';
+import type { StepDown } from '@/domain/carry';
 import type { PreviousPerformance } from '@/domain/previousPerformance';
 import type { Suggestion } from '@/domain/progression';
 import { setHints } from '@/domain/setHints';
+import { formatNumber } from './setNames';
 
 /** The chip beside the plan line: what the engine wants you to do, in a word. The watch is sent the same words. */
 export { SUGGESTION_VERB as VERB } from '@/domain/progression';
@@ -11,6 +13,23 @@ export const VERB_TONE: Record<string, string> = {
   estimate: 'chip-hot',
   deload: 'chip-warn',
 };
+
+/**
+ * The chip when the set just done fell short of the range and this one starts
+ * a notch lighter (`carryForward` in src/domain/carry.ts). The watch's header
+ * says the same word. Amber, as "Back off" is: a lighter load, said plainly;
+ * blue is for what improved, chalk for the button to press.
+ */
+export const LIGHTER = 'Lighter';
+export const LIGHTER_TONE = 'chip-warn';
+
+/**
+ * The plan line beside "Lighter": what fell short, and what the set is now.
+ * "5 was under 8, so 90kg for 8." `weight` is the stepped placeholder.
+ */
+export function stepDownReason(stepDown: StepDown, weight: number): string {
+  return `${stepDown.from.reps} was under ${stepDown.repLow}, so ${formatNumber(weight)}kg for ${stepDown.repLow}.`;
+}
 
 /** What a set is meant to be, before anything is typed into it. */
 export interface SetPlan {
@@ -27,6 +46,13 @@ export interface SetPlan {
   /** The placeholders: what the set starts at while nothing is typed. */
   weightHint: number | null;
   repsHint: number | null;
+  /**
+   * When the placeholders are the set just done a notch lighter, because it
+   * fell short of the range: what it was, and the reps aimed for now. The
+   * plan line then says "Lighter" rather than the suggestion's verb, since
+   * the numbers on screen are no longer the suggestion's.
+   */
+  stepDown: StepDown | null;
   /** "Set 3 of 4", "Warm-up 1 of 3", "Drop · set 2", "Set 3 of 3 · Back-off". */
   label: string;
 }
@@ -44,12 +70,12 @@ export function setPlan(
   suggestion: Suggestion | null | undefined,
   previous: PreviousPerformance | null | undefined,
 ): SetPlan {
-  const { child, hintable, lastTime, fromTop, schemeRole, weightHint, repsHint, label } = setHints(
+  const { child, hintable, lastTime, fromTop, schemeRole, weightHint, repsHint, stepDown, label } = setHints(
     { technique: entry.workoutExercise.technique, loading: entry.loading, sets: entry.sets, repRange: entry.repRange },
     set,
     ordinal,
     suggestion,
     previous,
   );
-  return { child, hintable, lastTime, fromTop, schemeRole, weightHint, repsHint, label };
+  return { child, hintable, lastTime, fromTop, schemeRole, weightHint, repsHint, stepDown, label };
 }

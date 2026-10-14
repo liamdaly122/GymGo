@@ -2,8 +2,9 @@
  * The logging screen after the rework: one station on screen; focus that moves
  * because you moved it, or once the rest after an exercise's last set is over,
  * with the rest naming where it goes; a readiness answer that visibly changes
- * the numbers; a first-time lift that says it is guessing; and each set
- * starting at what the last one did.
+ * the numbers; a first-time lift that says it is guessing; each set starting
+ * at what the last one did; and a set that fell short of the range starting
+ * the next one a notch lighter, on the phone and on the companion.
  */
 import { launchChromium } from './browser.mjs';
 
@@ -360,6 +361,57 @@ await step('the next set starts at what the last one did', async () => {
   const third = await p.getByLabel('Set 3 weight in kilograms').getAttribute('placeholder');
   if (Number(third) !== stepped) throw new Error(`set 3 should start at ${stepped}, it shows ${third}`);
   console.log(`       12.5 × 11, then ${stepped} × 11, then set 3 starts at ${third}`);
+});
+
+await step('a short set on a ranged lift starts the next one lighter, and says so', async () => {
+  // A routine prescribes a range (8–12 when an exercise is added), which a
+  // freestyle session has not, so the open one is saved and a routine started.
+  if (await p.getByRole('dialog').count()) await p.keyboard.press('Escape');
+  await p.getByRole('button', { name: 'Finish', exact: true }).click();
+  await p.getByRole('button', { name: 'Finish and save' }).click();
+  await p.waitForURL(/#\/history\//, { timeout: 15000 });
+  await p.goto(BASE + '#/plan', { waitUntil: 'networkidle' });
+  await p.getByRole('button', { name: 'New routine' }).click();
+  await p.getByLabel('Routine name').fill('Short set check');
+  await p.getByRole('button', { name: 'Create' }).click();
+  await p.waitForTimeout(900);
+  await p.getByRole('button', { name: 'Add exercise' }).first().click();
+  await p.getByPlaceholder('Add to routine').fill('barbell bench press');
+  await p.getByRole('button', { name: /^Barbell Bench Press - Medium Grip/ }).first().click();
+  await p.waitForTimeout(800);
+  await p.getByRole('button', { name: /^Start / }).click();
+  await p.waitForURL(/#\/workout\//, { timeout: 15000 });
+  const workoutId = /#\/workout\/([^/?]+)/.exec(p.url())?.[1];
+
+  // Five on a lift asking for eight: one rep short is not a reason to ask for 100 again.
+  await p.getByLabel('Set 1 weight in kilograms').fill('100');
+  await p.getByLabel('Set 1 repetitions').fill('5');
+  await p.getByLabel(/Mark set 1 done/).click();
+  await p.waitForTimeout(500);
+  await skipRest();
+
+  const weight = await p.getByLabel('Set 2 weight in kilograms').getAttribute('placeholder');
+  const reps = await p.getByLabel('Set 2 repetitions').getAttribute('placeholder');
+  if (weight !== '90' || reps !== '8') throw new Error(`set 2 should start at 90 × 8, it shows ${weight} × ${reps}`);
+  const plan = p.locator('main .b-plan').first();
+  const line = (await plan.innerText()).replace(/\n/g, ' ');
+  if (!/^Lighter\b/i.test(line)) throw new Error(`the plan line should say Lighter, it says: ${line}`);
+  await plan.getByText('5 was under 8, so 90kg for 8.', { exact: true }).waitFor({ timeout: 3000 });
+  if (!(await p.getByRole('button', { name: /^Mark set 2 done, 90kg × 8$/ }).count())) {
+    throw new Error('Done should log the stepped numbers, 90 × 8');
+  }
+  await p.screenshot({ path: 'e2e/shot-session-lighter.png' });
+
+  // The companion shows what the watch will log: the same step, in the same words.
+  await p.evaluate((id) => window.__gymgoWatch.report({ workoutId: id, setId: null }), workoutId);
+  const watching = p.getByRole('region', { name: 'On your watch' });
+  await watching.waitFor({ timeout: 5000 });
+  await watching.getByText('90kg × 8', { exact: true }).waitFor({ timeout: 3000 });
+  await watching.getByText('5 was under 8, so 90kg for 8.', { exact: true }).waitFor({ timeout: 3000 });
+  if (!/Lighter/i.test(await watching.locator('.b-plan').first().innerText())) {
+    throw new Error('the companion should say Lighter too');
+  }
+  await p.evaluate(() => window.__gymgoWatch.clear());
 });
 
 console.log(errs.length ? '\nBrowser errors:\n' + errs.join('\n') : '\nNo browser errors.');

@@ -13,7 +13,7 @@ import PercentageTable, { tableMax } from '@/features/exercises/PercentageTable'
 import SetupNotesField from '@/features/exercises/SetupNotesField';
 import { EQUIPMENT_LABELS } from '@/features/exercises/labels';
 import PlateDiagram from './PlateDiagram';
-import { setPlan, VERB, VERB_TONE } from './setPlan';
+import { LIGHTER, LIGHTER_TONE, setPlan, stepDownReason, VERB, VERB_TONE } from './setPlan';
 import { describeTempo, formatLogged, formatNumber } from './setNames';
 
 /**
@@ -121,8 +121,15 @@ export default function ExerciseInfo({
         <p className="b-setlabel">All sets done</p>
       )}
 
-      {/* The plan behind the numbers, one line, the full reason a tap away. */}
-      {plan?.hintable && suggestion ? (
+      {/* The plan behind the numbers, one line, the full reason a tap away;
+          "Lighter" when the set just done fell short of the range, as the
+          phone's own set in hand and the watch's header say. */}
+      {plan?.hintable && plan.stepDown && plan.weightHint !== null ? (
+        <div className="b-plan">
+          <span className={`chip ${LIGHTER_TONE}`}>{LIGHTER}</span>
+          <span className="plan-reason">{stepDownReason(plan.stepDown, plan.weightHint)}</span>
+        </div>
+      ) : plan?.hintable && suggestion ? (
         <div className="b-plan">
           <span className={`chip ${VERB_TONE[suggestion.kind] ?? ''}`}>{VERB[suggestion.kind]}</span>
           <button

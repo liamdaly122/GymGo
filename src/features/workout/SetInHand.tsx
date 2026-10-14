@@ -13,7 +13,7 @@ import { playRecordTone, RECORD_VIBRATION, vibrate } from '@/lib/feedback';
 import { useWriteQueue } from '@/hooks/useWriteQueue';
 import { useRestTimer } from './RestTimer';
 import PlateDiagram from './PlateDiagram';
-import { setPlan, VERB, VERB_TONE } from './setPlan';
+import { LIGHTER, LIGHTER_TONE, setPlan, stepDownReason, VERB, VERB_TONE } from './setPlan';
 import {
   CONTINUATION_REST_SECONDS,
   describeRecord,
@@ -94,7 +94,7 @@ export default function SetInHand({
 
   // What the set starts at, and what it is called: shared with the companion
   // screen, so the phone and the watch never disagree about the next set.
-  const { child, hintable, fromTop, schemeRole, weightHint, repsHint, label } = setPlan(
+  const { child, hintable, fromTop, schemeRole, weightHint, repsHint, stepDown, label } = setPlan(
     entry,
     set,
     ordinal,
@@ -306,8 +306,15 @@ export default function SetInHand({
       <PlateDiagram weight={weight} loading={entry.loading} equipment={equipment} />
 
       {/* The suggestion is the placeholder; this is the plain-language plan
-          that goes with it — one line, the full reason a tap away. */}
-      {hintable && suggestion ? (
+          that goes with it — one line, the full reason a tap away. When the
+          set just done fell short of the range, the placeholder is that set
+          a notch lighter instead, and the line says so. */}
+      {hintable && stepDown && weightHint !== null ? (
+        <div className="b-plan">
+          <span className={`chip ${LIGHTER_TONE}`}>{LIGHTER}</span>
+          <span className="plan-reason">{stepDownReason(stepDown, weightHint)}</span>
+        </div>
+      ) : hintable && suggestion ? (
         <div className="b-plan">
           <span className={`chip ${VERB_TONE[suggestion.kind] ?? ''}`}>{VERB[suggestion.kind]}</span>
           <button
