@@ -534,6 +534,25 @@ describe('a session laid out for the watch', () => {
     expect(await db.workouts.get(ready.snapshot.workoutId)).toMatchObject({ plan_id: plan.id, plan_week: 1, plan_session_index: 0 });
   });
 
+  /**
+   * Finish on the phone drains the inbox first. When that drain gives an empty
+   * phone workout's place to the watch's, the phone's Finish must not then
+   * finish it as well: the watch would be told it was finished, not discarded.
+   */
+  it('lets no Finish on the phone finish the empty workout a start from the watch discarded', async () => {
+    const { routineId } = await blockToday();
+    const ready = await readyNow();
+    const empty = await startWorkoutFromRoutine(routineId);
+
+    await applyWatchEvents([startOf(ready)]);
+
+    expect(await finishWorkout(empty)).toBe(false);
+    const workout = (await db.workouts.get(empty))!;
+    expect(workout.finished_at).toBeNull();
+    expect(workout.deleted_at).not.toBeNull();
+    expect((await context()).home.closed.find((entry) => entry.workoutId === empty)).toMatchObject({ how: 'discarded' });
+  });
+
   it('keeps a workout open on the phone with sets logged, and opens the watch one beside it', async () => {
     await blockToday();
     const ready = await readyNow();
