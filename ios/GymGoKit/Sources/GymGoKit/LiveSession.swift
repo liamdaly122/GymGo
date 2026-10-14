@@ -161,6 +161,19 @@ public enum LiveSession {
         return .end
     }
 
+    /// Workouts whose Live Activity the person swiped away: the one this phone
+    /// started, and has not ended itself, is gone. Not if the app has been
+    /// installed again since (an update, or a build from Xcode), which ends
+    /// its Live Activities without anyone saying no; `startedInstall` is nil
+    /// for a record that did not note it, and counts as this install.
+    public static func declined(
+        startedFor workoutId: String?, startedInstall: String?, currentInstall: String, showing: Showing?
+    ) -> Set<String> {
+        guard showing == nil, let workoutId else { return [] }
+        guard startedInstall == nil || startedInstall == currentInstall else { return [] }
+        return [workoutId]
+    }
+
     /// The phone's Start, which opens GymGo on the watch for `workoutId`. The
     /// app is in the foreground at the tap, which is when ActivityKit allows a
     /// start, so the activity goes up now ("Starting on your watch") rather

@@ -63,6 +63,23 @@ private func waiting(_ workoutId: String = "w-1", since: Date = t0) -> LiveSessi
     #expect(LiveSession.step(report: next, receivedAt: t0, now: t0, showing: shown("w-1"), mayStart: true, declined: ["w-2"]) == .end)
 }
 
+/// Swiped away means gone while this install had it up; installing the app
+/// again ends its Live Activities without anyone saying no.
+@Test func onlyAPersonSwipingItAwayKeepsItDown() {
+    let here = "/var/containers/Bundle/Application/A/App.app"
+    let there = "/var/containers/Bundle/Application/B/App.app"
+    #expect(LiveSession.declined(startedFor: "w-1", startedInstall: here, currentInstall: here, showing: nil) == ["w-1"])
+    #expect(LiveSession.declined(startedFor: "w-1", startedInstall: nil, currentInstall: here, showing: nil) == ["w-1"])
+    // An update or a build from Xcode since it went up: not a no.
+    #expect(LiveSession.declined(startedFor: "w-1", startedInstall: there, currentInstall: here, showing: nil).isEmpty)
+    // Still up, or never started: nothing declined.
+    #expect(LiveSession.declined(startedFor: "w-1", startedInstall: here, currentInstall: here, showing: shown()).isEmpty)
+    #expect(LiveSession.declined(startedFor: nil, startedInstall: nil, currentInstall: here, showing: nil).isEmpty)
+    // And a declined workout is not started again from its reports.
+    let declined = LiveSession.declined(startedFor: "w-1", startedInstall: here, currentInstall: here, showing: nil)
+    #expect(LiveSession.step(report: report(), receivedAt: t0, now: t0, showing: nil, mayStart: true, declined: declined) == .nothing)
+}
+
 // MARK: - The phone's Start
 
 @Test func thePhonesStartPutsOneUpAtTheTap() {

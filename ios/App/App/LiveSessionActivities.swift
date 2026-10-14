@@ -52,6 +52,10 @@ final class LiveSessionActivities {
     private struct Started: Codable {
         var workoutId: String
         var at: Date
+        /// The app bundle's path when it started. Installing the app again
+        /// (an update, or a build from Xcode) ends its Live Activities and
+        /// moves the bundle, and that is not the person saying no.
+        var install: String?
     }
 
     private static let startedKey = "gymgo.liveActivity.started"
@@ -186,11 +190,14 @@ final class LiveSessionActivities {
 
     private func decide(_ report: WatchStateReport?, receivedAt: Date?) async {
         let live = await current()
-        // Swiped away: the one this phone started for that workout is gone.
-        let declined: Set<String> = live == nil ? Set([started?.workoutId].compactMap { $0 }) : []
+        let shown = live.map(showing)
+        let declined = LiveSession.declined(
+            startedFor: started?.workoutId, startedInstall: started?.install,
+            currentInstall: Bundle.main.bundlePath, showing: shown
+        )
         let step = LiveSession.step(
             report: report, receivedAt: receivedAt, now: Date(),
-            showing: live.map(showing), mayStart: mayStart, declined: declined
+            showing: shown, mayStart: mayStart, declined: declined
         )
         switch step {
         case .nothing:
@@ -237,7 +244,7 @@ final class LiveSessionActivities {
         do {
             // No push: every update comes from this app, woken by the watch.
             _ = try Live.request(attributes: attributes, content: content, pushType: nil)
-            started = Started(workoutId: workoutId, at: Date())
+            started = Started(workoutId: workoutId, at: Date(), install: Bundle.main.bundlePath)
             mirrorGrantedAt = nil
         } catch {
             // Off in Settings, too many running, or not in the foreground after all.

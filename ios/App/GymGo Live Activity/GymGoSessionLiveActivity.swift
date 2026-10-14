@@ -58,7 +58,7 @@ struct GymGoSessionLiveActivity: Widget {
                     ExpandedLeading(state: state)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    HeartRate(bpm: state.heartRate, size: 17)
+                    HeartRate(bpm: context.isStale ? nil : state.heartRate, size: 17)
                         .frame(maxHeight: .infinity, alignment: .center)
                 }
                 DynamicIslandExpandedRegion(.center) {
@@ -74,7 +74,7 @@ struct GymGoSessionLiveActivity: Widget {
             } compactLeading: {
                 CompactLeading(state: state)
             } compactTrailing: {
-                CompactTrailing(state: state)
+                CompactTrailing(state: state, isStale: context.isStale)
             } minimal: {
                 Minimal(state: state)
             }
@@ -109,7 +109,9 @@ private struct LockScreen: View {
 
     var body: some View {
         let state = context.state
-        VStack(alignment: .leading, spacing: 10) {
+        // The system cuts a Lock Screen Live Activity off at 160 points, so
+        // the tallest state (a rest) is sized to fit inside it.
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(context.attributes.title)
                     .font(Look.display(17))
@@ -127,45 +129,66 @@ private struct LockScreen: View {
                     .font(Look.text(14))
                     .foregroundStyle(Look.muted)
                     .frame(maxWidth: 72, alignment: .trailing)
-                HeartRate(bpm: state.heartRate, size: 14)
-            }
-
-            switch state.phase {
-            case .resting:
-                RestBlock(state: state)
-            case .lifting:
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(state.exercise ?? "On your watch")
-                        .font(Look.display(30))
-                        .textCase(.uppercase)
-                        .foregroundStyle(Look.chalk)
-                        .lineLimit(1)
-                    if let detail = state.detail {
-                        Text(detail).font(Look.text(15)).foregroundStyle(Look.muted).lineLimit(1)
-                    }
-                }
-            case .starting:
-                Text("Starting on your watch")
-                    .font(Look.text(16, weight: .semibold))
-                    .foregroundStyle(Look.chalk)
-            case .onPhone:
-                Text("Logging on your iPhone")
-                    .font(Look.text(16, weight: .semibold))
-                    .foregroundStyle(Look.chalk)
-            case .ended:
-                Text("Workout over")
-                    .font(Look.display(30))
-                    .textCase(.uppercase)
-                    .foregroundStyle(Look.chalk)
+                HeartRate(bpm: context.isStale ? nil : state.heartRate, size: 14)
             }
 
             if context.isStale && state.phase != .ended {
-                Text("Out of touch with your watch")
-                    .font(Look.text(13))
-                    .foregroundStyle(Look.muted)
+                // Nothing heard for a while: a rest on screen would be long
+                // over, so only what was in hand stays, and the plain fact.
+                VStack(alignment: .leading, spacing: 2) {
+                    if let exercise = state.exercise {
+                        LiftName(exercise, size: 24)
+                    }
+                    Text("Out of touch with your watch")
+                        .font(Look.text(15, weight: .semibold))
+                        .foregroundStyle(Look.muted)
+                }
+            } else {
+                switch state.phase {
+                case .resting:
+                    RestBlock(state: state)
+                case .lifting:
+                    VStack(alignment: .leading, spacing: 2) {
+                        LiftName(state.exercise ?? "On your watch", size: 30)
+                        if let detail = state.detail {
+                            Text(detail).font(Look.text(15)).foregroundStyle(Look.muted).lineLimit(1)
+                        }
+                    }
+                case .starting:
+                    Text("Starting on your watch")
+                        .font(Look.text(16, weight: .semibold))
+                        .foregroundStyle(Look.chalk)
+                case .onPhone:
+                    Text("Logging on your iPhone")
+                        .font(Look.text(16, weight: .semibold))
+                        .foregroundStyle(Look.chalk)
+                case .ended:
+                    LiftName("Workout over", size: 30)
+                }
             }
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+}
+
+/// A lift's name as a poster, shrinking a little before it is cut short.
+private struct LiftName: View {
+    let name: String
+    let size: CGFloat
+
+    init(_ name: String, size: CGFloat) {
+        self.name = name
+        self.size = size
+    }
+
+    var body: some View {
+        Text(name)
+            .font(Look.display(size))
+            .textCase(.uppercase)
+            .foregroundStyle(Look.chalk)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
     }
 }
 
@@ -193,13 +216,13 @@ private struct RestBlock: View {
 
     var body: some View {
         if let range = restRange(state) {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .lastTextBaseline, spacing: 12) {
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Rest").font(Look.text(12, weight: .semibold)).textCase(.uppercase).foregroundStyle(Look.muted)
                         // Stops at 0:00 and stays there until the watch says the rest is over.
                         Text(timerInterval: range, countsDown: true)
-                            .font(Look.display(48))
+                            .font(Look.display(44))
                             .monospacedDigit()
                             .foregroundStyle(Look.chalk)
                             .frame(minWidth: 96, alignment: .leading)
@@ -236,7 +259,27 @@ private struct UpNext: View {
         if let name {
             VStack(alignment: alignment, spacing: 1) {
                 Text("Up next").font(Look.text(12, weight: .semibold)).textCase(.uppercase).foregroundStyle(Look.muted)
-                Text(name).font(Look.display(18)).textCase(.uppercase).foregroundStyle(Look.chalk).lineLimit(1)
+                LiftName(name, size: 18)
+                if let detail {
+                    Text(detail).font(Look.text(13)).foregroundStyle(Look.muted).lineLimit(1)
+                }
+            }
+        }
+    }
+}
+
+/// Up next in the island's narrower bottom: the label and the name on one line.
+private struct UpNextLine: View {
+    let name: String?
+    let detail: String?
+
+    var body: some View {
+        if let name {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Up next").font(Look.text(12, weight: .semibold)).textCase(.uppercase).foregroundStyle(Look.muted)
+                    LiftName(name, size: 18)
+                }
                 if let detail {
                     Text(detail).font(Look.text(13)).foregroundStyle(Look.muted).lineLimit(1)
                 }
@@ -280,11 +323,7 @@ private struct WatchSmall: View {
                 }
             }
         } else {
-            Text(state.phase == .lifting ? state.exercise ?? title : title)
-                .font(Look.display(20))
-                .textCase(.uppercase)
-                .foregroundStyle(Look.chalk)
-                .lineLimit(1)
+            LiftName(state.phase == .lifting ? state.exercise ?? title : title, size: 20)
         }
     }
 }
@@ -319,30 +358,35 @@ private struct ExpandedBottom: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            switch state.phase {
-            case .resting:
-                UpNext(name: state.upNext, detail: state.upNextDetail, alignment: .leading)
-                if let range = restRange(state) {
-                    RestBar(range: range)
-                }
-            case .lifting:
-                Text(state.exercise ?? "On your watch")
-                    .font(Look.display(24)).textCase(.uppercase).foregroundStyle(Look.chalk).lineLimit(1)
-                if let detail = state.detail {
-                    Text(detail).font(Look.text(14)).foregroundStyle(Look.muted).lineLimit(1)
-                }
-            case .starting:
-                Text("Starting on your watch").font(Look.text(15, weight: .semibold)).foregroundStyle(Look.chalk)
-            case .onPhone:
-                Text("Logging on your iPhone").font(Look.text(15, weight: .semibold)).foregroundStyle(Look.chalk)
-            case .ended:
-                Text("Workout over").font(Look.display(24)).textCase(.uppercase).foregroundStyle(Look.chalk)
-            }
-            if state.pausedAt != nil {
-                Text("Paused").font(Look.text(12, weight: .semibold)).textCase(.uppercase).foregroundStyle(Look.hot)
-            }
             if isStale && state.phase != .ended {
-                Text("Out of touch with your watch").font(Look.text(12)).foregroundStyle(Look.muted)
+                if let exercise = state.exercise {
+                    LiftName(exercise, size: 20)
+                }
+                Text("Out of touch with your watch").font(Look.text(14, weight: .semibold)).foregroundStyle(Look.muted)
+            } else {
+                switch state.phase {
+                case .resting:
+                    UpNextLine(name: state.upNext, detail: state.upNextDetail)
+                    if let range = restRange(state) {
+                        RestBar(range: range)
+                    }
+                case .lifting:
+                    VStack(alignment: .leading, spacing: 1) {
+                        LiftName(state.exercise ?? "On your watch", size: 24)
+                        if let detail = state.detail {
+                            Text(detail).font(Look.text(14)).foregroundStyle(Look.muted).lineLimit(1)
+                        }
+                    }
+                case .starting:
+                    Text("Starting on your watch").font(Look.text(15, weight: .semibold)).foregroundStyle(Look.chalk)
+                case .onPhone:
+                    Text("Logging on your iPhone").font(Look.text(15, weight: .semibold)).foregroundStyle(Look.chalk)
+                case .ended:
+                    LiftName("Workout over", size: 24)
+                }
+                if state.pausedAt != nil {
+                    Text("Paused").font(Look.text(12, weight: .semibold)).textCase(.uppercase).foregroundStyle(Look.hot)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -365,6 +409,8 @@ private struct CompactLeading: View {
 
 private struct CompactTrailing: View {
     let state: LiveSessionContent
+    /// An old heart rate is no heart rate.
+    let isStale: Bool
 
     var body: some View {
         if state.phase == .resting, let range = restRange(state) {
@@ -376,7 +422,7 @@ private struct CompactTrailing: View {
                 .multilineTextAlignment(.trailing)
                 .foregroundStyle(Look.chalk)
                 .frame(width: 40, alignment: .trailing)
-        } else if let bpm = state.heartRate {
+        } else if !isStale, let bpm = state.heartRate {
             Text("\(bpm)")
                 .font(Look.display(17))
                 .monospacedDigit()
