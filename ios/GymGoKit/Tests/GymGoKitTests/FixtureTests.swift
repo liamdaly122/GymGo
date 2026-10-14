@@ -4,9 +4,9 @@ import Testing
 
 /// The Swift port of the watch's own rules, run over the cases the
 /// TypeScript rules answered (fixtures/watch/, from scripts/watchFixtures.ts).
-/// If the two sides ever disagree, these fail. Build 7's step-down,
-/// `nextStation` and `upNextFor` have fixtures before their ports: until the
-/// ports land, those files are only decoded here.
+/// If the two sides ever disagree, these fail: the five rules (carry
+/// forward with its step-down, the back-off target, the record check,
+/// `nextStation` and `upNextFor`) each run over their file.
 
 private let fixtures = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -110,32 +110,46 @@ private struct CarryCase: Decodable {
     #expect(cases.contains { $0.logged.contains { $0.amrap == true } && $0.expected?.stepped == nil })
 }
 
-@Test func theStationCasesDecode() throws {
+/// Rule 4.
+@Test func nextStationMatchesTypeScript() throws {
     struct Case: Decodable { var name: String; var open: [Bool]; var from: Int; var expected: Int? }
     let cases = try load("stations.json", as: [Case].self)
     #expect(cases.count > 5)
     for c in cases {
-        // Structure only: watch-logic ports `nextStation` and runs it here.
-        #expect(c.open.indices.contains(c.from), "\(c.name)")
-        if let expected = c.expected {
-            #expect(expected != c.from && c.open.indices.contains(expected) && c.open[expected], "\(c.name)")
-        }
+        #expect(nextStation(c.open, from: c.from) == c.expected, "\(c.name)")
     }
     #expect(cases.contains { $0.expected == nil })
 }
 
-@Test func theUpNextCasesDecode() throws {
+/// Rule 5.
+@Test func upNextMatchesTypeScript() throws {
     struct Next: Decodable { var station: Int; var name: String; var label: String; var weight: Double?; var reps: Int? }
     struct Case: Decodable { var name: String; var from: Int; var next: Next?; var stations: [WatchStation]; var expected: UpNext }
     let cases = try load("upnext.json", as: [Case].self)
     #expect(cases.count > 5)
     for c in cases {
-        // Structure only: watch-logic ports `upNextFor` and runs it here.
-        #expect(c.stations.indices.contains(c.from), "\(c.name)")
-        if let next = c.next { #expect(c.stations.indices.contains(next.station), "\(c.name)") }
-        #expect(!c.expected.name.isEmpty, "\(c.name)")
+        let next = c.next.map { UpNextSet(station: $0.station, name: $0.name, label: $0.label, weight: $0.weight, reps: $0.reps) }
+        #expect(upNextFor(fromStation: c.from, next: next, stations: c.stations) == c.expected, "\(c.name)")
     }
-    #expect(cases.contains { $0.next == nil && $0.expected == UpNext(name: "Finish", detail: "Last set done") })
+    #expect(cases.contains { $0.next == nil && $0.expected == watchFinish })
+}
+
+/// The list's own Up next lines are `upNextFor` too: the port words every
+/// set of every snapshot fixture as the phone did, from the list's numbers.
+@Test func upNextWordsTheListAsThePhoneDid() throws {
+    struct Case: Decodable { var name: String; var snapshot: WatchSnapshot }
+    for c in try load("snapshots.json", as: [Case].self) {
+        let sets = c.snapshot.sets
+        for (index, set) in sets.enumerated() {
+            let next = index + 1 < sets.count ? sets[index + 1] : nil
+            let wording = upNextFor(
+                fromStation: set.station,
+                next: next.map { UpNextSet(station: $0.station, name: c.snapshot.lifts[$0.exerciseId]!.name, label: $0.label, weight: $0.weight, reps: $0.reps) },
+                stations: c.snapshot.stations
+            )
+            #expect(wording == set.upNext, "\(c.name): \(set.id)")
+        }
+    }
 }
 
 @Test func backOffTargetMatchesTypeScript() throws {
