@@ -93,3 +93,21 @@ is written up, with how it would be built, under "Coach brain" in
 - Bring the deload forward when the block is wearing him down.
 - An honest "about N min", from the rests actually taken.
 - Short on time: trim today's session to 30, 45 or 60 minutes before Start.
+
+## 14 October 2026: left over from the build 7 review
+
+Confirmed by the review, and deliberately left for later because each needs a
+bigger change than its effect is worth now:
+
+- **The same lift twice in one session shares one rep range.** The workout
+  view takes a lift's range from its first routine row, so an exercise added
+  twice by hand (a generated plan never repeats one) is judged by the same
+  range in both places, on the phone and the watch alike. The fix pairs the
+  k-th workout entry with the k-th routine row in `composeWorkoutRows`
+  (`src/db/queries.ts`), with no migration.
+- **For 5 seconds after a set on the wrist, the companion is one set behind.**
+  The watch holds each set's event for its Undo window but reports the next
+  set at once, so the companion works that set's numbers out without the set
+  just done. It catches up when the event lands. The fix adds the held set to
+  the state report (`held: { setId, weight, reps, at } | null`) and lays it
+  over the companion's view.
