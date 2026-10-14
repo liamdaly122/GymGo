@@ -85,72 +85,11 @@ public func dayLabel(_ day: String, from today: String, timeZone: TimeZone = .cu
 }
 
 extension WatchAppState {
-    /// The Today page as of `now` on the watch's own clock. The phone's data
-    /// may be from an earlier day: a session it planned for a day already
-    /// gone has rolled forward to today, by the phone's own rule, and what it
-    /// called done "today" was done another day.
+    /// The Today page as of `now` on the watch's own clock: its inputs,
+    /// worded by `TodayCard(_:now:)`, the one rule the complications read
+    /// too.
     public func todayCard(now: Date, timeZone: TimeZone = .current) -> TodayCard {
-        guard let home else {
-            return TodayCard(kind: .noPhone, heading: "GymGo", message: "Open GymGo on your iPhone to load your sessions.")
-        }
-        let today = localDay(now, timeZone: timeZone)
-        let doneToday = home.today == today ? home.doneToday.map(\.name) : []
-
-        if home.state == .running || liveWorkoutId != nil {
-            if let live = liveWorkoutId, discardedHere.contains(live) {
-                return TodayCard(
-                    kind: .discarded, heading: "Discarded", doneToday: doneToday,
-                    message: "Your iPhone catches up next time you open GymGo."
-                )
-            }
-            if let live = liveWorkoutId, endedWorkouts.contains(live) {
-                return TodayCard(
-                    kind: .waitingForPhone, heading: "Done today", doneToday: doneToday,
-                    message: "It saves on your iPhone next time you open GymGo."
-                )
-            }
-            return TodayCard(kind: .runningOnPhone, heading: "On your iPhone", doneToday: doneToday, message: "A workout is open on your iPhone.")
-        }
-
-        if let ready = home.ready {
-            if usedReadyKeys.contains(ready.key) {
-                return TodayCard(
-                    kind: .started, heading: "Done today", title: ready.name, doneToday: doneToday,
-                    message: "Next session loads from your iPhone."
-                )
-            }
-            if endedWorkouts.contains(ready.snapshot.workoutId), ready.mintedIds == nil {
-                // Discarded here, and its layout is not one the watch can lay
-                // out again under new IDs: the phone offers it again once it
-                // has caught up. Otherwise it starts again, under new IDs.
-                return TodayCard(
-                    kind: .discarded, heading: "Discarded", title: ready.name, doneToday: doneToday,
-                    message: "It comes back when your iPhone next opens GymGo."
-                )
-            }
-            let due = max(ready.date, today)
-            let isToday = due == today
-            let heading = isToday
-                ? (["Today"] + [ready.week?.label].compactMap { $0 }).joined(separator: " · ")
-                : "Next · \(dayLabel(ready.date, from: today, timeZone: timeZone))"
-            let count = ready.exercises.count
-            return TodayCard(
-                kind: .ready,
-                heading: heading,
-                title: ready.name,
-                detail: "\(count) exercise\(count == 1 ? "" : "s") · about \(ready.minutes) min",
-                movedFrom: ready.movedFrom.map { "Moved from \(dayLabel($0, from: today, timeZone: timeZone))" },
-                doneToday: doneToday,
-                startLabel: isToday ? "Start" : "Start early"
-            )
-        }
-
-        switch home.state {
-        case .blockDone:
-            return TodayCard(kind: .blockDone, heading: "Block done", doneToday: doneToday, message: "Start the next one on your iPhone.")
-        default:
-            return TodayCard(kind: .noPlan, heading: "No session planned", doneToday: doneToday, message: "Plan one on your iPhone, or start a workout there.")
-        }
+        TodayCard(todayInputs, now: now, timeZone: timeZone)
     }
 }
 
