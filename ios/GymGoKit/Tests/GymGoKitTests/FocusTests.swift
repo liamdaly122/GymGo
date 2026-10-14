@@ -444,3 +444,29 @@ private func withWarmUp() throws -> [String: Any] {
     #expect(result.outcome.restSeconds == nil)
     #expect(state.rest == nil)
 }
+
+@Test func aDropUnderTheFirstHalfHandsTheRoundsRestOnWhenThePartnerIsSkipped() throws {
+    var object = try snapshotObject("a superset and a pyramid")
+    guard var sets = object["sets"] as? [[String: Any]],
+          let index = sets.firstIndex(where: { ($0["id"] as? String) == "b-s0" }) else {
+        throw CocoaError(.fileReadCorruptFile)
+    }
+    var drop = sets[index]
+    drop["id"] = "b-d0"
+    drop["type"] = "drop"
+    drop["parentSetId"] = "b-s0"
+    drop["restAfter"] = NSNull()
+    sets.insert(drop, at: index + 1)
+    object["sets"] = sets
+
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: object))
+    _ = state.go(toStation: 1, at: minute(6))
+    _ = state.logSet(weight: 40, reps: 12, at: minute(6))
+    #expect(state.setInHand?.set.id == "b-d0")
+    _ = state.logSet(weight: 30, reps: 10, at: minute(7))
+    #expect(state.rest == nil && state.setInHand?.set.id == "c-s0")
+    // The row is taken: the partner's set is skipped, and the round rests.
+    _ = state.skipSetInHand(at: minute(8))
+    #expect(state.rest?.seconds == 90)
+}
