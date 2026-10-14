@@ -298,6 +298,65 @@ hand. The Supabase session lives in UserDefaults inside the app, so a
 reclaimed web view does not sign the backup out. The running rest
 (`gymgo.rest`) stays where it is: it is throwaway by design.
 
+## The Apple Watch runs the session; the phone is the companion
+
+The watch app is native SwiftUI. Its logic and screens live in a Swift
+package, `ios/GymGoKit` (`GymGoKit`: the contract types, the session model,
+the whole watch state as a pure value type, the cue table; `GymGoWatchUI`:
+the screens, the HealthKit controller, haptics and the WatchConnectivity
+link). The watch target (`ios/App/GymGo Watch App`) is a thin shell around it.
+`cd ios/GymGoKit && swift test` runs its tests on the Mac.
+
+**The contract is `docs/watch-protocol.md`**, with the shapes in
+`src/domain/watchProtocol.ts` and, field for field, `GymGoKit/Protocol.swift`.
+Read it before changing anything on either side of the link. In short:
+- the phone sends one context (the live workout, the watch's home pages with a
+  ready session to start on the wrist, workouts closed on the phone, its claim
+  on logging, its settings) as the application context, whole, every time;
+- the watch sends events (start, set, skip, finish carrying its unconfirmed
+  sets, discard), applied once each by ID and acknowledged only when applied
+  or skipped for good, and state reports (newest `seq` wins);
+- iOS freezes the phone's JavaScript while it is locked, so native code
+  (`ios/App/App/WatchLink.swift`) files the watch's events in an inbox and the
+  web app drains it (`src/platform/watch.ts`) on launch, on resume, when
+  something lands, and always before Finish.
+
+**The watch walks a list the phone worked out** (`buildWatchSnapshot` in
+`src/domain/watch.ts`) and keeps exactly three rules of its own: carry
+forward, the back-off target, the record check. They are held to the
+TypeScript by `fixtures/watch/`: `npm run fixtures:watch` writes them,
+Vitest fails if they fall behind, and the Swift tests run the port over the
+same cases and decode the context and event fixtures. A fourth rule on the
+watch needs a fixture too, or it does not go in.
+
+**A session started on the watch is replayed exactly.** The phone lays out
+the next session without writing it (`planRoutineStart` →
+`layoutFromRoutine` in `src/domain/startLayout.ts`) with real random UUIDs;
+the watch echoes the layout back in its start event, and `replayWatchStart`
+writes those rows, filed under the block slot only if it is still the one
+`planSlot` gives. `startWorkoutFromRoutine` is the same plan-then-persist
+path, so a tap and a wrist start produce the same rows.
+
+**Who logs sets is one rule:** `loggingSurface` in `src/domain/companion.ts`.
+While the watch logs, the workout screen is the companion
+(`CompanionView`): the watch's station with its photo, notes, target and
+details, readiness, what is next and the whole session, and no set in hand,
+Done bar, steppers, rest takeover or phone cue. "Log on this phone" takes it
+back. With no watch reporting, the screen is exactly the phone's own. Screens
+read the watch only through `useCompanionMode`; `scripts/boundaries.test.ts`
+keeps `@/platform/watchState` and the plugin out of `src/features`.
+
+**The watch records the workout to Apple Health** (an `HKWorkoutSession`,
+traditionalStrengthTraining, tagged `gymgo.workout.<id>`), which also keeps
+the app running wrist-down so the rest cues play. The phone never saves a
+copy of a workout the watch recorded. The phone's Start wakes the watch app
+through `HKHealthStore.startWatchApp`.
+
+`npm run test:companion` drives the companion screen through a
+development-only seam, `window.__gymgoWatch`. HealthKit, haptics wrist-down,
+the phone waking the watch and the real WatchConnectivity round trip only
+work on real devices.
+
 ## Writes go through one place
 
 `src/db/mutations.ts` is the only module that writes to Dexie. It stamps
@@ -986,7 +1045,7 @@ Three layers, each earning its place:
 The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
 `test:plans`, `test:swap`, `test:gyms`, `test:pro`, `test:block`,
 `test:programme`, `test:toolkit`, `test:smart`, `test:session`,
-`test:rollover`, `test:planswap`, `test:report`, `test:body` and
+`test:rollover`, `test:planswap`, `test:report`, `test:body`, `test:companion` and
 `test:rewards`, which runs at 375 × 667 to prove a record fits the rest screen
 of the smallest phone. They expect a dev server on `127.0.0.1:5185`
 (`npx vite --port 5185`), and each takes a `BASE_URL` override.
@@ -1048,6 +1107,13 @@ screen looks identical. These in particular are load-bearing:
   it, each row named by its exercises, kit and work, ending `, done` when
   finished
 - `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
+- the companion screen, present only while the watch logs: `On your watch`
+  (the bar's text, and the station's region, which reads `Coming up` or
+  `Done` when another station is picked), `Log on this phone`, the timer
+  `Rest on your watch`, the regions `This session` and `Up next`, `Setup notes
+  for <Exercise>`, `Details for <Exercise>`, `Back to the watch's exercise`,
+  and `Readiness low` / `normal` / `high` with `aria-pressed` in the group `How
+  is today going?`
 
 `Add exercise` names exactly one control at a time: the empty state owns it
 until there is a session, then the strip's `+` does. Two controls under one name
