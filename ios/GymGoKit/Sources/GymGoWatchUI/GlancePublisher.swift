@@ -73,7 +73,10 @@ public final class GlancePublisher {
             }
             last = glance
         }
-        if force {
+        // The zone moved since the last glance, while the app was not
+        // running to hear of it: the midnights moved, as for `timeZoneChanged`.
+        let zoneMoved = previous.map { $0.zone != glance.zone } ?? false
+        if force || zoneMoved {
             reload(true)
         } else if glance.needsReload(over: previous, now: now) {
             let daysBefore = (previous ?? .empty).trainingDays(from: now, timeZone: timeZone)

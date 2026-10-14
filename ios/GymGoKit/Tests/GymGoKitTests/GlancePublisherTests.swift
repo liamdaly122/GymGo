@@ -78,6 +78,28 @@ private final class Reloads {
 }
 
 @MainActor
+@Test func aLaunchAfterTheZoneChangedWhileTheAppWasClosedReloads() throws {
+    let url = temporaryGlance()
+    defer { try? FileManager.default.removeItem(at: url) }
+    var state = WatchAppState()
+    state.apply(try context(ready: readyObject()))
+    let london = Reloads()
+    london.publisher(url).publish(state, now: minute(6), timeZone: TimeZone(identifier: "Europe/London")!)
+    #expect(london.count == 1)
+
+    // Flown to New York with the app closed: the system's notification went
+    // to nobody. The launch's publish finds the same state in another zone.
+    let newYork = Reloads()
+    let publisher = newYork.publisher(url)
+    publisher.publish(state, now: minute(60 * 9), timeZone: TimeZone(identifier: "America/New_York")!)
+    #expect(newYork.count == 1 && newYork.relevance == 1)
+    #expect(WatchGlance.read(from: url)?.zone == "America/New_York")
+    // Once is enough: the next save in the same zone changes nothing.
+    publisher.publish(state, now: minute(60 * 9 + 1), timeZone: TimeZone(identifier: "America/New_York")!)
+    #expect(newYork.count == 1)
+}
+
+@MainActor
 @Test func withNoAppGroupNothingIsWrittenOrReloaded() throws {
     let reloads = Reloads()
     let publisher = reloads.publisher(nil)

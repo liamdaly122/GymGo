@@ -137,6 +137,10 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public private(set) var startedFrom: StartedFrom?
     /// The workout whose session ended last, for the state report.
     public private(set) var lastEnded: String?
+    /// When that session began (its snapshot's `startedAt`): the day a
+    /// session done here was done, for the Today page and the face once the
+    /// phone has not caught up by the next day. Nil in a state saved before.
+    public private(set) var lastEndedStartedAt: String?
     /// Events of sessions already over that the phone has not confirmed.
     public private(set) var pending: [WatchEvent] = []
 
@@ -178,7 +182,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case lastSentAt, home, settings, phoneClaim, liveWorkoutId, session, owner, seenPhoneClaim, usedReadyKeys
-        case endedWorkouts, discardedHere, startedFrom, lastEnded, pending, rest, lastRecord, summary, seq, undo
+        case endedWorkouts, discardedHere, startedFrom, lastEnded, lastEndedStartedAt, pending, rest, lastRecord, summary, seq, undo
     }
 
     /// Reads a state saved by any earlier build: fields added since default.
@@ -197,6 +201,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         discardedHere = try c.decodeIfPresent([String].self, forKey: .discardedHere) ?? []
         startedFrom = try c.decodeIfPresent(StartedFrom.self, forKey: .startedFrom)
         lastEnded = try c.decodeIfPresent(String.self, forKey: .lastEnded)
+        lastEndedStartedAt = try c.decodeIfPresent(String.self, forKey: .lastEndedStartedAt)
         pending = try c.decodeIfPresent([WatchEvent].self, forKey: .pending) ?? []
         rest = try c.decodeIfPresent(RestState.self, forKey: .rest)
         lastRecord = try c.decodeIfPresent(SetRecord.self, forKey: .lastRecord)
@@ -606,6 +611,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         pending.append(contentsOf: running.outbox)
         remember(running.workoutId, in: &endedWorkouts)
         lastEnded = running.workoutId
+        lastEndedStartedAt = running.snapshot.startedAt
         if let how {
             let progress = running.progress
             summary = WatchSummary(

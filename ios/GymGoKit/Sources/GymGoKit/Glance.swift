@@ -80,24 +80,32 @@ public struct WatchGlance: Codable, Sendable, Equatable {
     public var session: GlanceSession?
     /// The day of a session done on the wrist that the phone has not heard
     /// of yet: that day's mark reads done, and later days no longer say
-    /// "Done today".
+    /// "Done today" (`TodayInputs.doneHereDay`, worded by `TodayCard`).
     public var doneHereDay: String?
+    /// The time zone it was worked out in (`TimeZone.identifier`). A launch
+    /// in another zone, after the watch moved while the app was closed,
+    /// writes a glance that differs by this alone, and reloads.
+    public var zone: String?
 
-    public init(v: Int = WatchGlance.version, today: TodayInputs?, session: GlanceSession?, doneHereDay: String?) {
+    public init(
+        v: Int = WatchGlance.version, today: TodayInputs?, session: GlanceSession?, doneHereDay: String?, zone: String? = nil
+    ) {
         self.v = v
         self.today = today
         self.session = session
         self.doneHereDay = doneHereDay
+        self.zone = zone
     }
 
     /// Nothing from the phone yet, nothing on the wrist: what the face shows
     /// before the app has ever written, or with no App Group to read.
     public static let empty = WatchGlance(today: nil, session: nil, doneHereDay: nil)
 
-    /// The glance for the state as of `now`. `previous` keeps the day a
-    /// session was done on the wrist, which the state does not remember.
+    /// The glance for the state as of `now`, in `timeZone`. `previous`
+    /// keeps the day a session was done on the wrist for a state saved
+    /// before the state remembered it.
     public init(_ state: WatchAppState, now: Date, previous: WatchGlance?, timeZone: TimeZone = .current) {
-        let inputs = state.todayInputs
+        var inputs = state.todayInputs(timeZone: timeZone)
         let card = TodayCard(inputs, now: now, timeZone: timeZone)
         var session: GlanceSession?
         if let running = state.session {
@@ -117,12 +125,16 @@ public struct WatchGlance: Codable, Sendable, Equatable {
             )
         }
         let doneHere = session == nil && Self.doneHere(card.kind)
-        // The day it was trained: the session the last glance showed began
-        // on it, even when it finished after midnight.
-        let day = previous?.doneHereDay
+        // The day it was trained: the day the session began, even when it
+        // finished after midnight. The state remembers it; one saved before
+        // it did has the session the last glance showed.
+        let day = inputs?.doneHereDay
+            ?? previous?.doneHereDay
             ?? previous?.session.map { localDay($0.startedAt, timeZone: timeZone) }
             ?? localDay(now, timeZone: timeZone)
-        self.init(today: inputs, session: session, doneHereDay: doneHere ? day : nil)
+        // The face words it with the Today page's own rule, from the same input.
+        inputs?.doneHereDay = doneHere ? day : nil
+        self.init(today: inputs, session: session, doneHereDay: doneHere ? day : nil, zone: timeZone.identifier)
     }
 
     /// Done on the wrist, and the phone has not heard yet.
@@ -239,18 +251,10 @@ extension WatchGlance {
 
     public func moment(at date: Date, timeZone: TimeZone = .current) -> GlanceMoment {
         let day = localDay(date, timeZone: timeZone)
-        var card = TodayCard(today, now: date, timeZone: timeZone)
-        // Done on the wrist, the phone not caught up: "Done today" only on
-        // the day it was done. The Today page cannot tell (it does not know
-        // the day); the face can.
-        var doneHereToday = false
-        if Self.doneHere(card.kind) {
-            if let doneHereDay, doneHereDay != day {
-                card.heading = "Done · \(dayLabel(doneHereDay, from: day, timeZone: timeZone))"
-            } else {
-                doneHereToday = true
-            }
-        }
+        // Done on the wrist, the phone not caught up: `TodayCard` says "Done
+        // today" only on the day it was done, as the Today page does.
+        let card = TodayCard(today, now: date, timeZone: timeZone)
+        let doneHereToday = Self.doneHere(card.kind) && (doneHereDay.map { $0 == day } ?? true)
 
         let phase: GlanceMoment.Phase
         if let session {
@@ -265,11 +269,22 @@ extension WatchGlance {
 
         let days = today?.week ?? []
         let inWeek = days.contains { $0.date == day }
+        let moved = movedReady
         let marks: [WeekMark] = inWeek ? days.map { weekDay in
             var state = weekDay.state
-            if weekDay.date == doneHereDay, state != .rest { state = .done }
+            var name = weekDay.name
+            if weekDay.date == doneHereDay, state != .rest || moved != nil {
+                // The phone files a session on the day it was trained: a
+                // session started early on a rest day makes that day done.
+                state = .done
+                name = name ?? moved?.name
+            } else if let moved, weekDay.date == moved.date {
+                // Its planned day no longer holds it.
+                state = .rest
+                name = nil
+            }
             let isToday = weekDay.date == day
-            var spoken = [weekDay.weekday + (isToday ? ", today" : ""), weekDay.name ?? "rest day"]
+            var spoken = [weekDay.weekday + (isToday ? ", today" : ""), name ?? "rest day"]
             if state == .done { spoken.append("done") } else if state != .rest { spoken.append("planned") }
             return WeekMark(
                 letter: String(weekDay.weekday.prefix(1)), state: state, isToday: isToday,
@@ -287,16 +302,25 @@ extension WatchGlance {
         )
     }
 
+    /// The session on offer, started and done on the wrist on another day
+    /// than the one it was planned for ("Start early", or a day it rolled
+    /// from), the phone not caught up. Nil otherwise.
+    private var movedReady: TodayInputs.Ready? {
+        guard let doneHereDay, let ready = today?.ready, ready.used, ready.date != doneHereDay else { return nil }
+        return ready
+    }
+
     /// The days still to train, for the Smart Stack's relevance: the week's
     /// training days from today, and the session on offer, but not one done
-    /// on the wrist that the phone has not heard of.
+    /// on the wrist that the phone has not heard of, on the day it was done
+    /// or the day it was planned for.
     public func trainingDays(from now: Date, timeZone: TimeZone = .current) -> [String] {
         let today = localDay(now, timeZone: timeZone)
         var days = (self.today?.week ?? [])
             .filter { ($0.state == .planned || $0.state == .today) && $0.date >= today }
             .map(\.date)
         if let ready = self.today?.ready, !ready.used, !ready.discarded { days.append(max(ready.date, today)) }
-        return Set(days).subtracting([doneHereDay].compactMap { $0 }).sorted()
+        return Set(days).subtracting([doneHereDay, movedReady?.date].compactMap { $0 }).sorted()
     }
 
     /// The hours of a training day the Smart Stack should offer GymGo: when

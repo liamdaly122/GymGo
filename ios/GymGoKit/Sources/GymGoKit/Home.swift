@@ -89,7 +89,7 @@ extension WatchAppState {
     /// worded by `TodayCard(_:now:)`, the one rule the complications read
     /// too.
     public func todayCard(now: Date, timeZone: TimeZone = .current) -> TodayCard {
-        TodayCard(todayInputs, now: now, timeZone: timeZone)
+        TodayCard(todayInputs(timeZone: timeZone), now: now, timeZone: timeZone)
     }
 }
 
@@ -140,10 +140,15 @@ public struct TodayInputs: Codable, Sendable, Equatable {
     public var liveDiscardedHere: Bool
     /// That workout's session ended on the wrist, and the phone has not heard.
     public var liveEnded: Bool
+    /// The lifter's day a session done on the wrist began, "2026-10-14", so
+    /// a "Done" card the phone has not caught up with reads "Done · Wed" on
+    /// later days rather than "Done today". Nil when not known (a state
+    /// saved before it was kept).
+    public var doneHereDay: String?
 
     public init(
         phoneToday: String, state: WatchHome.State, doneToday: [String], ready: Ready?, week: [WatchWeekDay],
-        liveOnPhone: Bool, liveDiscardedHere: Bool, liveEnded: Bool
+        liveOnPhone: Bool, liveDiscardedHere: Bool, liveEnded: Bool, doneHereDay: String? = nil
     ) {
         self.phoneToday = phoneToday
         self.state = state
@@ -153,14 +158,22 @@ public struct TodayInputs: Codable, Sendable, Equatable {
         self.liveOnPhone = liveOnPhone
         self.liveDiscardedHere = liveDiscardedHere
         self.liveEnded = liveEnded
+        self.doneHereDay = doneHereDay
     }
 }
 
 extension WatchAppState {
-    /// The Today page's inputs. Nil until the phone has sent anything.
-    public var todayInputs: TodayInputs? {
+    /// The Today page's inputs, with this time zone's calendar for the day a
+    /// session was done here. Nil until the phone has sent anything.
+    public func todayInputs(timeZone: TimeZone = .current) -> TodayInputs? {
         guard let home else { return nil }
         let live = liveWorkoutId
+        // The day the session that ended last began: what a "Done" card
+        // means, once the phone has not caught up by the next day. Nil while
+        // a session runs, when no Today card shows.
+        let doneHereDay = session == nil
+            ? lastEndedStartedAt.map { WatchSession.date($0) }.flatMap { $0 > .distantPast ? localDay($0, timeZone: timeZone) : nil }
+            : nil
         return TodayInputs(
             phoneToday: home.today,
             state: home.state,
@@ -176,9 +189,13 @@ extension WatchAppState {
             week: home.week,
             liveOnPhone: home.state == .running || live != nil,
             liveDiscardedHere: live.map(discardedHere.contains) ?? false,
-            liveEnded: live.map(endedWorkouts.contains) ?? false
+            liveEnded: live.map(endedWorkouts.contains) ?? false,
+            doneHereDay: doneHereDay
         )
     }
+
+    /// The Today page's inputs, on the watch's own time zone.
+    public var todayInputs: TodayInputs? { todayInputs(timeZone: .current) }
 }
 
 extension TodayCard {
@@ -194,6 +211,10 @@ extension TodayCard {
         }
         let today = localDay(now, timeZone: timeZone)
         let doneToday = home.phoneToday == today ? home.doneToday : []
+        // Done on the wrist, the phone not caught up: "Done today" only on
+        // the day it was done, then the day it was done ("Done · Wed").
+        let doneHere = home.doneHereDay.flatMap { $0 < today ? "Done · \(dayLabel($0, from: today, timeZone: timeZone))" : nil }
+            ?? "Done today"
 
         if home.liveOnPhone {
             if home.liveDiscardedHere {
@@ -203,7 +224,7 @@ extension TodayCard {
                 )
             } else if home.liveEnded {
                 self.init(
-                    kind: .waitingForPhone, heading: "Done today", doneToday: doneToday,
+                    kind: .waitingForPhone, heading: doneHere, doneToday: doneToday,
                     message: "It saves on your iPhone next time you open GymGo."
                 )
             } else {
@@ -215,7 +236,7 @@ extension TodayCard {
         if let ready = home.ready {
             if ready.used {
                 self.init(
-                    kind: .started, heading: "Done today", title: ready.name, doneToday: doneToday,
+                    kind: .started, heading: doneHere, title: ready.name, doneToday: doneToday,
                     message: "Next session loads from your iPhone."
                 )
                 return

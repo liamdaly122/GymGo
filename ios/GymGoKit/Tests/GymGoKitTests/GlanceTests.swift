@@ -73,7 +73,7 @@ private func noonOn(_ day: String) -> Date {
 @Test func theFaceWordsEveryKindOfTodayAsTheTodayPageDoes() throws {
     var kinds: [TodayCard.Kind] = []
     for (name, state, clocks) in try everyKindOfToday() {
-        let inputs = try throughTheFile(state.todayInputs)
+        let inputs = try throughTheFile(state.todayInputs(timeZone: london))
         for clock in clocks {
             let page = state.todayCard(now: clock, timeZone: london)
             #expect(TodayCard(inputs, now: clock, timeZone: london) == page, "\(name) at \(iso(clock))")
@@ -326,4 +326,80 @@ private func midnight(_ day: String) -> Date {
     _ = state.finish(at: minute(30))
     let done = glance(state, at: minute(31), previous: running)
     #expect(done.trainingDays(from: minute(31), timeZone: london) == ["2026-10-16"])
+}
+
+// MARK: - Done on the wrist, days later
+
+@Test func theTodayPageAndTheFaceAgreeOnTheDaysAfterAWristSession() throws {
+    for (name, start) in [("started here", true), ("adopted from the phone", false)] {
+        var state = WatchAppState()
+        if start {
+            state.apply(try context(ready: readyObject()))
+            _ = state.start(try #require(state.home?.ready), at: minute(6), eventId: "start")
+        } else {
+            state.apply(try context(sentAt: minute(5), live: snapshotObject("two straight lifts", workoutId: "w-1", sentAt: iso(minute(5)))))
+        }
+        let running = glance(state, at: minute(6))
+        _ = state.logSet(weight: 100, reps: 5, at: minute(8))
+        _ = state.finish(at: minute(30))
+        let after = glance(state, at: minute(31), previous: running)
+
+        // Wednesday: done today, on the wrist's Today page and on the face.
+        #expect(state.todayCard(now: minute(31), timeZone: london).heading == "Done today", "\(name)")
+        // Thursday and Friday, the phone still not caught up: the day it was
+        // done, on both, by the one rule.
+        for day in ["2026-10-15", "2026-10-16"] {
+            let page = state.todayCard(now: noonOn(day), timeZone: london)
+            #expect(page.heading == "Done · Wed", "\(name) on \(day)")
+            #expect(after.moment(at: noonOn(day), timeZone: london).card == page, "\(name) on \(day)")
+            let inputs = try throughTheFile(state.todayInputs(timeZone: london))
+            #expect(TodayCard(inputs, now: noonOn(day), timeZone: london) == page, "\(name) on \(day)")
+        }
+    }
+}
+
+@Test func aSessionStartedEarlyOnTheWristMovesItsDayOnTheFace() throws {
+    // Thursday, a rest day; Wednesday is done, and Friday's session is on offer.
+    var object = contextObject(sentAt: noonOn("2026-10-15").addingTimeInterval(-4 * 3600), ready: try readyObject(
+        date: "2026-10-16", status: "upcoming", sentAt: iso(noonOn("2026-10-15").addingTimeInterval(-4 * 3600))
+    ), today: "2026-10-15")
+    var home = object["home"] as! [String: Any]
+    var week = home["week"] as! [[String: Any]]
+    week[2]["state"] = "done"
+    home["week"] = week
+    object["home"] = home
+    var state = WatchAppState()
+    state.apply(try decodeContext(object))
+    let morning = noonOn("2026-10-15").addingTimeInterval(-3 * 3600)
+    #expect(state.todayCard(now: morning, timeZone: london).startLabel == "Start early")
+    let before = glance(state, at: morning)
+    #expect(before.trainingDays(from: morning, timeZone: london) == ["2026-10-16"])
+
+    // Started early, and finished, on Thursday morning.
+    _ = state.start(try #require(state.home?.ready), at: morning, eventId: "start")
+    let running = glance(state, at: morning, previous: before)
+    _ = state.logSet(weight: 100, reps: 5, at: morning.addingTimeInterval(120))
+    let finishedAt = morning.addingTimeInterval(1800)
+    _ = state.finish(at: finishedAt)
+    let after = glance(state, at: finishedAt, previous: running)
+    #expect(after.doneHereDay == "2026-10-15")
+
+    // The phone files a session on the day it was trained: Thursday is done,
+    // and Friday no longer holds it. Every training day this week is done.
+    let thursday = after.moment(at: finishedAt, timeZone: london)
+    // Mon to Sun, in order.
+    #expect(thursday.week.map(\.state) == [.done, .rest, .done, .done, .rest, .rest, .rest])
+    #expect(thursday.week[3].isToday)
+    #expect(thursday.planned == 3 && thursday.done == 3)
+    #expect(thursday.week.first { $0.isToday }?.spoken == "Thu, today, Push A, done")
+    #expect(thursday.card.heading == "Done today")
+    // Nothing left to train this week: the Smart Stack does not push Friday.
+    #expect(after.trainingDays(from: finishedAt, timeZone: london).isEmpty)
+    #expect(after.relevantWindows(from: finishedAt, timeZone: london).isEmpty)
+
+    // Friday: done on Thursday, on the face and the Today page alike.
+    let friday = after.moment(at: noonOn("2026-10-16"), timeZone: london)
+    #expect(friday.card.heading == "Done · Thu")
+    #expect(state.todayCard(now: noonOn("2026-10-16"), timeZone: london).heading == "Done · Thu")
+    #expect(friday.week.first { $0.isToday }?.state == .rest)
 }
