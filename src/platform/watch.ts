@@ -26,9 +26,11 @@ import { getWatchState, phoneClaim, reportFromWatch, subscribeWatchState } from 
  *  - **The inbox is drained** on launch, on resume, the moment something lands,
  *    and always before Finish on the phone, because Finish tidies away every
  *    unticked set and a set logged on the wrist must be ticked before that.
- *    Only what was applied, or skipped for good, is acknowledged; anything
- *    deferred or that threw stays for the next drain. A drain that finished a
- *    workout writes the phone's snapshot, as Finish on the phone does.
+ *    One that reaches the phone only after that Finish is put back
+ *    (`reviveTidiedSet`). Only what was applied, or skipped for good, is
+ *    acknowledged; anything deferred or that threw stays for the next drain.
+ *    A drain that finished a workout, or put a set back into one, writes the
+ *    phone's snapshot, as Finish on the phone does.
  *  - **The context goes out** a moment after anything it is built from
  *    changes, and at launch, on resume, at local midnight and when the phone
  *    takes logging back, but never while a drain is running: a stale `ready`
@@ -87,7 +89,7 @@ let drainsWaiting = 0;
 /** Every drain ever queued, so a send can tell that one ran while it was building. */
 let drainsQueued = 0;
 
-const NOTHING_APPLIED: WatchDrainResult = { acknowledge: [], keep: [], finished: [] };
+const NOTHING_APPLIED: WatchDrainResult = { acknowledge: [], keep: [], finished: [], revived: [] };
 
 function isEvent(value: unknown): value is WatchEvent {
   if (typeof value !== 'object' || value === null) return false;
@@ -126,7 +128,8 @@ async function drainOnce(): Promise<void> {
   const ids = [...result.acknowledge, ...unreadable];
   if (ids.length > 0) await WatchBridge.acknowledge({ ids });
   // Finish on the watch is a Finish: the phone keeps its own copy, as after Finish on the phone.
-  if (result.finished.length > 0) await snapshotEverything();
+  // So is a set put back into a finished workout: the copy taken at Finish lacks it.
+  if (result.finished.length > 0 || result.revived.length > 0) await snapshotEverything();
 }
 
 /**

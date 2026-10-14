@@ -16,7 +16,7 @@ import {
   swapRoutineExercise,
   updateRoutineExercise,
 } from './mutations';
-import { planScheduleFor, sessionPreview, setSuggestion, suggestionFor } from './queries';
+import { exerciseSessions, planScheduleFor, sessionPreview, setSuggestion, suggestionFor } from './queries';
 import type { Plan, Workout, WorkoutExercise, WorkoutSet } from './schema';
 import { seedIfEmpty } from './seed';
 import { applyWatchEvent, applyWatchEvents, watchContextFor, watchSnapshotFor, WATCH_EVENT_TTL_MS, type WatchEvent } from './watch';
@@ -188,6 +188,102 @@ describe('a set logged on the wrist', () => {
     expect((await db.sets.get(sets[0]!))!.weight_kg).toBe(102.5);
   });
 
+  /**
+   * Logged on the wrist while the phone was out of range, and Finish pressed
+   * on the phone before WatchConnectivity delivered it. Finish tidied the set
+   * away as unticked; skipping it then, and acknowledging that, made the
+   * watch forget it, so the set was lost on both.
+   */
+  describe('arriving after Finish on the phone', () => {
+    it('goes back into the workout as the watch logged it, queued, and counts', async () => {
+      const { workoutId, sets } = await session();
+      await completeSetWith(sets[0]!, { weight_kg: 100, reps: 5 }, { completedAt: minutesAgo(6) });
+      const late = event({ workoutId, setId: sets[1], weight: 100, reps: 4, at: minutesAgo(3) });
+      await finishWorkout(workoutId);
+      const finishedAt = (await db.workouts.get(workoutId))!.finished_at;
+      await db.outbox.clear();
+      const drained = Date.now();
+
+      expect(await applyWatchEvents([late])).toEqual({ acknowledge: [late.id], keep: [], finished: [], revived: [workoutId] });
+
+      const set = (await db.sets.get(sets[1]!))!;
+      expect(set).toMatchObject({ completed: true, weight_kg: 100, reps: 4, completed_at: late.at, deleted_at: null });
+      expect(Date.parse(set.updated_at)).toBeGreaterThanOrEqual(drained);
+      expect((await db.outbox.toArray()).map((entry) => entry.row_id)).toEqual([sets[1]]);
+      // Everything else stays as that Finish left it.
+      expect((await db.sets.get(sets[2]!))!.deleted_at).toBe(finishedAt);
+      expect((await db.workouts.get(workoutId))!.finished_at).toBe(finishedAt);
+      // The lift's history has it, which is what records, last time and volume read.
+      const history = (await exerciseSessions(exerciseIds[0]!)).find((entry) => entry.workout_id === workoutId)!;
+      expect(history.sets.map((entry) => entry.id).sort()).toEqual([sets[0], sets[1]].sort());
+    });
+
+    it('brings its exercise back too, when Finish dropped it for having nothing logged', async () => {
+      const { workoutId, sets } = await session();
+      await completeSetWith(sets[0]!, { weight_kg: 100, reps: 5 }, { completedAt: minutesAgo(8) });
+      const other = await addExerciseToWorkout(workoutId, exerciseIds[1]!);
+      const otherSet = await addSet(other);
+      const late = event({ workoutId, setId: otherSet, weight: 60, reps: 10, at: minutesAgo(2) });
+      await finishWorkout(workoutId);
+      expect((await db.workout_exercises.get(other))!.deleted_at).not.toBeNull();
+      await db.outbox.clear();
+
+      await applyWatchEvents([late]);
+
+      expect((await db.workout_exercises.get(other))!.deleted_at).toBeNull();
+      expect(await db.sets.get(otherSet)).toMatchObject({ completed: true, weight_kg: 60, reps: 10, deleted_at: null });
+      const queued = (await db.outbox.toArray()).map((entry) => `${entry.table_name}:${entry.row_id}`);
+      expect(queued.sort()).toEqual([`sets:${otherSet}`, `workout_exercises:${other}`].sort());
+    });
+
+    it('goes back from inside a late Finish from the watch, which finishes nothing again', async () => {
+      const { workoutId, sets } = await session();
+      const carried = event({ workoutId, setId: sets[0], weight: 100, reps: 5, at: minutesAgo(4) });
+      await finishWorkout(workoutId);
+      const finishedAt = (await db.workouts.get(workoutId))!.finished_at;
+      const finish = event({ workoutId, kind: 'finish', at: minutesAgo(1), sets: [carried] });
+
+      const result = await applyWatchEvents([finish]);
+
+      expect(result.acknowledge.sort()).toEqual([finish.id, carried.id].sort());
+      expect(result).toMatchObject({ keep: [], finished: [], revived: [workoutId] });
+      expect(await db.sets.get(sets[0]!)).toMatchObject({ completed: true, reps: 5, deleted_at: null });
+      expect((await db.workouts.get(workoutId))!.finished_at).toBe(finishedAt);
+    });
+
+    it('stays out when logged after that Finish, deleted by the lifter, or already logged on the phone', async () => {
+      const { workoutId, sets } = await session();
+      await completeSetWith(sets[0]!, { weight_kg: 102.5, reps: 5 }, { completedAt: minutesAgo(9) });
+      await removeSet(sets[2]!);
+      // Deleted by the lifter some minutes before the Finish.
+      await db.sets.update(sets[2]!, { deleted_at: minutesAgo(5) });
+      await finishWorkout(workoutId);
+      const finishedAt = (await db.workouts.get(workoutId))!.finished_at!;
+      const after = new Date(Date.parse(finishedAt) + 1000).toISOString();
+      await db.outbox.clear();
+
+      const result = await applyWatchEvents([
+        event({ workoutId, setId: sets[1], weight: 100, reps: 5, at: after }),
+        event({ workoutId, setId: sets[2], weight: 100, reps: 5, at: minutesAgo(4) }),
+        event({ workoutId, setId: sets[0], weight: 100, reps: 5, at: minutesAgo(3) }),
+      ]);
+
+      expect(result).toMatchObject({ keep: [], revived: [] });
+      expect(result.acknowledge).toHaveLength(3);
+      expect((await db.sets.get(sets[1]!))!.deleted_at).toBe(finishedAt);
+      expect((await db.sets.get(sets[2]!))!.deleted_at).not.toBeNull();
+      expect((await db.sets.get(sets[0]!))!.weight_kg).toBe(102.5);
+      expect(await db.outbox.count()).toBe(0);
+    });
+
+    it('stays out of a workout thrown away', async () => {
+      const { workoutId, sets } = await session();
+      await discardWorkout(workoutId);
+      expect(await applyWatchEvent(event({ workoutId, setId: sets[0], weight: 100, reps: 5, at: minutesAgo(1) }))).toBe('skipped');
+      expect((await db.sets.get(sets[0]!))!.completed).toBe(false);
+    });
+  });
+
   it('waits for a workout the phone does not have yet', async () => {
     expect(await applyWatchEvent(event({ workoutId: crypto.randomUUID(), setId: crypto.randomUUID(), weight: 100, reps: 5 }))).toBe('deferred');
   });
@@ -251,14 +347,14 @@ describe('a batch from the watch', () => {
     const { workoutId } = await session();
     await db.outbox.clear();
     const skip = event({ workoutId, kind: 'skipRest' });
-    expect(await applyWatchEvents([skip])).toEqual({ acknowledge: [skip.id], keep: [], finished: [] });
+    expect(await applyWatchEvents([skip])).toEqual({ acknowledge: [skip.id], keep: [], finished: [], revived: [] });
     expect(await db.outbox.count()).toBe(0);
   });
 
   it('throws a workout away on Discard from the wrist', async () => {
     const { workoutId } = await session();
     const discard = event({ workoutId, kind: 'discard' });
-    expect(await applyWatchEvents([discard])).toEqual({ acknowledge: [discard.id], keep: [], finished: [] });
+    expect(await applyWatchEvents([discard])).toEqual({ acknowledge: [discard.id], keep: [], finished: [], revived: [] });
     expect((await db.workouts.get(workoutId))!.deleted_at).not.toBeNull();
   });
 
@@ -274,12 +370,12 @@ describe('a batch from the watch', () => {
     const stale = event({ workoutId: crypto.randomUUID(), setId: crypto.randomUUID(), weight: 100, reps: 5, at: '2026-10-01T10:00:00.000Z' });
     const fresh = event({ ...stale, id: crypto.randomUUID(), at: '2026-10-07T10:00:00.000Z' });
     const now = new Date(Date.parse('2026-10-01T10:00:00.000Z') + WATCH_EVENT_TTL_MS + 60_000);
-    expect(await applyWatchEvents([stale, fresh], now)).toEqual({ acknowledge: [stale.id], keep: [fresh.id], finished: [] });
+    expect(await applyWatchEvents([stale, fresh], now)).toEqual({ acknowledge: [stale.id], keep: [fresh.id], finished: [], revived: [] });
   });
 
   it('acknowledges an event it cannot read, rather than keeping it for ever', async () => {
     const garbled = event({ workoutId: crypto.randomUUID(), at: 'yesterday-ish' });
-    expect(await applyWatchEvents([garbled])).toEqual({ acknowledge: [garbled.id], keep: [], finished: [] });
+    expect(await applyWatchEvents([garbled])).toEqual({ acknowledge: [garbled.id], keep: [], finished: [], revived: [] });
   });
 });
 
@@ -446,10 +542,10 @@ describe('a session laid out for the watch', () => {
     const setId = layout.exercises[0]!.sets[0]!.id;
     const logged = event({ workoutId: layout.workoutId, setId, weight: 60, reps: 10, at: minutesAgo(5) });
 
-    expect(await applyWatchEvents([logged])).toEqual({ acknowledge: [], keep: [logged.id], finished: [] });
+    expect(await applyWatchEvents([logged])).toEqual({ acknowledge: [], keep: [logged.id], finished: [], revived: [] });
 
     const start = startOf(ready, minutesAgo(10));
-    expect(await applyWatchEvents([logged, start])).toEqual({ acknowledge: [start.id, logged.id], keep: [], finished: [] });
+    expect(await applyWatchEvents([logged, start])).toEqual({ acknowledge: [start.id, logged.id], keep: [], finished: [], revived: [] });
     expect(await db.sets.get(setId)).toMatchObject({ completed: true, weight_kg: 60, reps: 10 });
   });
 
@@ -461,7 +557,7 @@ describe('a session laid out for the watch', () => {
     const queued = await db.outbox.count();
 
     expect(await applyWatchEvent({ ...start, id: crypto.randomUUID() })).toBe('skipped');
-    expect(await applyWatchEvents([start])).toEqual({ acknowledge: [start.id], keep: [], finished: [] });
+    expect(await applyWatchEvents([start])).toEqual({ acknowledge: [start.id], keep: [], finished: [], revived: [] });
     expect((await db.workouts.toArray()).filter((workout) => workout.routine_id === ready.routineId)).toHaveLength(1);
     expect(await db.outbox.count()).toBe(queued);
   });

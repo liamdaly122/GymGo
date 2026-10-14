@@ -16,6 +16,7 @@ import {
   removeExerciseFromRoutine,
   removeExerciseFromWorkout,
   removeSet,
+  reviveTidiedSet,
   startFreestyleWorkout,
   startWorkoutFromRoutine,
   updateRoutineExercise,
@@ -293,6 +294,39 @@ describe('finishing a workout', () => {
       await discardWorkout(early.workoutId, { deletedAt: minutesAgo(90) });
       expect((await db.workouts.get(early.workoutId))!.deleted_at).toBe((await db.workouts.get(early.workoutId))!.started_at);
     });
+  });
+
+  /**
+   * The one write a finished workout takes: a set Finish itself tidied away,
+   * done before that Finish (a late set from the watch). Nothing else.
+   */
+  it('takes back only a set its own Finish tidied away, done before it', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const we = await addExerciseToWorkout(workoutId, EXERCISE_A);
+    const done = await addSet(we, { weight_kg: 100, reps: 5 });
+    const tidied = await addSet(we);
+    const open = await addSet(we);
+    const before = new Date(Date.now() - 60_000).toISOString();
+    await completeSetWith(done, { weight_kg: 100, reps: 5 }, { completedAt: before });
+
+    // Not finished yet: an ordinary set, for completeSetWith.
+    expect(await reviveTidiedSet(open, { weight_kg: 100, reps: 5 }, before)).toBe(false);
+
+    await finishWorkout(workoutId);
+    const finishedAt = (await db.workouts.get(workoutId))!.finished_at!;
+    const later = new Date(Date.parse(finishedAt) + 1000).toISOString();
+
+    expect(await reviveTidiedSet(done, { weight_kg: 120, reps: 5 }, before)).toBe(false);
+    expect(await reviveTidiedSet(tidied, { weight_kg: 100, reps: 5 }, later)).toBe(false);
+    await expect(reviveTidiedSet(tidied, { weight_kg: -1, reps: 5 }, before)).rejects.toThrow();
+    expect((await db.sets.get(done))!.weight_kg).toBe(100);
+    expect((await db.sets.get(tidied))!.deleted_at).toBe(finishedAt);
+
+    expect(await reviveTidiedSet(tidied, { weight_kg: 100, reps: 4 }, before)).toBe(true);
+    expect(await db.sets.get(tidied)).toMatchObject({ completed: true, reps: 4, completed_at: before, deleted_at: null });
+    // Once back, it is a finished set like any other.
+    expect(await reviveTidiedSet(tidied, { weight_kg: 90, reps: 4 }, before)).toBe(false);
+    await expect(updateSet(tidied, { weight_kg: 90 })).rejects.toThrow(ImmutableWorkoutError);
   });
 
   /**

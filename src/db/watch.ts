@@ -8,7 +8,14 @@
  * like any tap, so `updated_at`, the outbox and the backup all work unchanged.
  */
 import { db } from './db';
-import { completeSetWith, discardWorkout, finishWorkout, planRoutineStart, replayWatchStart } from './mutations';
+import {
+  completeSetWith,
+  discardWorkout,
+  finishWorkout,
+  planRoutineStart,
+  replayWatchStart,
+  reviveTidiedSet,
+} from './mutations';
 import {
   composeWorkout,
   composeWorkoutRows,
@@ -300,26 +307,35 @@ interface ApplyContext {
   keepOpen?: ReadonlySet<string>;
   /** Set events this batch has already dealt with, which a finish's copies skip. */
   handled?: ReadonlySet<string>;
+  /** Finished workouts a late set from the watch was put back into, collected for the caller. */
+  revived?: Set<string>;
 }
 
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
-async function applyCompleteSet(event: WatchEvent): Promise<WatchEventOutcome> {
+async function applyCompleteSet(event: WatchEvent, context: ApplyContext = {}): Promise<WatchEventOutcome> {
   const workout = await db.workouts.get(event.workoutId);
   // Its start has not been applied yet: a quick copy can overtake the queued one.
   if (!workout) return 'deferred';
-  if (workout.deleted_at !== null || workout.finished_at !== null) return 'skipped';
+  if (workout.deleted_at !== null) return 'skipped';
   // Malformed: retrying cannot mend it.
   if (!event.setId || !isNumber(event.weight) || !isNumber(event.reps) || Number.isNaN(Date.parse(event.at))) {
     return 'skipped';
   }
 
   const set = await db.sets.get(event.setId);
-  if (!set || set.deleted_at !== null) return 'skipped';
-  const workoutExercise = await db.workout_exercises.get(set.workout_exercise_id);
-  if (!workoutExercise || workoutExercise.workout_id !== event.workoutId || workoutExercise.deleted_at !== null) {
-    return 'skipped';
+  const workoutExercise = set ? await db.workout_exercises.get(set.workout_exercise_id) : undefined;
+  if (!set || !workoutExercise || workoutExercise.workout_id !== event.workoutId) return 'skipped';
+
+  if (workout.finished_at !== null) {
+    // Finished on the phone before this set arrived from the wrist, where it
+    // was logged before that Finish: Finish tidied it away as unticked, so it
+    // goes back. Anything else about a finished workout stays as it is.
+    if (!(await reviveTidiedSet(event.setId, { weight_kg: event.weight, reps: event.reps }, event.at))) return 'skipped';
+    context.revived?.add(event.workoutId);
+    return 'applied';
   }
+  if (set.deleted_at !== null || workoutExercise.deleted_at !== null) return 'skipped';
   // The same set logged on both: the later time wins, as everywhere else. An
   // equal time is this very event applied before.
   if (set.completed && set.completed_at && Date.parse(set.completed_at) >= Date.parse(event.at)) return 'skipped';
@@ -340,8 +356,10 @@ async function hasLoggedSets(workoutId: string): Promise<boolean> {
  * Safe to apply twice: an event carries its own ID, and the native inbox
  * drops one it has applied. Beyond that, a set the phone has since deleted,
  * or a workout already finished or discarded, skips rather than throws: the
- * watch was out of touch, and neither may be written to. An event for a
- * workout the phone does not have yet is deferred: its start is on its way.
+ * watch was out of touch, and neither may be written to. The one exception is
+ * a set logged on the wrist before a Finish on the phone that tidied it away
+ * as unticked: it goes back (`reviveTidiedSet`). An event for a workout the
+ * phone does not have yet is deferred: its start is on its way.
  */
 export async function applyWatchEvent(event: WatchEvent, context: ApplyContext = {}): Promise<WatchEventOutcome> {
   switch (event.kind) {
@@ -360,22 +378,25 @@ export async function applyWatchEvent(event: WatchEvent, context: ApplyContext =
       return replayWatchStart(layout, event.at, { keepOpen: context.keepOpen });
     }
     case 'completeSet':
-      return applyCompleteSet(event);
+      return applyCompleteSet(event, context);
     case 'skipRest':
       // The rest runs on the watch while it runs the session. Nothing to write.
       return 'applied';
     case 'finish': {
       const workout = await db.workouts.get(event.workoutId);
       if (!workout) return 'deferred';
-      if (workout.deleted_at !== null || workout.finished_at !== null) return 'skipped';
+      if (workout.deleted_at !== null) return 'skipped';
       // The sets the watch had not had confirmed, first, so a Finish that
-      // overtook its last sets cannot tidy them away.
+      // overtook its last sets cannot tidy them away. Finished on the phone
+      // already, they are looked at all the same: one that phone Finish tidied
+      // away goes back, as it would arriving on its own.
       const seen = new Set(context.handled ?? []);
       for (const set of event.sets ?? []) {
         if (set.kind !== 'completeSet' || set.workoutId !== event.workoutId || seen.has(set.id)) continue;
         seen.add(set.id);
-        await applyCompleteSet(set);
+        await applyCompleteSet(set, context);
       }
+      if (workout.finished_at !== null) return 'skipped';
       // Stamped when Finish was pressed on the wrist, not when the phone was opened.
       await finishWorkout(event.workoutId, { finishedAt: event.at });
       return 'applied';
@@ -402,6 +423,11 @@ export interface WatchDrainResult {
   keep: string[];
   /** Workouts a `finish` event finished, so the caller writes the phone's snapshot. */
   finished: string[];
+  /**
+   * Workouts finished on the phone that a late set from the watch was put
+   * back into, so the caller writes the phone's snapshot again.
+   */
+  revived: string[];
 }
 
 const RANK: Record<string, number> = { startWorkout: 0, finish: 2 };
@@ -420,6 +446,7 @@ export async function applyWatchEvents(events: readonly WatchEvent[], now: Date 
   const acknowledge = new Set<string>();
   const keep = new Set<string>();
   const finished: string[] = [];
+  const revived = new Set<string>();
 
   // Each ID once: the inbox may hold both copies of an event.
   const unique = new Map<string, WatchEvent>();
@@ -464,7 +491,7 @@ export async function applyWatchEvents(events: readonly WatchEvent[], now: Date 
       continue;
     }
     try {
-      const outcome = await applyWatchEvent(event, { keepOpen, handled });
+      const outcome = await applyWatchEvent(event, { keepOpen, handled, revived });
       if (outcome === 'deferred') {
         hold(event, 'waiting on its workout');
         continue;
@@ -484,5 +511,5 @@ export async function applyWatchEvents(events: readonly WatchEvent[], now: Date 
   }
 
   for (const id of acknowledge) keep.delete(id);
-  return { acknowledge: [...acknowledge], keep: [...keep], finished };
+  return { acknowledge: [...acknowledge], keep: [...keep], finished, revived: [...revived] };
 }

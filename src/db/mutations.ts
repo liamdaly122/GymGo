@@ -914,6 +914,68 @@ export async function completeSetWith(
   });
 }
 
+/**
+ * Puts back a set Finish tidied away because its log from the watch had not
+ * reached the phone yet, logged as the watch logged it.
+ *
+ * Finish on the phone soft-deletes every unticked set, and a set logged on
+ * the wrist while the phone was out of range can arrive seconds later. It
+ * used to be skipped as a write to a finished workout, then acknowledged, so
+ * the watch forgot it and the set was lost on both.
+ *
+ * This is the one write a finished workout takes, and only for exactly that
+ * case: a set never completed, tidied by that Finish itself (its `deleted_at`
+ * is the workout's `finished_at`, which only Finish writes), logged before
+ * that Finish. It restores what Finish wrongly removed and never edits
+ * anything the lifter did. Its exercise comes back too if Finish dropped it
+ * for having nothing logged. Every row is stamped now and queued, so the
+ * backup moves forward. True when the set was put back; false, writing
+ * nothing, otherwise.
+ */
+export async function reviveTidiedSet(
+  setId: string,
+  values: { weight_kg: number; reps: number },
+  completedAt: string,
+): Promise<boolean> {
+  if (!Number.isFinite(values.weight_kg) || values.weight_kg < 0) {
+    throw new Error(`Cannot log a weight of ${values.weight_kg}kg`);
+  }
+  if (!Number.isFinite(values.reps) || values.reps < 0) {
+    throw new Error(`Cannot log ${values.reps} reps`);
+  }
+  if (Number.isNaN(Date.parse(completedAt))) throw new Error(`Cannot stamp a set with ${completedAt}`);
+  const now = nowIso();
+
+  return db.transaction('rw', db.workouts, db.workout_exercises, db.sets, db.outbox, async () => {
+    const set = await db.sets.get(setId);
+    if (!set || set.completed || set.deleted_at === null) return false;
+    const workoutExercise = await db.workout_exercises.get(set.workout_exercise_id);
+    const workout = workoutExercise ? await db.workouts.get(workoutExercise.workout_id) : undefined;
+    if (!workoutExercise || !workout || workout.deleted_at !== null || workout.finished_at === null) return false;
+    const finishedAt = workout.finished_at;
+    // Tidied by Finish, not deleted by the lifter, and done before that Finish.
+    if (set.deleted_at !== finishedAt || Date.parse(completedAt) >= Date.parse(finishedAt)) return false;
+    if (workoutExercise.deleted_at !== null && workoutExercise.deleted_at !== finishedAt) return false;
+
+    const patch = {
+      weight_kg: values.weight_kg,
+      reps: Math.round(values.reps),
+      completed: true,
+      completed_at: new Date(completedAt).toISOString(),
+      deleted_at: null,
+      updated_at: now,
+    };
+    await db.sets.update(setId, patch);
+    await enqueue('sets', setId, 'put', patch);
+    if (workoutExercise.deleted_at !== null) {
+      const restored = { deleted_at: null, updated_at: now };
+      await db.workout_exercises.update(workoutExercise.id, restored);
+      await enqueue('workout_exercises', workoutExercise.id, 'put', restored);
+    }
+    return true;
+  });
+}
+
 export async function removeSet(setId: string): Promise<void> {
   await assertSetEditable(setId);
   const now = nowIso();
