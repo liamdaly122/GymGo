@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { WorkoutView } from '@/db/queries';
 import ExerciseImage from '@/components/ExerciseImage';
 import { Button } from '@/components/ui';
@@ -18,7 +18,7 @@ import { stationName, stationOutline } from './outline';
  * what is up next, so you know which machine to go and claim; and the whole
  * session, in order, with the watch's place in blue. Tapping a session row
  * shows that station; the card goes back to following the watch on "Back to
- * the watch's exercise".
+ * the watch's exercise", or once the watch gets to the station picked.
  *
  * Same data, same mutations as the phone's own logging screen. A change here
  * reaches the watch with the next list the phone sends.
@@ -62,6 +62,11 @@ export default function CompanionView({
   const picked = viewingKey === null ? -1 : stations.findIndex((_, index) => keyOf(index) === viewingKey);
   const shown = picked === -1 ? atWatch : picked;
   const following = shown === atWatch;
+  // The watch has reached the station picked (or it is gone): the card says
+  // "On your watch", so it follows the watch on from here, as it says.
+  useEffect(() => {
+    if (viewingKey !== null && (picked === -1 || picked === atWatch)) setViewingKey(null);
+  }, [viewingKey, picked, atWatch]);
   const complete = doneOf(stations[shown]!.map((index) => view.exercises[index]!)).complete;
   const kicker = following ? 'On your watch' : complete ? 'Done' : 'Coming up';
 
