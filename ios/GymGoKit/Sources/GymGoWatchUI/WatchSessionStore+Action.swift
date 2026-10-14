@@ -99,6 +99,8 @@ extension WatchSessionStore {
     public func pauseWorkout() {
         touched()
         let pauses = workout.isRunning && !workout.isPaused
+        // Asked for now: a resume a logged set held back is overtaken.
+        resumeAfterUndo = nil
         workout.pause()
         if pauses { haptics.play(.paused) }
         syncRestAlert()
@@ -110,6 +112,7 @@ extension WatchSessionStore {
     public func resumeWorkout() {
         touched()
         let resumes = workout.isPaused
+        resumeAfterUndo = nil
         workout.resume()
         if resumes { haptics.play(.resumed) }
         syncRestAlert()
@@ -120,6 +123,7 @@ extension WatchSessionStore {
     /// the wrist, so it taps, as Pause and Resume do.
     func buttonsPausedOrResumed(_ answer: PauseRequest.Answer) {
         touched()
+        resumeAfterUndo = nil
         haptics.play(answer == .pause ? .paused : .resumed)
     }
 

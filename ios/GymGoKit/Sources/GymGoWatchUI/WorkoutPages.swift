@@ -86,7 +86,8 @@ struct MainPage: View {
 /// the clock shares: "PAUSED" in blue (a state) and RESUME in chalk (the
 /// thing to press), over the lift's name until the pause ends. The set's
 /// label stays under it, and Done stays below and keeps the double tap;
-/// logging a set resumes too. Laid over `SetInHandView` and `RestView` (over
+/// logging a set resumes too, once its Undo window has closed, so the line
+/// stays beside "Logged · Undo" until then. Laid over `SetInHandView` and `RestView` (over
 /// the rest's "Rest" and heart rate; the countdown stays) from here, one
 /// line high, on the ground colour; the whole line is the button.
 /// `AllLoggedView` puts it above its heading.

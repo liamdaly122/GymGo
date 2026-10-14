@@ -202,6 +202,49 @@ private func liveContext(reps: Int? = 5, claim: [String: Any]? = nil) throws -> 
 }
 
 @MainActor
+@Test func anUndoneSetLoggedWhilePausedLeavesTheWorkoutPaused() throws {
+    let store = store()
+    store.receive(try liveContext())
+    store.workout.pauseChanged(paused: true, at: Date())
+    // A stray double tap logs the set in hand.
+    store.done(weight: 100, reps: 5)
+    // Held for the Undo window: nothing asked of Health yet.
+    #expect(store.workout.lastAskedFor == nil)
+    #expect(store.resumeAfterUndo == "a-s0")
+    store.undoLastSet()
+    #expect(store.setInHand?.set.id == "a-s0")
+    // Nothing to resume, now or when the window would have closed.
+    #expect(store.resumeAfterUndo == nil)
+    store.appBecameActive()
+    #expect(store.workout.lastAskedFor == nil)
+}
+
+@MainActor
+@Test func aSetLoggedWhilePausedResumesOnceItsWindowCloses() throws {
+    let store = store()
+    store.receive(try liveContext())
+    store.workout.pauseChanged(paused: true, at: Date())
+    store.done(weight: 100, reps: 5)
+    #expect(store.workout.lastAskedFor == nil)
+    // The next set closes its window: the resume goes now, and the next
+    // set, logged with the workout on its way back, holds none of its own.
+    store.skipRest()
+    store.done(weight: 100, reps: 5)
+    #expect(store.workout.lastAskedFor == .resume)
+    #expect(store.resumeAfterUndo == nil)
+}
+
+@MainActor
+@Test func finishingInsideTheWindowLetsTheHeldResumeGo() throws {
+    let store = store()
+    store.receive(try liveContext())
+    store.workout.pauseChanged(paused: true, at: Date())
+    store.done(weight: 100, reps: 5)
+    store.finish()
+    #expect(store.workout.lastAskedFor == .resume)
+}
+
+@MainActor
 @Test func aRecoveredPauseAndTheResumeALoggedSetCausesTapNothingOfTheirOwn() throws {
     let store = store()
     store.workout.onPauseChanged = { store.workoutPauseChanged() }

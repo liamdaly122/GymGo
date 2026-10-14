@@ -103,6 +103,14 @@ public final class WatchSessionStore {
     /// button) logs what the screen shows.
     @ObservationIgnored public var draft: SetDraft?
 
+    /// A set logged while Health was paused resumes it, but only once the
+    /// set's Undo window has closed with the set still logged
+    /// (`settleHeldResume`): an Undo inside the window takes the whole log
+    /// back, the pause it ended included. The set's ID. Not saved: a
+    /// relaunch inside the window leaves Health paused, and the screen says
+    /// so. Internal for the tests.
+    @ObservationIgnored var resumeAfterUndo: String?
+
     // MARK: - What the screens read
 
     public var session: WatchSession? { state.session }
@@ -123,6 +131,7 @@ public final class WatchSessionStore {
             undoTask?.cancel()
             sendEvent(released)
         }
+        settleHeldResume()
 
         if let ended = change.ended {
             haptics.play(.endedOnPhone)
@@ -188,14 +197,18 @@ public final class WatchSessionStore {
     }
 
     /// Done: logs the set in hand with these numbers and starts whatever rest
-    /// follows. A set logged while the workout is paused resumes it. Its
-    /// event waits out the Undo window ("Logged · Undo", 5 s) before it goes
-    /// to the phone; the set before it, if still waiting, goes now.
+    /// follows. A set logged while the workout is paused resumes it once its
+    /// Undo window closes (`resumeAfterUndo`). Its event waits out the Undo
+    /// window ("Logged · Undo", 5 s) before it goes to the phone; the set
+    /// before it, if still waiting, goes now, and so does any resume it held.
     public func done(weight: Double, reps: Int) {
         touched()
+        // Paused, and not already on the way back from a set logged earlier.
+        let pausedBefore = workout.isPaused && resumeAfterUndo == nil
         guard let result = state.logSet(weight: weight, reps: reps, at: Date()) else { return }
         draft = nil
-        if workout.isPaused { workout.resume() }
+        settleHeldResume()
+        if pausedBefore { resumeAfterUndo = result.outcome.set.id }
         if let released = result.released { sendEvent(released) }
         scheduleUndo()
         repeatTask?.cancel()
@@ -214,6 +227,8 @@ public final class WatchSessionStore {
             releaseUndo(now: Date())
             return
         }
+        // The pause the set would have ended stays.
+        if resumeAfterUndo == entry.setId { resumeAfterUndo = nil }
         undoTask?.cancel()
         haptics.cancel()
         if let hand = setInHand, hand.set.id == entry.setId {
@@ -237,11 +252,24 @@ public final class WatchSessionStore {
         }
     }
 
-    /// The Undo window, if its time is up by `now`, closes: the set's event goes.
+    /// The Undo window, if its time is up by `now`, closes: the set's event
+    /// goes, and the resume it held.
     private func releaseUndo(now: Date) {
-        guard let held = state.closeUndo(ifOverAt: now) else { return }
+        let held = state.closeUndo(ifOverAt: now)
+        settleHeldResume()
+        guard let held else { return }
         sendEvent(held)
         save()
+    }
+
+    /// The resume a set logged while paused held (`resumeAfterUndo`) goes
+    /// ahead once that set's Undo window has closed. Silent: the set's own
+    /// cue has played, and a resume tap now would only cut into whatever
+    /// plays next.
+    private func settleHeldResume() {
+        guard let held = resumeAfterUndo, state.undo?.setId != held else { return }
+        resumeAfterUndo = nil
+        workout.resume()
     }
 
     /// Done with the numbers on the set screen (`SetInHand.numbersOnScreen`,
@@ -318,6 +346,7 @@ public final class WatchSessionStore {
         guard state.session?.isOver == false else { return }
         undoTask?.cancel()
         if let held = state.closeUndo() { sendEvent(held) }
+        settleHeldResume()
         guard let event = state.finish(at: Date()) else { return }
         sendEvent(event)
         stopRestCues()
