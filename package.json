@@ -34,7 +34,8 @@
     "test:backup": "node e2e/backup.mjs",
     "build:ios": "tsc -b && vite build --mode ios",
     "ios": "npm run build:ios && cap sync ios",
-    "fixtures:watch": "tsx scripts/build-watch-fixtures.ts"
+    "fixtures:watch": "tsx scripts/build-watch-fixtures.ts",
+    "fonts:watch": "tsx scripts/build-watch-fonts.ts"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^8.0.1",

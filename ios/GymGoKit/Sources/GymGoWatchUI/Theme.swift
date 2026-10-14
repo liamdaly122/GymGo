@@ -1,0 +1,48 @@
+import CoreText
+import SwiftUI
+
+/// The app's look, on the wrist: near-black ground, chalk numbers, one blue
+/// highlight. The same two colours with the same two jobs as on the phone
+/// (CLAUDE.md, "Design"): chalk is the action, blue is where you are and what
+/// improved. Blue on a button, or chalk on a state, blurs the only signal.
+public enum Theme {
+    public static let ground = Color(red: 12 / 255, green: 12 / 255, blue: 11 / 255)
+    public static let chalk = Color(red: 243 / 255, green: 241 / 255, blue: 234 / 255)
+    public static let hot = Color(red: 91 / 255, green: 132 / 255, blue: 255 / 255)
+    public static let muted = Color(red: 243 / 255, green: 241 / 255, blue: 234 / 255).opacity(0.55)
+    public static let raised = Color(red: 32 / 255, green: 32 / 255, blue: 30 / 255)
+
+    /// Big Shoulders Display, for numbers, names and buttons.
+    public static func display(_ size: CGFloat, extraBold: Bool = false) -> Font {
+        registerFonts()
+        return .custom(extraBold ? "BigShouldersDisplayThin-ExtraBold" : "BigShouldersDisplayThin-Bold", size: size)
+    }
+
+    /// Barlow, for everything you read.
+    public static func text(_ size: CGFloat, semiBold: Bool = false) -> Font {
+        registerFonts()
+        return .custom(semiBold ? "Barlow-SemiBold" : "Barlow-Medium", size: size)
+    }
+
+    private static let registered: Bool = {
+        for name in ["BigShouldersDisplay-Bold", "BigShouldersDisplay-ExtraBold", "Barlow-Medium", "Barlow-SemiBold"] {
+            guard let url = Bundle.module.url(forResource: name, withExtension: "ttf") else { continue }
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+        return true
+    }()
+
+    /// Registers the bundled fonts once, the first time one is asked for.
+    public static func registerFonts() { _ = registered }
+}
+
+/// A weight the way the big fields show it: no trailing zeros, no float dust.
+func formatWeight(_ weight: Double) -> String {
+    let rounded = (weight * 100).rounded() / 100
+    return rounded == rounded.rounded() ? String(Int(rounded)) : String(rounded)
+}
+
+/// "102.5 × 6", or "BW × 12" for unloaded bodyweight work.
+func formatLogged(_ weight: Double, _ reps: Int) -> String {
+    "\(weight > 0 ? formatWeight(weight) : "BW") × \(reps)"
+}
