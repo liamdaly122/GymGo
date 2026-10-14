@@ -93,6 +93,9 @@ public struct UndoWindow: Codable, Sendable, Equatable {
     /// A rest it cut short, which comes back after an Undo if it has not
     /// run out by then.
     public var restBefore: RestState?
+    /// The hand-off before it (`WatchAppState.handOffFrom`), back after an
+    /// Undo. Nil in a window saved before it.
+    public var handOffBefore: String? = nil
 }
 
 /// The whole watch app's state, as a value: the phone's latest context, the
@@ -153,6 +156,13 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public private(set) var seq = 0
     /// The set just logged on the wrist, while it can still be undone.
     public private(set) var undo: UndoWindow?
+    /// The set straight after the one just logged, at its station, when that
+    /// set started no rest only because this one follows (a superset's
+    /// partner, a drop): skipping it starts the rest it would have ended its
+    /// round with, once. Remembered by ID when the set is logged, because
+    /// once the phone confirms that set it leaves the list; the follower,
+    /// neither done nor logged, stays on it.
+    public private(set) var handOffFrom: String?
 
     public init() {}
 
@@ -183,6 +193,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case lastSentAt, home, settings, phoneClaim, liveWorkoutId, session, owner, seenPhoneClaim, usedReadyKeys
         case endedWorkouts, discardedHere, startedFrom, lastEnded, lastEndedStartedAt, pending, rest, lastRecord, summary, seq, undo
+        case handOffFrom
     }
 
     /// Reads a state saved by any earlier build: fields added since default.
@@ -208,6 +219,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         summary = try c.decodeIfPresent(WatchSummary.self, forKey: .summary)
         seq = try c.decodeIfPresent(Int.self, forKey: .seq) ?? 0
         undo = try c.decodeIfPresent(UndoWindow.self, forKey: .undo)
+        handOffFrom = try c.decodeIfPresent(String.self, forKey: .handOffFrom)
     }
 
     // MARK: - What the screens read
@@ -282,6 +294,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
             seenPhoneClaim = claim.at
             rest = nil
             lastRecord = nil
+            handOffFrom = nil
             change.claimed = true
         }
         return change
@@ -343,7 +356,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
               let outcome = running.logSetInHand(weight: weight, reps: reps, at: date, eventId: eventId) else { return nil }
         session = running
         let released = closeUndo()
-        let before = (record: lastRecord, rest: rest)
+        let before = (record: lastRecord, rest: rest, handOff: handOffFrom)
         // A record is said until the rest after it is over. A set with no
         // rest after it (the first half of a superset) hands its record on,
         // so the set screen says it and the rest that ends the round leads
@@ -361,12 +374,18 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         } else {
             rest = nil
         }
+        // No rest only because the next set follows: skipping that set hands
+        // the rest on (`move`).
+        handOffFrom = outcome.restSeconds == nil
+            ? running.set(after: outcome.set).flatMap { $0.station == outcome.set.station ? $0.id : nil }
+            : nil
         // A skipped set is never left to do, so it never holds this cue back.
         let lastOfExercise = !running.remainingSets.contains { $0.exerciseId == outcome.set.exerciseId }
         let cue = cueForLoggedSet(record: outcome.record != nil, lastOfExercise: lastOfExercise, rests: rest != nil)
         undo = UndoWindow(
             setId: outcome.set.id, eventId: eventId, until: date.addingTimeInterval(UndoWindow.seconds),
-            wasRecord: outcome.record != nil, recordBefore: before.record, restBefore: before.rest
+            wasRecord: outcome.record != nil, recordBefore: before.record, restBefore: before.rest,
+            handOffBefore: before.handOff
         )
         return LogResult(outcome: outcome, cue: cue, lastOfExercise: lastOfExercise, released: released)
     }
@@ -409,6 +428,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         // Any rest now began with this set, or after it (a partner skipped
         // since): a later set would have closed the window.
         rest = window.restBefore.flatMap { $0.endsAt > now ? $0 : nil }
+        handOffFrom = window.handOffBefore
         return entry
     }
 
@@ -433,20 +453,23 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     /// now. With none, a skip of the set straight after the one just logged,
     /// which rested only because that set followed (a superset's partner, a
     /// drop), gives the set just logged the rest the skipped one would have
-    /// ended its round with.
+    /// ended its round with. That set is known by `handOffFrom`, not by the
+    /// set just logged, which leaves the list once the phone confirms it; it
+    /// shares that set's station, so the rest follows that station.
     private mutating func move(at date: Date, restId: String, _ change: (inout WatchSession) -> [String]?) -> Bool {
         guard owner == .watch, var running = session, let newlySkipped = change(&running) else { return false }
         session = running
         if var current = rest {
             current.upNext = running.upNext(after: current)
             rest = current
-        } else if let last = running.lastLoggedSet, let follower = running.set(after: last),
-                  newlySkipped.contains(follower.id), let seconds = running.restHandedOn(after: last) {
+        } else if let followerId = handOffFrom, newlySkipped.contains(followerId),
+                  let follower = running.snapshot.sets.first(where: { $0.id == followerId }),
+                  let seconds = running.restHandedOn(skipping: follower) {
             rest = RestState(
                 id: restId, startedAt: date, endsAt: date.addingTimeInterval(TimeInterval(seconds)), seconds: seconds,
-                upNext: running.upNext(afterStation: last.station), after: last.exerciseId,
-                afterStation: running.stationKey(of: last)
+                upNext: running.upNext(afterStation: follower.station), afterStation: running.stationKey(of: follower)
             )
+            handOffFrom = nil
         }
         return true
     }
@@ -604,6 +627,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         lastRecord = nil
         summary = nil
         undo = nil
+        handOffFrom = nil
     }
 
     private mutating func endSession(summary how: WatchSummary.How?, at endedAt: String) {
@@ -630,6 +654,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         seenPhoneClaim = nil
         // Its set's event is in `pending` now, and goes with the rest of them.
         undo = nil
+        handOffFrom = nil
     }
 
     private func remember(_ value: String, in list: inout [String]) {
