@@ -276,6 +276,7 @@ public final class WatchSessionStore {
             reportIfChanged()
         }
         syncRestAlert()
+        restAlerts.clearDelivered()
         health {
             // Health can be turned on or off in Settings at any time.
             self.workout.refreshAuthorization()

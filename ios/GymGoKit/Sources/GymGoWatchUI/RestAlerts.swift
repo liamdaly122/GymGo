@@ -46,6 +46,15 @@ public final class RestAlerts: NSObject {
         #endif
     }
 
+    /// The app is in front: rest-overs already delivered, by this launch or
+    /// an earlier one, have done their job. They are the only notifications
+    /// the app posts. The one still to come stays.
+    func clearDelivered() {
+        #if os(watchOS)
+        UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        #endif
+    }
+
     /// Schedules the notification wanted, removing the one it replaces.
     func sync(_ wanted: RestAlert?) {
         let change = RestAlert.reconcile(scheduled: scheduled, wanted: wanted)
