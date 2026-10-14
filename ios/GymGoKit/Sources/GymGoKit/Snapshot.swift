@@ -61,6 +61,9 @@ public struct WatchSet: Codable, Sendable, Equatable, Identifiable {
 
     /// A working set or a continuation can be a record; a warm-up never is.
     public var isTopWorkingSet: Bool { type == "working" && parentSetId == nil }
+    /// Whether a rest can follow this set by the phone's rule (`restsAfterSet`):
+    /// never after a warm-up or a child set, so neither hands a rest on.
+    public var handsRestOn: Bool { type != "warmup" && parentSetId == nil }
 }
 
 public struct DoneSet: Codable, Sendable, Equatable {

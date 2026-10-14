@@ -383,7 +383,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         }
         // No rest only because the next set follows: skipping that set hands
         // the rest on (`move`).
-        handOffFrom = outcome.restSeconds == nil
+        handOffFrom = outcome.restSeconds == nil && outcome.set.handsRestOn
             ? running.set(after: outcome.set).flatMap { $0.station == outcome.set.station ? $0.id : nil }
             : nil
         // A skipped set is never left to do, so it never holds this cue back.

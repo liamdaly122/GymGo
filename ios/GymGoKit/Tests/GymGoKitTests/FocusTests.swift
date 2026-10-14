@@ -401,3 +401,46 @@ private func firstHalfLogged() throws -> WatchAppState {
     #expect(!skipped && !doneWith && !went)
     #expect(state.session?.skipped.isEmpty == true)
 }
+
+/// "Two straight lifts" with Lift a's first set made a warm-up, which never
+/// rests by the phone's rule (`restsAfterSet`).
+private func withWarmUp() throws -> [String: Any] {
+    var object = try snapshotObject("two straight lifts")
+    guard var sets = object["sets"] as? [[String: Any]],
+          let index = sets.firstIndex(where: { ($0["id"] as? String) == "a-s0" }) else {
+        throw CocoaError(.fileReadCorruptFile)
+    }
+    sets[index]["type"] = "warmup"
+    sets[index]["restAfter"] = NSNull()
+    object["sets"] = sets
+    return object
+}
+
+@Test func aWarmUpHandsNoRestOnWhenTheFirstWorkingSetIsSkipped() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: withWarmUp()))
+    #expect(state.setInHand?.set.id == "a-s0")
+    _ = state.logSet(weight: 60, reps: 5, at: minute(6))
+    #expect(state.rest == nil)
+    // The bar is taken: skip working set 1. A warm-up rests by no rule, so
+    // nothing is handed on.
+    _ = state.skipSetInHand(at: minute(7))
+    #expect(state.rest == nil)
+}
+
+@Test func aWarmUpBroughtBackRestsNotAsTheWorkingSetsAfterIt() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: withWarmUp()))
+    _ = state.skipSetInHand(at: minute(6))
+    for m in 7...9 {
+        _ = state.skipRest(at: minute(Double(m)))
+        _ = state.logSet(weight: 100, reps: 5, at: minute(Double(m)))
+    }
+    _ = state.skipRest(at: minute(10))
+    let back = state.go(toStation: 0, at: minute(11))
+    #expect(back && state.setInHand?.set.id == "a-s0")
+    let logged = state.logSet(weight: 60, reps: 5, at: minute(12))
+    let result = try #require(logged)
+    #expect(result.outcome.restSeconds == nil)
+    #expect(state.rest == nil)
+}

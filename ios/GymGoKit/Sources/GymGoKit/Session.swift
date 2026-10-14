@@ -316,7 +316,10 @@ public struct WatchSession: Codable, Sendable, Equatable {
     /// unless a later member still has this round's set to do). The list
     /// carries no rest for a first half, so it is the partner's.
     func restHandedOn(after set: WatchSet) -> Int? {
-        guard set.restAfter == nil, let index = snapshot.sets.firstIndex(where: { $0.id == set.id }) else { return nil }
+        // Only a set the phone's rule could rest after: never a warm-up or a
+        // child, whose nil is that rule's answer, not a partner coming next.
+        guard set.restAfter == nil, set.handsRestOn,
+              let index = snapshot.sets.firstIndex(where: { $0.id == set.id }) else { return nil }
         return restHandedOn(from: index + 1, at: set.station)
     }
 
