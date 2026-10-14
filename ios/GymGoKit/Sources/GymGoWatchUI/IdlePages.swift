@@ -86,7 +86,9 @@ struct TodayPage: View {
 
             Spacer(minLength: 4)
 
-            if store.workout.isRunning {
+            // A Health workout already recording is taken over by Start;
+            // with nothing to start, it can be ended here.
+            if store.workout.isRunning, !card.canStart {
                 strayRecording
             } else if card.canStart, let label = card.startLabel, let title = card.title {
                 Button {
@@ -270,7 +272,17 @@ struct WeekPage: View {
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(day.weekday), \(day.name ?? "rest day"), \(day.state == .done ? "done" : day.state == .rest ? "" : "planned")")
+        .accessibilityLabel(dayDescription(day, isToday: isToday))
+    }
+
+    private func dayDescription(_ day: WatchWeekDay, isToday: Bool) -> String {
+        var parts = [day.weekday + (isToday ? ", today" : ""), day.name ?? "rest day"]
+        switch day.state {
+        case .done: parts.append("done")
+        case .planned, .today: parts.append("planned")
+        case .rest: break
+        }
+        return parts.joined(separator: ", ")
     }
 }
 #endif

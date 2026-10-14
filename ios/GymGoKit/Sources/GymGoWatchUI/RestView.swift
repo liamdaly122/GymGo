@@ -25,11 +25,14 @@ struct RestView: View {
                     .font(Theme.text(13, semiBold: true))
                     .textCase(.uppercase)
                     .foregroundStyle(record == nil ? Theme.muted : Theme.hot)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .layoutPriority(1)
                     .accessibilityHidden(record != nil)
                 HeartRateBadge(workout: store.workout)
                 Spacer(minLength: 0)
             }
-            .padding(.trailing, 50)
+            .padding(.trailing, Theme.screenWidth < 190 ? 44 : 50)
 
             // The last ten seconds turn blue. The schedule starts now: with
             // only the future moment in it, the first frame is drawn as of then.

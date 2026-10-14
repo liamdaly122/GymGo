@@ -168,7 +168,8 @@ public final class WorkoutController: NSObject {
             return true
         } catch {
             lastError = String(describing: error)
-            if let code = (error as? HKError)?.code, code == .errorAuthorizationDenied || code == .errorAuthorizationNotDetermined {
+            // Not determined is not refused: the next foreground asks.
+            if (error as? HKError)?.code == .errorAuthorizationDenied {
                 authorization = .denied
             }
             if let session { session.end() }
@@ -331,7 +332,7 @@ public final class WorkoutController: NSObject {
     fileprivate func sessionFailed(_ failed: HKWorkoutSession, _ message: String, code: Int?) {
         guard failed === session else { return }
         lastError = message
-        if code == HKError.Code.errorAuthorizationDenied.rawValue || code == HKError.Code.errorAuthorizationNotDetermined.rawValue {
+        if code == HKError.Code.errorAuthorizationDenied.rawValue {
             authorization = .denied
         }
         // A session that never got going is not recording, whatever it was asked.
