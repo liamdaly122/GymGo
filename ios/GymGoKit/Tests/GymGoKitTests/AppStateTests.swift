@@ -527,3 +527,53 @@ private func claim(_ workoutId: String, at: Date) -> [String: Any] {
     let state = try JSONDecoder().decode(WatchAppState.self, from: Data("{}".utf8))
     #expect(state == WatchAppState())
 }
+
+// MARK: - Upgrading from build 4
+
+/// A session as build 4 saved it in session.json: the wrist logged a set the
+/// phone never confirmed, and the workout was finished on the phone.
+private func build4Session(finishedHere: Bool = false) throws -> Data {
+    var session = WatchSession(snapshot: try decodeSnapshot(snapshotObject("two straight lifts", workoutId: "w-old")))
+    _ = session.logSetInHand(weight: 100, reps: 5, at: minute(-3000), eventId: "old-set")
+    if finishedHere { _ = session.finish(at: minute(-2990), eventId: "old-finish") }
+    return try JSONEncoder().encode(session)
+}
+
+@Test func aBuildFourSessionDoesNotComeBackAsRunning() throws {
+    var state = WatchAppState.restore(saved: nil, build4Session: try build4Session())
+    #expect(state.session == nil)
+    #expect(state.setInHand == nil)
+    // What the wrist logged in it still goes to the phone.
+    #expect(state.unconfirmed.map(\.id) == ["old-set"])
+    #expect(state.report(at: minute(1), heartRate: nil, activeKcal: nil, health: .off).session == .none)
+
+    // The phone finished it days ago: it is neither live nor closed. Today's
+    // session can start.
+    state.apply(try context(sentAt: minute(5), ready: readyObject()))
+    #expect(state.session == nil)
+    #expect(state.todayCard(now: minute(6), timeZone: london).canStart)
+    #expect(state.start(state.home!.ready!, at: minute(6)) != nil)
+}
+
+@Test func aBuildFourSessionThePhoneStillHasOpenIsAdoptedFromItsContext() throws {
+    var state = WatchAppState.restore(saved: nil, build4Session: try build4Session())
+    let live = try snapshotObject("two straight lifts", workoutId: "w-old", sentAt: iso(minute(5)))
+    let change = state.apply(try context(sentAt: minute(5), live: live))
+    #expect(change.adopted == "w-old")
+    #expect(state.session?.workoutId == "w-old")
+}
+
+@Test func aBuildFourSessionFinishedOnTheWristStillSendsItsFinish() throws {
+    let state = WatchAppState.restore(saved: nil, build4Session: try build4Session(finishedHere: true))
+    #expect(state.session == nil)
+    #expect(state.unconfirmed.map(\.id) == ["old-set", "old-finish"])
+}
+
+@Test func theSavedStateWinsOverBuildFoursFile() throws {
+    var saved = WatchAppState()
+    saved.apply(try context(sentAt: minute(5), vibrate: false))
+    let state = WatchAppState.restore(saved: try JSONEncoder().encode(saved), build4Session: try build4Session())
+    #expect(state == saved)
+    #expect(WatchAppState.restore(saved: nil, build4Session: nil) == WatchAppState())
+    #expect(WatchAppState.restore(saved: Data("not json".utf8), build4Session: Data("{}".utf8)) == WatchAppState())
+}

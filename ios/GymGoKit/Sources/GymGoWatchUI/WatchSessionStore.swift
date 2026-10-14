@@ -50,6 +50,7 @@ public final class WatchSessionStore {
             self.keepReporting()
             self.reportIfChanged()
         }
+        retireLegacyFile()
         if state.expireRest(now: Date()) { save() }
         scheduleRest()
         keepReporting()
@@ -427,16 +428,24 @@ public final class WatchSessionStore {
 
     private static func load(from fileURL: URL?) -> WatchAppState {
         guard let fileURL else { return WatchAppState() }
-        if let data = try? Data(contentsOf: fileURL), let state = try? JSONDecoder().decode(WatchAppState.self, from: data) {
-            return state
-        }
         // Build 4 saved only the session, beside where the state now goes.
-        let old = fileURL.deletingLastPathComponent().appendingPathComponent("session.json")
-        if let data = try? Data(contentsOf: old), let session = try? JSONDecoder().decode(WatchSession.self, from: data) {
-            try? FileManager.default.removeItem(at: old)
-            return WatchAppState(session: session.isOver ? nil : session)
-        }
-        return WatchAppState()
+        // Its session is not brought back as running: see
+        // `WatchAppState.init(upgradingFrom:)`.
+        let old = legacyFileURL(beside: fileURL)
+        return WatchAppState.restore(saved: try? Data(contentsOf: fileURL), build4Session: try? Data(contentsOf: old))
+    }
+
+    private nonisolated static func legacyFileURL(beside fileURL: URL) -> URL {
+        fileURL.deletingLastPathComponent().appendingPathComponent("session.json")
+    }
+
+    /// Build 4's file goes once what came from it is saved in the new one.
+    private func retireLegacyFile() {
+        guard let fileURL else { return }
+        let old = Self.legacyFileURL(beside: fileURL)
+        guard FileManager.default.fileExists(atPath: old.path) else { return }
+        save()
+        try? FileManager.default.removeItem(at: old)
     }
 
     private func save() {

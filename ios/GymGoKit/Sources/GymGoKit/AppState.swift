@@ -111,9 +111,28 @@ public struct WatchAppState: Codable, Sendable, Equatable {
 
     public init() {}
 
-    /// For a watch upgrading from a build that saved only the session.
-    public init(session: WatchSession?) {
-        self.session = session
+    /// For a watch upgrading from build 4, which saved only the session.
+    ///
+    /// That session does not come back as running. Build 4 kept every workout
+    /// finished on the phone running on the watch, so the one it saved has
+    /// most likely ended days ago, and nothing would end it now: the phone
+    /// lists only the last day's endings in `closed`. Brought back, it would
+    /// hide Today and its Start, and start a Health workout for a session
+    /// long over. What the wrist logged in it that the phone has not
+    /// confirmed is still sent; if the phone really does still have it open,
+    /// its next context hands it back as `live`.
+    public init(upgradingFrom session: WatchSession?) {
+        pending = session?.outbox ?? []
+    }
+
+    /// What the app starts with: the state it saved, else build 4's session,
+    /// upgraded, else nothing.
+    public static func restore(saved: Data?, build4Session: Data?) -> WatchAppState {
+        if let saved, let state = try? JSONDecoder().decode(WatchAppState.self, from: saved) { return state }
+        if let build4Session, let session = try? JSONDecoder().decode(WatchSession.self, from: build4Session) {
+            return WatchAppState(upgradingFrom: session)
+        }
+        return WatchAppState()
     }
 
     enum CodingKeys: String, CodingKey {
