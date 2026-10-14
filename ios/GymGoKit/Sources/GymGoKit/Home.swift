@@ -153,3 +153,167 @@ extension WatchAppState {
         }
     }
 }
+
+// MARK: - The Today page's inputs, for the watch face too
+
+/// What the Today page is worded from, and nothing more: no session's sets,
+/// no layout. The complications read these from `glance.json` and word each
+/// moment themselves with `TodayCard(_:now:)`, the same rule as the app, so
+/// "Next · Fri" becomes "Today" at midnight with no app running.
+public struct TodayInputs: Codable, Sendable, Equatable {
+    public struct Ready: Codable, Sendable, Equatable {
+        public var name: String
+        public var date: String
+        public var weekLabel: String?
+        public var minutes: Int
+        public var exercises: Int
+        public var movedFrom: String?
+        /// Started on the wrist already: its ready key is used.
+        public var used: Bool
+        /// Discarded here, and not a layout the watch can lay out again.
+        public var discarded: Bool
+
+        public init(
+            name: String, date: String, weekLabel: String?, minutes: Int, exercises: Int,
+            movedFrom: String?, used: Bool, discarded: Bool
+        ) {
+            self.name = name
+            self.date = date
+            self.weekLabel = weekLabel
+            self.minutes = minutes
+            self.exercises = exercises
+            self.movedFrom = movedFrom
+            self.used = used
+            self.discarded = discarded
+        }
+    }
+
+    /// The phone's day when it built `home`.
+    public var phoneToday: String
+    public var state: WatchHome.State
+    /// Sessions the phone finished on `phoneToday`, newest first.
+    public var doneToday: [String]
+    public var ready: Ready?
+    public var week: [WatchWeekDay]
+    /// A workout is open on the phone (`home.state == .running`, or `live`).
+    public var liveOnPhone: Bool
+    /// That workout was discarded on the wrist.
+    public var liveDiscardedHere: Bool
+    /// That workout's session ended on the wrist, and the phone has not heard.
+    public var liveEnded: Bool
+
+    public init(
+        phoneToday: String, state: WatchHome.State, doneToday: [String], ready: Ready?, week: [WatchWeekDay],
+        liveOnPhone: Bool, liveDiscardedHere: Bool, liveEnded: Bool
+    ) {
+        self.phoneToday = phoneToday
+        self.state = state
+        self.doneToday = doneToday
+        self.ready = ready
+        self.week = week
+        self.liveOnPhone = liveOnPhone
+        self.liveDiscardedHere = liveDiscardedHere
+        self.liveEnded = liveEnded
+    }
+}
+
+extension WatchAppState {
+    /// The Today page's inputs. Nil until the phone has sent anything.
+    public var todayInputs: TodayInputs? {
+        guard let home else { return nil }
+        let live = liveWorkoutId
+        return TodayInputs(
+            phoneToday: home.today,
+            state: home.state,
+            doneToday: home.doneToday.map(\.name),
+            ready: home.ready.map { ready in
+                TodayInputs.Ready(
+                    name: ready.name, date: ready.date, weekLabel: ready.week?.label, minutes: ready.minutes,
+                    exercises: ready.exercises.count, movedFrom: ready.movedFrom,
+                    used: usedReadyKeys.contains(ready.key),
+                    discarded: endedWorkouts.contains(ready.snapshot.workoutId) && ready.mintedIds == nil
+                )
+            },
+            week: home.week,
+            liveOnPhone: home.state == .running || live != nil,
+            liveDiscardedHere: live.map(discardedHere.contains) ?? false,
+            liveEnded: live.map(endedWorkouts.contains) ?? false
+        )
+    }
+}
+
+extension TodayCard {
+    /// The Today page as of `now` on the watch's own clock, worded from its
+    /// inputs: the one rule, read by the Today page and the complications.
+    /// The phone's data may be from an earlier day: a session it planned for
+    /// a day already gone has rolled forward to today, by the phone's own
+    /// rule, and what it called done "today" was done another day.
+    public init(_ inputs: TodayInputs?, now: Date, timeZone: TimeZone = .current) {
+        guard let home = inputs else {
+            self.init(kind: .noPhone, heading: "GymGo", message: "Open GymGo on your iPhone to load your sessions.")
+            return
+        }
+        let today = localDay(now, timeZone: timeZone)
+        let doneToday = home.phoneToday == today ? home.doneToday : []
+
+        if home.liveOnPhone {
+            if home.liveDiscardedHere {
+                self.init(
+                    kind: .discarded, heading: "Discarded", doneToday: doneToday,
+                    message: "Your iPhone catches up next time you open GymGo."
+                )
+            } else if home.liveEnded {
+                self.init(
+                    kind: .waitingForPhone, heading: "Done today", doneToday: doneToday,
+                    message: "It saves on your iPhone next time you open GymGo."
+                )
+            } else {
+                self.init(kind: .runningOnPhone, heading: "On your iPhone", doneToday: doneToday, message: "A workout is open on your iPhone.")
+            }
+            return
+        }
+
+        if let ready = home.ready {
+            if ready.used {
+                self.init(
+                    kind: .started, heading: "Done today", title: ready.name, doneToday: doneToday,
+                    message: "Next session loads from your iPhone."
+                )
+                return
+            }
+            if ready.discarded {
+                // Discarded here, and its layout is not one the watch can lay
+                // out again under new IDs: the phone offers it again once it
+                // has caught up. Otherwise it starts again, under new IDs.
+                self.init(
+                    kind: .discarded, heading: "Discarded", title: ready.name, doneToday: doneToday,
+                    message: "It comes back when your iPhone next opens GymGo."
+                )
+                return
+            }
+            let due = max(ready.date, today)
+            let isToday = due == today
+            let heading = isToday
+                ? (["Today"] + [ready.weekLabel].compactMap { $0 }).joined(separator: " · ")
+                : "Next · \(dayLabel(ready.date, from: today, timeZone: timeZone))"
+            let count = ready.exercises
+            self.init(
+                kind: .ready,
+                heading: heading,
+                title: ready.name,
+                detail: "\(count) exercise\(count == 1 ? "" : "s") · about \(ready.minutes) min",
+                movedFrom: ready.movedFrom.map { "Moved from \(dayLabel($0, from: today, timeZone: timeZone))" },
+                doneToday: doneToday,
+                startLabel: isToday ? "Start" : "Start early"
+            )
+            return
+        }
+
+        switch home.state {
+        case .blockDone:
+            self.init(kind: .blockDone, heading: "Block done", doneToday: doneToday, message: "Start the next one on your iPhone.")
+        default:
+            self.init(kind: .noPlan, heading: "No session planned", doneToday: doneToday, message: "Plan one on your iPhone, or start a workout there.")
+        }
+    }
+}
