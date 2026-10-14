@@ -19,7 +19,7 @@
  * Pure. The store is src/platform/watchState.ts; screens read both through
  * `useCompanionMode`.
  */
-import type { ReceivedWatchState } from './watchProtocol';
+import type { ReceivedWatchState, WatchStateReport } from './watchProtocol';
 
 /**
  * How long a report counts for. The watch reports on every change and every
@@ -27,6 +27,25 @@ import type { ReceivedWatchState } from './watchProtocol';
  * it has gone: out of range, flat, or its session ended without a word.
  */
 export const WATCH_STALE_MS = 5 * 60_000;
+
+/**
+ * How long a report counts for while it says the workout is paused. A pause
+ * is a deliberate break, not a watch gone missing, and whether watchOS keeps
+ * a paused workout's app running for the 30-second heartbeat is only provable
+ * on the device. An hour of a pause is long enough for a phone call, and short
+ * enough that a watch which really has gone does not hold the session for ever.
+ */
+export const WATCH_PAUSED_STALE_MS = 60 * 60_000;
+
+/**
+ * How long this report counts for: five minutes, or an hour while it says the
+ * workout is paused. The one rule, read by `loggingSurface` and by
+ * `useCompanionMode`'s clock, so the two can never disagree about when a
+ * report runs out.
+ */
+export function staleAfter(report: Pick<WatchStateReport, 'paused'>): number {
+  return report.paused ? WATCH_PAUSED_STALE_MS : WATCH_STALE_MS;
+}
 
 /** Why the phone logs. */
 export type PhoneReason = 'no-watch' | 'other-workout' | 'ended' | 'stale' | 'taken-back';
@@ -64,7 +83,8 @@ function sawClaim(seenPhoneClaim: string | null, takenBackAt: string): boolean {
  *  1. no report → phone (`no-watch`);
  *  2. the report is for another workout → phone (`other-workout`);
  *  3. the watch's session is `ended` or `none` → phone (`ended`);
- *  4. nothing heard for more than five minutes → phone (`stale`);
+ *  4. nothing heard for longer than the report counts for (`staleAfter`:
+ *     five minutes, or an hour while paused) → phone (`stale`);
  *  5. the watch says the phone logs → phone (`taken-back`);
  *  6. this phone took logging back and the watch has not seen it yet →
  *     phone (`taken-back`): the switch is immediate, not a round trip later;
@@ -81,7 +101,7 @@ export function loggingSurface(
   if (!report) return phone('no-watch');
   if (report.workoutId !== workoutId) return phone('other-workout');
   if (report.session !== 'running') return phone('ended');
-  if (now - report.receivedAt > WATCH_STALE_MS) return phone('stale');
+  if (now - report.receivedAt > staleAfter(report)) return phone('stale');
   if (report.owner === 'phone') return phone('taken-back');
   if (takeBack && takeBack.workoutId === workoutId && !sawClaim(report.seenPhoneClaim, takeBack.at)) {
     return phone('taken-back');
@@ -103,6 +123,28 @@ export function watchReclaimed(
 ): boolean {
   if (!report || !takeBack || takeBack.workoutId !== workoutId) return false;
   return loggingSurface(report, workoutId, now, takeBack).on === 'watch' && sawClaim(report.seenPhoneClaim, takeBack.at);
+}
+
+/**
+ * Which stations still have work in them, as one side counts it: a set not
+ * ticked, and not one of `skipped`.
+ *
+ * The phone's own logging passes nothing skipped: a set skipped on the wrist
+ * is still there to log once the phone has taken over. The companion passes
+ * the watch's `skipped`, the sets it will not ask for, so the station it
+ * names as Up next (`nextStation` over these) is the one the watch goes to.
+ *
+ * `stations` are indices into `exercises`, as `sessionStations` returns them.
+ */
+export function openStations(
+  stations: ReadonlyArray<ReadonlyArray<number>>,
+  exercises: ReadonlyArray<{ sets: ReadonlyArray<{ id: string; completed: boolean }> }>,
+  skipped: ReadonlyArray<string> = [],
+): boolean[] {
+  const passed = new Set(skipped);
+  return stations.map((station) =>
+    station.some((member) => exercises[member]?.sets.some((set) => !set.completed && !passed.has(set.id)) ?? false),
+  );
 }
 
 /**

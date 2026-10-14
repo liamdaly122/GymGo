@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import { loggingSurface, watchReclaimed, WATCH_STALE_MS, type LoggingSurface } from '@/domain/companion';
+import { loggingSurface, staleAfter, watchReclaimed, type LoggingSurface } from '@/domain/companion';
 import type { ReceivedWatchState } from '@/domain/watchProtocol';
 import { clearTakeBack, getWatchState, subscribeWatchState, takeLoggingBack } from '@/platform/watchState';
 
@@ -38,7 +38,8 @@ export function useCompanionMode(workoutId: string | undefined): CompanionMode {
   const now = Date.now();
 
   const mine = report !== null && workoutId !== undefined && report.workoutId === workoutId ? report : null;
-  const staleAt = mine && mine.session === 'running' ? mine.receivedAt + WATCH_STALE_MS : null;
+  // When the newest report runs out, by the rule's own clock: later while the watch says it is paused.
+  const staleAt = mine && mine.session === 'running' ? mine.receivedAt + staleAfter(mine) : null;
 
   useEffect(() => {
     if (staleAt === null) return;

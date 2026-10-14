@@ -13,7 +13,7 @@ import { useCompanionMode } from '@/hooks/useCompanionMode';
 import { useElapsed } from '@/hooks/useElapsed';
 import { totalWorkingSets } from '@/domain/volume';
 import { isLive } from '@/domain/sets';
-import { watchStation } from '@/domain/companion';
+import { openStations, watchStation } from '@/domain/companion';
 import { nextStation, sessionStations } from '@/domain/supersets';
 import ExercisePicker from '@/features/exercises/ExercisePicker';
 import { useRestTimer } from './RestTimer';
@@ -89,8 +89,10 @@ export default function ActiveWorkoutScreen() {
       superset_group: entry.workoutExercise.superset_group,
     })),
   );
-  // Which stations still have anything unticked.
-  const open = stations.map((station) => station.some((index) => exercises[index]!.sets.some((set) => !set.completed)));
+  // Which stations still have anything unticked. While the watch logs, the
+  // sets it skipped are not left to do either, so the companion's Up next is
+  // the station the watch goes to; back on the phone they are there to log.
+  const open = openStations(stations, exercises, onWatch ? (companion.report?.skipped ?? []) : []);
   const stationOf = (exerciseId: string | null) =>
     exerciseId === null
       ? -1

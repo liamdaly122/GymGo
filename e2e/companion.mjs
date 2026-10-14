@@ -8,12 +8,13 @@
  *
  * Covers: no logging controls while the watch logs, the watch's station and
  * the whole session on screen, setup notes, fixing a logged set, readiness,
- * a silent rest line, picking another station, a swap, the details folded in
- * Beginner and open in Pro, every way logging comes back to the phone (the
- * watch's session ending, five minutes of silence, another workout, "Log on
- * this phone"), the watch reclaiming, Finish from the companion and from the
- * watch, a workout deleted from under the screen, and the routine editor
- * refusing a second open workout.
+ * a silent rest line, a station skipped on the wrist left out of Up next,
+ * picking another station, a swap, the details folded in Beginner and open in
+ * Pro, every way logging comes back to the phone (the watch's session ending,
+ * five minutes of silence, an hour of a pause, another workout, "Log on this
+ * phone"), "Paused" in the watch bar, the watch reclaiming, Finish from the
+ * companion and from the watch, a workout deleted from under the screen, and
+ * the routine editor refusing a second open workout.
  *
  * Display type is upper-cased by CSS and innerText sees the capitals, so text
  * checks match without case or read accessible names.
@@ -22,6 +23,7 @@ import { launchChromium } from './browser.mjs';
 
 const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:5185/';
 const STALE_MS = 5 * 60_000;
+const PAUSED_STALE_MS = 60 * 60_000;
 const BENCH = 'Barbell Bench Press - Medium Grip';
 const SQUAT = 'Barbell Squat';
 const ROW = 'Bent Over Barbell Row';
@@ -230,6 +232,17 @@ await step("'This session' lists all three, the watch's first and current", asyn
   await p.getByRole('region', { name: 'Up next' }).getByText(SQUAT).waitFor();
 });
 
+await step('a station skipped on the wrist is not Up next on the phone either', async () => {
+  const upNext = () => p.getByRole('region', { name: 'Up next' });
+  // The watch skipped the squat: it goes to the rows next, and so does the phone.
+  await report({ workoutId, setId: sets[BENCH][1], skipped: [sets[SQUAT][0]] });
+  await upNext().getByText(ROW).waitFor({ timeout: 5000 });
+  if (await upNext().getByText(SQUAT).count()) throw new Error('the skipped squat is still Up next');
+  // Nothing skipped any more: the squat is next again.
+  await report({ workoutId, setId: sets[BENCH][1] });
+  await upNext().getByText(SQUAT).waitFor({ timeout: 5000 });
+});
+
 await p.screenshot({ path: 'e2e/shot-companion.png', fullPage: true });
 
 await step('no sideways scroll on a 375 × 667 phone', async () => {
@@ -411,6 +424,29 @@ await step('five minutes without a word is stale: the phone logs', async () => {
 
 await step('a report going stale while the screen is open hands logging back by itself', async () => {
   await report({ workoutId, setId: sets[BENCH][1], receivedAt: Date.now() - STALE_MS + 2500 });
+  await watching().waitFor({ timeout: 2000 });
+  await doneBar().first().waitFor({ timeout: 6000 });
+});
+
+await step('a paused watch says so, and holds the session for an hour rather than five minutes', async () => {
+  const pausedAt = new Date(Date.now() - 20 * 60_000).toISOString();
+  // Heard from six minutes ago: stale for a watch that records, not for a paused one.
+  await report({ workoutId, setId: sets[BENCH][1], paused: pausedAt, receivedAt: Date.now() - STALE_MS - 60_000 });
+  await watching().waitFor({ timeout: 5000 });
+  if (await doneBar().count()) throw new Error('a paused watch went stale after five minutes');
+  const header = await p.locator('header').innerText();
+  if (!/On your watch/i.test(header) || !/Paused/i.test(header)) throw new Error(`the bar does not say Paused: ${header}`);
+  await p.getByRole('button', { name: 'Log on this phone' }).waitFor();
+  await p.screenshot({ path: 'e2e/shot-companion-paused.png' });
+  // Resumed: the word goes.
+  await report({ workoutId, setId: sets[BENCH][1], paused: null });
+  await watching().waitFor({ timeout: 5000 });
+  if (/Paused/i.test(await p.locator('header').innerText())) throw new Error('"Paused" stayed after the watch resumed');
+});
+
+await step('a pause running past its hour while the screen is open hands logging back by itself', async () => {
+  const pausedAt = new Date(Date.now() - 70 * 60_000).toISOString();
+  await report({ workoutId, setId: sets[BENCH][1], paused: pausedAt, receivedAt: Date.now() - PAUSED_STALE_MS + 2500 });
   await watching().waitFor({ timeout: 2000 });
   await doneBar().first().waitFor({ timeout: 6000 });
 });

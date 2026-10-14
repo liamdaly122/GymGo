@@ -7,9 +7,12 @@ import { formatClock } from '@/lib/dates';
  * The watch is logging: what it says, and the way to take logging back.
  *
  * Sits where the exercise strip sits while the phone logs. Heart rate and
- * energy come straight from the watch's last report. While the watch rests,
- * the rest is one line: the watch has the clock and gives the cue, so this
- * plays no sound and buzzes nothing (one cue per rest).
+ * energy come straight from the watch's last report, and "Paused" while the
+ * watch says its workout is paused (a paused watch also counts for longer
+ * before the phone takes over: `staleAfter`). While the watch rests, the rest
+ * is one line: the watch has the clock and gives the cue, so this plays no
+ * sound and buzzes nothing (one cue per rest). A rest keeps its end through a
+ * pause, as on the watch.
  */
 export default function WatchBar({
   report,
@@ -30,6 +33,14 @@ export default function WatchBar({
       <div className="flex items-center gap-3">
         <p className="m-0 min-w-0 flex-1 text-sm text-muted tabular-nums">
           <strong className="font-semibold text-hot">On your watch</strong>
+          {report.paused ? (
+            // A state, so blue, as the watch's own "Paused" line is.
+            <span className="whitespace-nowrap">
+              <span aria-hidden="true"> · </span>
+              <span className="sr-only">, </span>
+              <span className="font-semibold text-hot">Paused</span>
+            </span>
+          ) : null}
           {facts.map((fact) => (
             // Each fact wraps whole: "214 kcal", never "214" then "kcal".
             <span key={fact} className="whitespace-nowrap">

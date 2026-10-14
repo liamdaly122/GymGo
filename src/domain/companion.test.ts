@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { loggingSurface, watchReclaimed, watchStation, WATCH_STALE_MS, type TakeBack } from './companion';
+import {
+  loggingSurface,
+  openStations,
+  staleAfter,
+  watchReclaimed,
+  watchStation,
+  WATCH_PAUSED_STALE_MS,
+  WATCH_STALE_MS,
+  type TakeBack,
+} from './companion';
+import { nextStation } from './supersets';
 import type { ReceivedWatchState } from './watchProtocol';
 
 /** The phone's clock for every case: a fixed moment, epoch ms. */
@@ -62,6 +72,38 @@ describe('loggingSurface: who logs sets', () => {
     expect(loggingSurface(past, 'w-1', NOW, null)).toEqual({ on: 'phone', why: 'stale' });
   });
 
+  it('4. a paused watch counts for an hour, not five minutes', () => {
+    expect(WATCH_PAUSED_STALE_MS).toBe(3_600_000);
+    const paused = '2026-10-14T18:00:00.000Z';
+    // Thirty minutes of silence: a recording watch has gone, a paused one is on a break.
+    const halfAnHour = NOW - 30 * 60_000;
+    expect(loggingSurface(report({ receivedAt: halfAnHour, paused }), 'w-1', NOW, null)).toEqual({ on: 'watch' });
+    expect(loggingSurface(report({ receivedAt: halfAnHour, paused: null }), 'w-1', NOW, null)).toEqual({
+      on: 'phone',
+      why: 'stale',
+    });
+    // The hour exactly still counts; a moment past it does not.
+    const exactly = report({ receivedAt: NOW - WATCH_PAUSED_STALE_MS, paused });
+    expect(loggingSurface(exactly, 'w-1', NOW, null)).toEqual({ on: 'watch' });
+    const past = report({ receivedAt: NOW - WATCH_PAUSED_STALE_MS - 1, paused });
+    expect(loggingSurface(past, 'w-1', NOW, null)).toEqual({ on: 'phone', why: 'stale' });
+  });
+
+  it('4. resuming goes back to five minutes', () => {
+    const resumed = report({ receivedAt: NOW - WATCH_STALE_MS - 1, paused: null });
+    expect(loggingSurface(resumed, 'w-1', NOW, null)).toEqual({ on: 'phone', why: 'stale' });
+  });
+
+  it('4. a pause holds nothing else: an ended session, another workout or a take-back still give the phone', () => {
+    const paused = '2026-10-14T18:00:00.000Z';
+    expect(loggingSurface(report({ paused, session: 'ended' }), 'w-1', NOW, null)).toEqual({ on: 'phone', why: 'ended' });
+    expect(loggingSurface(report({ paused, workoutId: 'w-2' }), 'w-1', NOW, null)).toEqual({
+      on: 'phone',
+      why: 'other-workout',
+    });
+    expect(loggingSurface(report({ paused }), 'w-1', NOW, takeBack())).toEqual({ on: 'phone', why: 'taken-back' });
+  });
+
   it('4. staleness ignores the watch clock: an old `at` received just now is fresh', () => {
     const skewed = report({ at: '2026-10-14T17:00:00.000Z', receivedAt: NOW - 1_000 });
     expect(loggingSurface(skewed, 'w-1', NOW, null)).toEqual({ on: 'watch' });
@@ -122,6 +164,14 @@ describe('loggingSurface: who logs sets', () => {
   });
 });
 
+describe('staleAfter: how long a report counts for', () => {
+  it('five minutes while the watch records, an hour while it is paused', () => {
+    expect(staleAfter({ paused: null })).toBe(WATCH_STALE_MS);
+    expect(staleAfter({ paused: '2026-10-14T18:00:00.000Z' })).toBe(WATCH_PAUSED_STALE_MS);
+    expect(staleAfter(report())).toBe(WATCH_STALE_MS);
+  });
+});
+
 describe('watchReclaimed: the watch took logging back from this phone', () => {
   it('only once the watch has seen the take-back and logs again', () => {
     expect(watchReclaimed(report({ seenPhoneClaim: takeBack().at }), 'w-1', NOW, takeBack())).toBe(true);
@@ -175,5 +225,41 @@ describe('watchStation: where the watch is', () => {
 
   it('copes with a station pointing past the list', () => {
     expect(watchStation([[5]], exercises, 'bench-1')).toBeNull();
+  });
+});
+
+describe('openStations: which stations have work left', () => {
+  // Bench alone, a superset of curls and pushdowns, then rows.
+  const set = (id: string, completed = false) => ({ id, completed });
+  const exercises = [
+    { sets: [set('bench-1', true), set('bench-2')] },
+    { sets: [set('curl-1', true), set('curl-2')] },
+    { sets: [set('row-1')] },
+    { sets: [set('push-1', true), set('push-2')] },
+  ];
+  const stations = [[0], [1, 3], [2]];
+
+  it('a station is open while anything in it is unticked', () => {
+    expect(openStations(stations, exercises)).toEqual([true, true, true]);
+    const done = exercises.map((entry) => ({ sets: entry.sets.map((each) => ({ ...each, completed: true })) }));
+    expect(openStations(stations, done)).toEqual([false, false, false]);
+  });
+
+  it('a set skipped on the wrist is not left to do', () => {
+    expect(openStations(stations, exercises, ['row-1'])).toEqual([true, true, false]);
+    // Skipping one member of a superset leaves the station open while its partner has work.
+    expect(openStations(stations, exercises, ['curl-2'])).toEqual([true, true, true]);
+    expect(openStations(stations, exercises, ['curl-2', 'push-2'])).toEqual([true, false, true]);
+  });
+
+  it("so the companion's Up next is the station the watch goes to", () => {
+    // The watch is on the bench and skipped the superset: rows are next, not the superset.
+    expect(nextStation(openStations(stations, exercises, ['curl-2', 'push-2']), 0)).toBe(2);
+    expect(nextStation(openStations(stations, exercises), 0)).toBe(1);
+  });
+
+  it('skipping a set the session no longer has changes nothing', () => {
+    expect(openStations(stations, exercises, ['gone'])).toEqual([true, true, true]);
+    expect(openStations([[7]], exercises, [])).toEqual([false]);
   });
 });
