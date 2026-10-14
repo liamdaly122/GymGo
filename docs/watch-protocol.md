@@ -126,7 +126,10 @@ once and saved, so the set in hand moves on and its rest starts, but its
 `completeSet` is **held for those 5 seconds** and only then sent. Undo inside
 the window removes the set, puts it back in hand and cancels the rest it
 started; nothing reaches the phone, so the phone never has to take a set back.
-A Finish inside the window sends at once, the held set inside its `sets`.
+Undo also brings back a rest the undone set cut short, if it has not run out,
+and the record line shown before it. A Finish inside the window sends at
+once, the held set inside its `sets`. Without Health the app may be
+suspended wrist-down; a held event then goes when the app next wakes.
 
 **Skipping needs no event.** A set skipped on the wrist ("Skip this set",
 "Done with this lift") is simply never logged; the state report lists it
@@ -257,12 +260,19 @@ list. Logging a set focuses its station. Tapping a station on This session
 focuses it; if all it has left are skipped sets, they come back. Skip this set
 skips the set and its children; Done with this lift skips every remaining set
 of the station in hand. When the set just logged has no rest only because its
-round's partner was skipped, it takes that partner's rest. Once the wrist has
+round's partner was skipped, it takes that partner's rest; skipping the set
+straight after the one just logged starts that rest, once. A focused station
+the phone has finished hands focus on to where `nextStation` goes from it.
+"Same station" is judged by station, never by exercise (a rest remembers its
+station's workout-exercise IDs, `RestState.afterStation`), so a lift that
+appears twice in a session is two stations. Once the wrist has
 left the list's order, the rest's Up next is worded by `upNextFor`: the same
 station, the lift's name and "label · weight × reps" ("BW" for 0, no numbers
 without reps); another station, its name and outline; nothing left, Finish.
-Skipped sets are neither done nor remaining in any count, and never trigger
-the last-set-of-an-exercise cue.
+Skipped sets are neither done nor remaining (the total is done + left +
+skipped), and never trigger the last-set-of-an-exercise cue. The Finish
+confirmation reads "14 of 18 logged · 2 skipped"; with everything left
+skipped, "Nothing left · 2 skipped".
 
 **Wording the list's extras.** The set screen's header shows the plan's verb
 ("Set 1 of 4 · Go up") only while the set's numbers are still the list's
@@ -270,8 +280,8 @@ suggestion (`source == "suggestion"` and no rule replaced them), "Lighter"
 after a step-down, and nothing after a plain carry. The lift sheet shows the
 plan's verb and full reason and "Last time · 3 Oct" with the working sets
 (`dayLabel` words the day). The rest's third line shows `Last 97.5 × 8` when
-the set after it is the lift's first today, unless a setup note takes the
-line.
+the set after it is the lift's first today (nothing of that lift logged
+today, warm-ups included), unless a setup note takes the line.
 
 ## The watch's workout session (HealthKit)
 
@@ -423,7 +433,15 @@ extension (`ios/App/GymGo Complications/`).
   day ("TODAY · WEEK 3 OF 5", "NEXT · FRI", "DONE TODAY"), the session's name
   and the week's marks; in a session, sets done and the station; resting, a
   live countdown (`Text(timerInterval:)`). System fonts. Smart Stack
-  relevance is each training day's waking hours.
+  relevance is each training day's waking hours, 05:00 to 22:00, as a
+  `.scheduled` date context (watchOS ignores per-entry scores).
+- A session done on the wrist that the phone has not heard of reads "Done
+  today" that day and "Done · Wed" on later days, on the face and on the
+  app's Today page alike (`TodayInputs.doneHereDay`, from
+  `WatchAppState.lastEndedStartedAt`). An early start ("Start early") marks
+  the day it was trained done and its planned day rest.
+- The glance records its time zone (`WatchGlance.zone`), so a launch after a
+  zone change while the app was closed still reloads.
 
 ## The Live Activity on the iPhone
 
@@ -448,9 +466,23 @@ alerts: the rest's one cue stays the watch's.
   permission to start a Live Activity (`workoutSessionMirroringStartHandler`,
   set at every launch). If mirroring fails, the activity starts the next
   time GymGo is opened.
+- At the phone's Start it reads "Starting on your watch", waits up to 5
+  minutes for the watch's first report, ignores reports from before the tap,
+  and comes down if `startWatchApp` fails.
 - **Updated** from the reports, which already wake the phone: every change
-  and every 30 s. `staleDate` 5 minutes ahead. **Ends** on `ended` or
-  `none`, another workout, or 5 minutes of silence.
+  and every 30 s. `staleDate` 5 minutes ahead, or 60 minutes while paused
+  (`LiveSession.staleAfter` and `pausedStaleAfter`, held equal to the
+  companion's `WATCH_STALE_MS` and `WATCH_PAUSED_STALE_MS` by
+  `fixtures/watch/stale.json`). **Ends** on `ended` or `none`, another
+  workout, or a stale report seen in the foreground. In the background a
+  stale report of its own changes nothing (the next report may be on its
+  way), and a report the native decoder cannot read changes nothing. A stale
+  rest is drawn nowhere.
+- `WatchLink` keeps the last context it sent in `watch-context.json`, because
+  a background launch may not have `WCSession.applicationContext`; the
+  launch's tidy-up waits for `WatchLink.onActivated`, so the report that
+  launched the app is applied first. Swiping the activity away holds for that
+  workout; reinstalling the app is not a swipe.
 - iOS forwards it to the watch's Smart Stack, which cannot be turned off in
   code; `WKSupportsLiveActivityLaunchAttributeTypes` makes a tap there open
   GymGo, and the watch gets a quiet small view.
@@ -520,7 +552,9 @@ screens read it only through `useCompanionMode`.
 `{ surface, report, takeBack(): void, reclaimed: boolean }` for a workout ID.
 `src/domain/companion.ts` exports `loggingSurface`, `WATCH_STALE_MS`
 (5 minutes), `WATCH_PAUSED_STALE_MS` (60 minutes) and `staleAfter(report)`
-(build 7), and `watchStation(stations, exercises, setId)`.
+(build 7), `watchStation(stations, exercises, setId)`, and
+`openStations(stations, exercises, skipped)`, which leaves the watch's
+skipped sets out of the companion's open stations.
 
 **The rules the watch ports** (pure, `src/domain/`):
 

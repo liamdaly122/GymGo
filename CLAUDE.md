@@ -370,6 +370,28 @@ back. With no watch reporting, the screen is exactly the phone's own. Screens
 read the watch only through `useCompanionMode`; `scripts/boundaries.test.ts`
 keeps `@/platform/watchState` and the plugin out of `src/features`.
 
+**While the watch logs, the companion follows it:** the report's `skipped`
+sets are left out of what is open (`openStations`), so its Up next is the
+watch's, and a paused watch shows "Paused" and stays the logging surface for
+an hour rather than five minutes (`staleAfter`). A Finish the watch made
+while the phone was locked or closed is recorded by the drain
+(`src/lib/celebrate.ts`), and Today offers its "Done." poster once
+(`celebrationFor` in `src/domain/celebrate.ts`, a banner above the level
+strip); a summary shown with `fresh` marks it seen. Seeded, imported and
+restored history never raise it, because only the drain writes the list.
+
+**Around the session:** the Ultra's Action button starts today's session and,
+once Health records, logs the set in hand, skips a rest or resumes (App
+Intents in the watch target, never in GymGoKit); Action and side pause and
+resume. Every set logged on the wrist has a 5-second Undo. The watch face's
+complications read `glance.json`, which the watch app writes to the App Group
+`group.com.liamdaly.gymgo`; the Today card is worded by one rule,
+`TodayCard(inputs, now:)`, for the app and the face. The iPhone's Lock Screen
+and Dynamic Island show the watch's session as a Live Activity, driven
+natively from the reports (`LiveSessionActivities.swift`, added to the App
+target in `project.pbxproj` by hand), started at the phone's Start, on
+opening GymGo, or from the background through HealthKit workout mirroring.
+
 **The watch records the workout to Apple Health** (an `HKWorkoutSession`,
 traditionalStrengthTraining, tagged `gymgo.workout.<id>`), which also keeps
 the app running wrist-down so the rest cues play. The phone never saves a
@@ -581,7 +603,13 @@ the number rather than logging zero. The button says what it will log
 - last time.
 
 So set 1 starts at the suggestion, and every set after it starts at what you
-actually did. The next set is then a nudge of a stepper, not two numbers typed
+actually did, **a notch lighter when it fell short of the range**
+(`carryForward` in `src/domain/carry.ts`: the weight that should give the
+bottom of the range, at least one loadable step and at most 10% lighter
+unless one step is more; unchanged when nothing lighter can be loaded, for
+AMRAP, for bodyweight-plus-load kit and with no range). The plan line then
+shows the chip **Lighter** with "5 was under 8, so 90kg for 8.", until
+either field is typed. The next set is then a nudge of a stepper, not two numbers typed
 again. That was the owner's first note from the gym: a lift with no history
 showed "–" on every set. Warm-ups, drops, back-offs and old 0 × 0 ticks are
 never carried (`latestWorkingSet` in `src/domain/sets.ts` picks the set).
@@ -1155,6 +1183,8 @@ screen looks identical. These in particular are load-bearing:
   it, each row named by its exercises, kit and work, ending `, done` when
   finished
 - `Add exercise`, `Add set`, `Finish`, `Finish and save`, `Start empty workout`
+- `Finished on your watch`, Today's region after a Finish on the wrist, with
+  its link `See how it went`
 - the companion screen, present only while the watch logs: `On your watch`
   (the bar's text, and the station's region, which reads `Coming up` or
   `Done` when another station is picked), `Log on this phone`, the timer
