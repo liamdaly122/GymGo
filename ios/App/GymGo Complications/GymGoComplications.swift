@@ -67,7 +67,10 @@ struct GlanceProvider: TimelineProvider {
         completion(Timeline(entries: moments.map(GlanceEntry.init), policy: .atEnd))
     }
 
-    /// Smart Stack: each training day still to come, in its waking hours.
+    /// Smart Stack: each training day still to come, in its waking hours,
+    /// counting every day an open session on offer may roll onto
+    /// (`WatchGlance.trainingDays`), since these windows are kept until the
+    /// app invalidates them.
     /// `.scheduled`, because the day has a session to start. On the watch
     /// these contexts are what the stack reads; per-entry scores are not.
     func relevance() async -> WidgetRelevance<Void> {
