@@ -12,7 +12,8 @@ import {
 
 const report = (overrides: Partial<ReceivedWatchState>): ReceivedWatchState => ({
   v: 1, at: '2026-10-14T18:00:00.000Z', seq: 1, workoutId: 'w-1', session: 'running', owner: 'watch',
-  seenPhoneClaim: null, setId: null, rest: null, heartRate: null, activeKcal: null, health: 'recording',
+  seenPhoneClaim: null, setId: null, inHand: null, rest: null, skipped: [], paused: null,
+  heartRate: null, activeKcal: null, health: 'recording',
   receivedAt: 1, ...overrides,
 });
 

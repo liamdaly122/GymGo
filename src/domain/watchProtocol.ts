@@ -153,7 +153,29 @@ export interface WatchStateReport {
   seenPhoneClaim: string | null;
   /** The set in hand on the watch. */
   setId: string | null;
-  rest: { endsAt: string; upNext: { name: string; detail: string } } | null;
+  /**
+   * The set in hand as the watch's set screen shows it: the lift, and
+   * "Set 2 of 4 · 100 × 5". Null with no set in hand. For the iPhone's Live
+   * Activity, which cannot read Dexie while the phone is locked.
+   */
+  inHand: { name: string; detail: string } | null;
+  /**
+   * The running rest. `startedAt` (watch clock, ISO) is when it began, so a
+   * bar can drain exactly; a build 6 watch leaves it out.
+   */
+  rest: { endsAt: string; startedAt?: string; upNext: { name: string; detail: string } } | null;
+  /**
+   * Set IDs skipped on the watch ("Skip this set", "Done with this lift"):
+   * neither done nor left to do. Always present, `[]` when none. The
+   * companion leaves them out of what is open, so its Up next is the watch's.
+   */
+  skipped: string[];
+  /**
+   * When the watch paused the workout (watch clock, ISO), or null while it
+   * records. `session` stays `running` while paused: a build 6 phone refuses
+   * a `session` it does not know.
+   */
+  paused: string | null;
   /** Beats per minute, most recent. */
   heartRate: number | null;
   /** Active energy since the workout began, kcal. */

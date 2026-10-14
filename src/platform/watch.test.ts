@@ -215,6 +215,28 @@ describe('the link with the watch, inside the app', () => {
     expect(getWatchState().report?.seq).toBe(10);
   });
 
+  it('reads a build 6 report with nothing skipped, not paused, no set in hand and no rest start', async () => {
+    const restWithoutStart = { endsAt: '2026-10-14T18:02:30.000Z', upNext: { name: 'Lift a', detail: 'Set 2 of 3 · 100 × 5' } };
+    h.emit('watchState', { json: report({ seq: 12, at: '2026-10-14T18:12:00.000Z', rest: restWithoutStart }), receivedAt: 7_000 });
+    const read = getWatchState().report!;
+    expect(read).toMatchObject({ seq: 12, skipped: [], paused: null, inHand: null, rest: restWithoutStart });
+    expect(read.rest).not.toHaveProperty('startedAt');
+  });
+
+  it('keeps only what it can read of the new fields', async () => {
+    h.emit('watchState', {
+      json: report({
+        seq: 13, at: '2026-10-14T18:13:00.000Z',
+        skipped: ['s-1', 7, null, 's-2'] as never, paused: 12 as never, inHand: { detail: 'Set 1 of 3' } as never,
+        rest: { endsAt: '2026-10-14T18:15:00.000Z', startedAt: 5 as never, upNext: { name: 'Lift a', detail: '' } },
+      }),
+      receivedAt: 8_000,
+    });
+    const read = getWatchState().report!;
+    expect(read).toMatchObject({ seq: 13, skipped: ['s-1', 's-2'], paused: null, inHand: null });
+    expect(read.rest).not.toHaveProperty('startedAt');
+  });
+
   it('never sends while a drain is running, and sends once it is over', async () => {
     let open!: () => void;
     h.state.drainGate = new Promise<void>((resolve) => (open = resolve));

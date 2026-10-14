@@ -183,7 +183,12 @@ function readReport(json: string): WatchStateReport | null {
   if (typeof at !== 'string' || typeof seq !== 'number' || !Number.isFinite(seq)) return null;
   if (!SESSIONS.has(session as WatchStateReport['session'])) return null;
   if (!OWNERS.has(owner as WatchStateReport['owner'])) return null;
-  const rest = value.rest as { endsAt?: unknown; upNext?: { name?: unknown; detail?: unknown } } | null | undefined;
+  const rest = value.rest as
+    | { endsAt?: unknown; startedAt?: unknown; upNext?: { name?: unknown; detail?: unknown } }
+    | null
+    | undefined;
+  const inHand = value.inHand as { name?: unknown; detail?: unknown } | null | undefined;
+  // Added in build 7; a build 6 watch leaves them out.
   return {
     v: WATCH_PROTOCOL_VERSION,
     at,
@@ -193,16 +198,23 @@ function readReport(json: string): WatchStateReport | null {
     owner: owner as WatchStateReport['owner'],
     seenPhoneClaim: stringOrNull(value.seenPhoneClaim),
     setId: stringOrNull(value.setId),
+    inHand:
+      inHand && typeof inHand.name === 'string'
+        ? { name: inHand.name, detail: typeof inHand.detail === 'string' ? inHand.detail : '' }
+        : null,
     rest:
       rest && typeof rest.endsAt === 'string'
         ? {
             endsAt: rest.endsAt,
+            ...(typeof rest.startedAt === 'string' ? { startedAt: rest.startedAt } : {}),
             upNext: {
               name: typeof rest.upNext?.name === 'string' ? rest.upNext.name : '',
               detail: typeof rest.upNext?.detail === 'string' ? rest.upNext.detail : '',
             },
           }
         : null,
+    skipped: Array.isArray(value.skipped) ? value.skipped.filter((id): id is string => typeof id === 'string') : [],
+    paused: stringOrNull(value.paused),
     heartRate: numberOrNull(value.heartRate),
     activeKcal: numberOrNull(value.activeKcal),
     health: HEALTH.has(value.health as WatchStateReport['health'])
