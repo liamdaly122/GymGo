@@ -400,6 +400,31 @@ describe('judging a session that had a heavy top set', () => {
       { weight: 90, reps: 12 },
     ]);
     expect([stepped.weight_kg, stepped.reps]).toEqual([90, 10]);
+
+    // Two steps down in one session: each from the short set before it.
+    const twice = at([
+      { weight: 100, reps: 5 },
+      { weight: 90, reps: 6 },
+      { weight: 85, reps: 8 },
+      { weight: 85, reps: 8 },
+    ]);
+    expect([twice.weight_kg, twice.reps]).toEqual([85, 9]);
+    const threeTimes = at([
+      { weight: 100, reps: 7 },
+      { weight: 95, reps: 7 },
+      { weight: 92.5, reps: 7 },
+      { weight: 90, reps: 8 },
+    ]);
+    expect([threeTimes.weight_kg, threeTimes.reps]).toEqual([90, 9]);
+
+    // Ramp-up sets before the set that missed are not a step-down, even
+    // within a step of it.
+    const rampClose = at([
+      { weight: 95, reps: 10 },
+      { weight: 97.5, reps: 9 },
+      { weight: 100, reps: 7 },
+    ]);
+    expect([rampClose.weight_kg, rampClose.reps]).toEqual([100, 8]);
     expect(stepped.reason).toBe('100kg × 6 was under 8; 90kg × 12 worked. Match 10 on every set to earn the next jump.');
   });
 

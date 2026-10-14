@@ -95,6 +95,49 @@ function workingSets(session: ExerciseSession) {
   return session.sets.filter(isTopWorkingSet);
 }
 
+/**
+ * The sets of a session that the step-down after a short set produced, in the
+ * order they were done: a set lighter than a short set straight before it, and
+ * about as heavy as `carryForward`'s step from that set (within one loadable
+ * step below it), and the sets after it at that same weight, which carry
+ * unchanged. Chains count, so 100 × 5, 90 × 6, 85 × 8 is two steps down.
+ * Ramp-up sets, a burnout or a planned top single's back-offs are not in it.
+ */
+function stepDownSets(sets: readonly WorkoutSet[], low: number, loading: LoadingProfile): WorkoutSet[] {
+  const ordered = [...sets].sort((a, b) =>
+    a.completed_at && b.completed_at && a.completed_at !== b.completed_at
+      ? a.completed_at < b.completed_at
+        ? -1
+        : 1
+      : a.set_index - b.set_index,
+  );
+  const chain: WorkoutSet[] = [];
+  let previous: WorkoutSet | null = null;
+  let inChain = false;
+  for (const set of ordered) {
+    if (previous && previous.reps < low) {
+      const step = carryForward([previous], low, loading);
+      if (
+        step?.stepped &&
+        set.weight_kg < previous.weight_kg &&
+        set.weight_kg >= nextLoadableBelow(step.weight_kg, loading)
+      ) {
+        chain.push(set);
+        previous = set;
+        inChain = true;
+        continue;
+      }
+    } else if (inChain && previous && set.weight_kg === previous.weight_kg) {
+      chain.push(set);
+      previous = set;
+      continue;
+    }
+    inChain = false;
+    previous = set;
+  }
+  return chain;
+}
+
 function heaviestSet(session: ExerciseSession) {
   const sets = workingSets(session);
   if (sets.length === 0) return null;
@@ -233,18 +276,15 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
    * since with none there is nothing to fall short of; never an AMRAP set,
    * which is not a target.
    *
-   * Only a set about as heavy as the app's own step-down from the set that
-   * missed counts (within one loadable step below it): a burnout at 60% after
-   * three short sets, ramp-up sets logged as working, or a planned top single
-   * followed by back-offs well below it are not a step-down, and the top set
-   * stays the thing to build on.
+   * Only the sets the app's own step-down produced count (`stepDownSets`):
+   * a burnout at 60% after three short sets, ramp-up sets logged as working,
+   * or a planned top single followed by back-offs well below it are not a
+   * step-down, and the top set stays the thing to build on.
    */
-  const stepTo = prescribed && lastTop.reps < prescribed.low ? carryForward([lastTop], prescribed.low, loading) : null;
-  const lowest = stepTo?.stepped ? nextLoadableBelow(stepTo.weight_kg, loading) : Infinity;
   const reachedRange =
-    prescribed && stepTo?.stepped
-      ? closed.filter(
-          (set) => set.weight_kg < lastTop.weight_kg && set.weight_kg >= lowest && set.reps >= prescribed.low,
+    prescribed && lastTop.reps < prescribed.low
+      ? stepDownSets(closed, prescribed.low, loading).filter(
+          (set) => set.weight_kg < lastTop.weight_kg && set.reps >= prescribed.low,
         )
       : [];
   const steppedTo =
