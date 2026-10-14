@@ -235,6 +235,18 @@ private func rest(_ id: String = "r-1", endsAt: Date = minute(10)) -> RestState 
     #expect(RestAlert.reconcile(scheduled: first, wanted: nil) == ("r-1", nil))
 }
 
+@Test func theRestOverCueIsTheAppsInFrontAndTheNotificationsWristDown() {
+    // In front and awake: the app plays it, whatever the notification would do.
+    #expect(RestAlert.cuer(appActive: true, notificationSounds: true) == .app)
+    #expect(RestAlert.cuer(appActive: true, notificationSounds: false) == .app)
+    // Wrist down (inactive, still frontmost) or in the background: the
+    // notification, when it will sound.
+    #expect(RestAlert.cuer(appActive: false, notificationSounds: true) == .system)
+    // None will (refused, its sound off, or Health records and none was
+    // scheduled): the app tries.
+    #expect(RestAlert.cuer(appActive: false, notificationSounds: false) == .app)
+}
+
 // MARK: - The rest-over repeat (C10)
 
 @Test func theRestOverRepeatPlaysOnlyForTheSessionStillRunning() {

@@ -23,7 +23,8 @@ public final class WatchSessionStore {
     /// Hands a state report, as JSON, to the phone. Wired by PhoneLink.
     @ObservationIgnored public var sendState: @MainActor (String) -> Void = { _ in }
 
-    @ObservationIgnored private let haptics = Haptics()
+    /// Internal for the tests.
+    @ObservationIgnored let haptics = Haptics()
     @ObservationIgnored private let fileURL: URL?
     @ObservationIgnored private var restTask: Task<Void, Never>?
     /// The rest-over cue once more, 8 s on. Internal for the tests.
@@ -39,6 +40,12 @@ public final class WatchSessionStore {
     @ObservationIgnored private var healthRetry = HealthRetry()
     /// The rest-over cue as a notification, for when nothing keeps the app running.
     @ObservationIgnored let restAlerts: RestAlerts
+    /// Who played the last rest's rest-over cue. Internal for the tests.
+    struct RestOverCue: Equatable {
+        var restId: String
+        var by: RestOverCuer
+    }
+    @ObservationIgnored private(set) var restOverCue: RestOverCue?
 
     public init(
         workout: WorkoutController = .shared, fileURL: URL? = WatchSessionStore.defaultFileURL,
@@ -63,7 +70,7 @@ public final class WatchSessionStore {
             self.keepReporting()
             self.reportIfChanged()
         }
-        restAlerts.onPresented = { [weak self] restId in self?.restRanOut(id: restId) }
+        restAlerts.onPresented = { [weak self] restId in self?.restRanOut(id: restId) ?? true }
         restAlerts.activate()
         retireLegacyFile()
         if state.expireRest(now: Date()) { save() }
@@ -259,7 +266,12 @@ public final class WatchSessionStore {
 
     /// Whether the app is in the foreground: the only time, apart from
     /// `handle(_ workoutConfiguration:)`, it may start a Health workout.
-    var isForeground: Bool {
+    var isForeground: Bool { appIsActive() }
+
+    /// `WKApplicationState.active`, read on the main actor. Wrist down with
+    /// the app still frontmost is `.inactive`, not this. The tests, where
+    /// WatchKit is compiled out, set it.
+    @ObservationIgnored var appIsActive: @MainActor () -> Bool = {
         #if os(watchOS)
         WKApplication.shared().applicationState == .active
         #else
@@ -277,6 +289,9 @@ public final class WatchSessionStore {
         }
         syncRestAlert()
         restAlerts.clearDelivered()
+        // Settings can turn the notification, or its sound, off at any time.
+        // Read now, not behind Health's questions, which may wait on the lifter.
+        Task { await self.restAlerts.refreshPermission() }
         health {
             // Health can be turned on or off in Settings at any time.
             self.workout.refreshAuthorization()
@@ -291,6 +306,7 @@ public final class WatchSessionStore {
             }
             await self.settleSavingSummary()
             await self.restAlerts.requestPermissionOnce()
+            await self.restAlerts.refreshPermission()
         }
         reportIfChanged()
     }
@@ -455,14 +471,24 @@ public final class WatchSessionStore {
     /// The rest is over: the strong cue, and once more 8 s later unless the
     /// screen was woken or touched in between, another rest began, or the
     /// session it belonged to is over. From the rest's own timer, or from its
-    /// notification in the foreground: whichever comes first plays it.
-    func restRanOut(id: String) {
-        guard state.restRanOut(id: id) else { return }
-        haptics.play(.restOver)
-        // In the foreground the cue above plays, so the notification goes.
-        // Not otherwise: without a workout session a tap may not play in the
-        // background, and the notification firing now is what reaches the wrist.
-        if isForeground { syncRestAlert() }
+    /// notification while the app is in front, active or not: whichever comes
+    /// first decides who plays the cue, the app or the notification
+    /// (`RestAlert.cuer`), and the other stays quiet. Returns whether the
+    /// notification, arriving now, plays the system's sound and haptic.
+    @discardableResult
+    func restRanOut(id: String) -> Bool {
+        guard state.restRanOut(id: id) else {
+            // Over already: the notification sounds if it was handed the cue.
+            return restOverCue == RestOverCue(restId: id, by: .system)
+        }
+        let by = RestAlert.cuer(appActive: isForeground, notificationSounds: restAlerts.sounds(for: id))
+        restOverCue = RestOverCue(restId: id, by: by)
+        if by == .app {
+            haptics.play(.restOver)
+            // The notification goes, or arrives silent.
+            syncRestAlert()
+        }
+        // `.system`: the notification stays, and plays it on the wrist.
         let endedAt = Date()
         let awakeAtEnd = screenAwake
         let restSession = state.session?.workoutId
@@ -480,6 +506,7 @@ public final class WatchSessionStore {
         }
         save()
         reportIfChanged()
+        return by == .system
     }
 
     // MARK: - State reports

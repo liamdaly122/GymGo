@@ -14,14 +14,22 @@ import UserNotifications
 /// scheduled in step: replaced when the rest changes, removed when it is
 /// skipped, ends, or Health takes over.
 ///
-/// In the foreground the notification is not shown: the store's own cue
-/// plays instead, once, however the end reaches it first.
+/// One of the two plays the cue, never both (`RestAlert.cuer`): with the
+/// app active (in front, the screen awake), the store's own cue, and the
+/// notification arrives silent; wrist down, with the app frontmost but
+/// inactive or in the background, the notification's sound and haptic,
+/// whenever it is allowed to sound.
 @MainActor
 public final class RestAlerts: NSObject {
     /// The notification scheduled now, as far as this app knows.
     public private(set) var scheduled: RestAlert?
-    /// A rest's end reached the app in the foreground, by its rest ID.
-    var onPresented: (@MainActor (String) -> Void)?
+    /// A rest's end reached the app in the foreground (active or not), by its
+    /// rest ID. Returns whether the notification sounds: false when the app
+    /// plays the cue itself.
+    var onPresented: (@MainActor (String) -> Bool)?
+    /// Whether a rest-over notification plays its sound and haptic: allowed,
+    /// with its sound on. Read in the foreground; set by the tests.
+    var soundsAllowed = false
     private var askedPermission = false
 
     nonisolated static let prefix = "gymgo.rest."
@@ -44,6 +52,20 @@ public final class RestAlerts: NSObject {
         #if os(watchOS)
         _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
         #endif
+    }
+
+    /// Reads whether a rest-over notification would sound now.
+    func refreshPermission() async {
+        #if os(watchOS)
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        // Provisional arrives quietly: no sound, no haptic.
+        soundsAllowed = settings.authorizationStatus == .authorized && settings.soundSetting != .disabled
+        #endif
+    }
+
+    /// Whether a notification for this rest is scheduled and will sound.
+    func sounds(for restId: String) -> Bool {
+        soundsAllowed && scheduled?.id == restId
     }
 
     /// The app is in front: rest-overs already delivered, by this launch or
@@ -79,16 +101,19 @@ public final class RestAlerts: NSObject {
 
 #if os(watchOS)
 extension RestAlerts: UNUserNotificationCenterDelegate {
-    /// In the foreground: no banner and no sound. The store plays the
-    /// rest-over cue, unless its own timer already has.
+    /// With the app in front, active or wrist down. The store, on the main
+    /// actor, reads the app's state and ends the rest once: active, it plays
+    /// the cue and this shows nothing; otherwise this plays it, with the
+    /// system's sound and haptic, and waits in Notification Center until the
+    /// app is next in front.
     nonisolated public func userNotificationCenter(
         _ center: UNUserNotificationCenter, willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
         let identifier = notification.request.identifier
         guard identifier.hasPrefix(Self.prefix) else { return [.banner, .sound] }
         let restId = String(identifier.dropFirst(Self.prefix.count))
-        await MainActor.run { self.onPresented?(restId) }
-        return []
+        let sounds = await MainActor.run { self.onPresented?(restId) ?? true }
+        return sounds ? [.sound, .list] : []
     }
 }
 #endif

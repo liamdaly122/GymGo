@@ -143,6 +143,28 @@ public struct RestAlert: Equatable, Sendable {
         if scheduled == wanted { return (nil, nil) }
         return (scheduled?.id, wanted)
     }
+
+    /// Who plays a rest's rest-over cue, decided when its end first reaches
+    /// the app, from the rest's own timer or as its notification while the
+    /// app is in front. One of the two plays it, never both.
+    ///
+    /// Active (in front, the screen awake): the app, and the notification
+    /// goes, or shows without a sound. Otherwise (wrist down with the app
+    /// still frontmost, or in the background) a tap from an app with no
+    /// workout session may not reach the wrist, so the notification plays
+    /// it, with the system's sound and haptic, whenever one is scheduled for
+    /// this rest and allowed to sound. When none will, the app still tries.
+    public static func cuer(appActive: Bool, notificationSounds: Bool) -> RestOverCuer {
+        appActive || !notificationSounds ? .app : .system
+    }
+}
+
+/// Who plays a rest's rest-over cue (`RestAlert.cuer`).
+public enum RestOverCuer: Equatable, Sendable {
+    /// The app's own haptic, `WatchCue.restOver`.
+    case app
+    /// The rest's notification, with the system's sound and haptic.
+    case system
 }
 
 /// Whether the rest-over cue plays once more, `restOverRepeatSeconds` after
