@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { WorkoutSet } from '@/db/schema';
+import { carryForward } from './carry';
 import { incrementFor, suggestNextSet } from './progression';
 import { makeDropSet, makeExercise, makeSet } from './testFactories';
 import type { ExerciseSession } from './previousPerformance';
@@ -361,6 +363,11 @@ describe('judging a session that had a heavy top set', () => {
     })!;
 
     expect(suggestion.kind).not.toBe('deload');
+    // And it builds from the back-offs that reached the range, not from the
+    // triple that missed it: not "120kg × 4".
+    expect(suggestion.weight_kg).toBe(100);
+    expect(suggestion.reps).toBe(8);
+    expect(suggestion.reason).toBe('120kg × 3 was under 5; 100kg × 8 worked. Match it on every set to earn the next jump.');
   });
 
   it('still deloads when every working set fell short, twice running', () => {
@@ -388,6 +395,92 @@ describe('judging a session that had a heavy top set', () => {
     })!;
 
     expect(suggestion.kind).not.toBe('deload');
+  });
+});
+
+/**
+ * The step-down after a short set (`carryForward`) drops the rest of the
+ * session to a weight that reaches the bottom of the range. Judged from the
+ * set that missed, every session after asked for one more rep at the weight
+ * just missed: the stepped sets ended the failure streak, so no deload came
+ * either, and the weight that worked never became the working weight.
+ */
+describe('after a step-down', () => {
+  const STEP_RANGE = { low: 8, high: 10 };
+
+  /**
+   * A session as the phone lays it out: the first set at the target, every
+   * set after it at `carryForward`'s placeholder, each logged at the reps
+   * asked for or as many as the lifter manages at that weight.
+   */
+  const perform = (target: { weight_kg: number; reps: number }, manages: (weight: number) => number) => {
+    const sets: WorkoutSet[] = [];
+    let next = target;
+    for (let index = 0; index < 4; index += 1) {
+      sets.push(makeSet({ weight_kg: next.weight_kg, reps: Math.min(next.reps, manages(next.weight_kg)), set_index: index }));
+      next = carryForward(sets, STEP_RANGE.low, BAR)!;
+    }
+    day += 1;
+    return {
+      workout_id: `w-${day}`,
+      performed_at: new Date(Date.UTC(2026, 6, day)).toISOString(),
+      sets,
+      readiness: null,
+    } satisfies ExerciseSession;
+  };
+  const suggest = (history: ExerciseSession[]) =>
+    suggestNextSet({ exercise: squat, repRange: STEP_RANGE, loading: BAR, history })!;
+  const numbers = (session: ExerciseSession) => session.sets.map((set) => `${set.weight_kg}x${set.reps}`);
+
+  it('progresses from the weight that worked, not the set that missed', () => {
+    // Five at 100kg, ten at anything up to 95.
+    const manages = (weight: number) => (weight > 95 ? 5 : 10);
+
+    const first = perform({ weight_kg: 100, reps: 8 }, manages);
+    expect(numbers(first)).toEqual(['100x5', '90x8', '90x8', '90x8']);
+    const afterFirst = suggest([first]);
+    expect(afterFirst).toMatchObject({ kind: 'add_reps', weight_kg: 90, reps: 9 });
+    expect(afterFirst.reason).toBe('100kg × 5 was under 8; 90kg × 8 worked. Go for 9.');
+
+    const second = perform(afterFirst, manages);
+    expect(numbers(second)).toEqual(['90x9', '90x9', '90x9', '90x9']);
+    expect(suggest([first, second])).toMatchObject({ kind: 'add_reps', weight_kg: 90, reps: 10 });
+
+    // Double progression from there: the top of the range on every set, then up.
+    const third = perform(suggest([first, second]), manages);
+    expect(suggest([first, second, third])).toMatchObject({ kind: 'add_weight', weight_kg: 92.5, reps: 8 });
+  });
+
+  it('still deloads when even the stepped sets fell short, twice running', () => {
+    // Five at 100kg, and only six at anything lighter.
+    const manages = (weight: number) => (weight > 95 ? 5 : 6);
+
+    const first = perform({ weight_kg: 100, reps: 8 }, manages);
+    expect(first.sets.every((set) => set.reps < STEP_RANGE.low)).toBe(true);
+    const second = perform(suggest([first]), manages);
+    const suggestion = suggest([first, second]);
+    expect(suggestion.kind).toBe('deload');
+    expect(suggestion.weight_kg).toBe(90);
+  });
+
+  it('never steps the reference up: effort cannot add load', () => {
+    // Every set reported easy, but the 100kg set still missed: the lighter
+    // weight that worked is held and its reps climb, with no jump.
+    day += 1;
+    const easy: ExerciseSession = {
+      workout_id: `w-${day}`,
+      performed_at: new Date(Date.UTC(2026, 6, day)).toISOString(),
+      sets: [
+        makeSet({ weight_kg: 100, reps: 5, set_index: 0, rir: 3 }),
+        makeSet({ weight_kg: 90, reps: 10, set_index: 1, rir: 4 }),
+        makeSet({ weight_kg: 90, reps: 10, set_index: 2, rir: 5 }),
+      ],
+      readiness: null,
+    };
+    const suggestion = suggest([easy]);
+    expect(suggestion.weight_kg).toBe(90);
+    expect(suggestion.reps).toBe(10);
+    expect(suggestion.kind).toBe('add_reps');
   });
 });
 
