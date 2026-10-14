@@ -26,7 +26,8 @@ public final class WatchSessionStore {
     @ObservationIgnored private let haptics = Haptics()
     @ObservationIgnored private let fileURL: URL?
     @ObservationIgnored private var restTask: Task<Void, Never>?
-    @ObservationIgnored private var repeatTask: Task<Void, Never>?
+    /// The rest-over cue once more, 8 s on. Internal for the tests.
+    @ObservationIgnored var repeatTask: Task<Void, Never>?
     @ObservationIgnored private var heartbeat: Task<Void, Never>?
     @ObservationIgnored private var healthChain: Task<Void, Never>?
     @ObservationIgnored private var lastReported: (key: WatchAppState.ReportKey, health: WatchStateReport.Health)?
@@ -36,10 +37,16 @@ public final class WatchSessionStore {
     @ObservationIgnored private var askedForHealth = false
     /// A workout whose Health workout would not start: not retried on every wake.
     @ObservationIgnored private var healthRetry = HealthRetry()
+    /// The rest-over cue as a notification, for when nothing keeps the app running.
+    @ObservationIgnored let restAlerts: RestAlerts
 
-    public init(workout: WorkoutController = .shared, fileURL: URL? = WatchSessionStore.defaultFileURL) {
+    public init(
+        workout: WorkoutController = .shared, fileURL: URL? = WatchSessionStore.defaultFileURL,
+        restAlerts: RestAlerts = RestAlerts()
+    ) {
         self.workout = workout
         self.fileURL = fileURL
+        self.restAlerts = restAlerts
         state = Self.load(from: fileURL)
         haptics.enabled = state.settings.vibrate
         workout.onFailure = { [weak self] failure in
@@ -52,9 +59,12 @@ public final class WatchSessionStore {
                 notDetermined: failure == .notDetermined
             )
             if failure != .notDetermined { self.haptics.play(.failed) }
+            self.syncRestAlert()
             self.keepReporting()
             self.reportIfChanged()
         }
+        restAlerts.onPresented = { [weak self] restId in self?.restRanOut(id: restId) }
+        restAlerts.activate()
         retireLegacyFile()
         if state.expireRest(now: Date()) { save() }
         scheduleRest()
@@ -94,7 +104,7 @@ public final class WatchSessionStore {
 
         if let ended = change.ended {
             haptics.play(.endedOnPhone)
-            restTask?.cancel()
+            stopRestCues()
             if ended.how == .finished {
                 captureMetricsInSummary()
                 endHealthWorkout(saving: true)
@@ -103,6 +113,7 @@ public final class WatchSessionStore {
             }
         }
         if let adopted = change.adopted {
+            if change.replaced != nil { stopRestCues() }
             if change.replaced == nil, change.ended == nil { haptics.play(.workoutStarted) }
             health {
                 if self.workout.isRunning {
@@ -112,10 +123,7 @@ public final class WatchSessionStore {
                 }
             }
         }
-        if change.claimed {
-            restTask?.cancel()
-            repeatTask?.cancel()
-        }
+        if change.claimed { stopRestCues() }
         scheduleRest()
         save()
         keepReporting()
@@ -166,7 +174,7 @@ public final class WatchSessionStore {
         touched()
         guard let event = state.skipRest(at: Date()) else { return }
         sendEvent(event)
-        restTask?.cancel()
+        scheduleRest()
         haptics.play(.restAdjusted)
         save()
         reportIfChanged()
@@ -187,8 +195,8 @@ public final class WatchSessionStore {
         touched()
         guard let event = state.finish(at: Date()) else { return }
         sendEvent(event)
-        restTask?.cancel()
-        repeatTask?.cancel()
+        stopRestCues()
+        scheduleRest()
         captureMetricsInSummary()
         save()
         keepReporting()
@@ -201,7 +209,8 @@ public final class WatchSessionStore {
         touched()
         guard let event = state.discard(at: Date()) else { return }
         sendEvent(event)
-        restTask?.cancel()
+        stopRestCues()
+        scheduleRest()
         save()
         keepReporting()
         reportIfChanged()
@@ -258,6 +267,7 @@ public final class WatchSessionStore {
             save()
             reportIfChanged()
         }
+        syncRestAlert()
         health {
             // Health can be turned on or off in Settings at any time.
             self.workout.refreshAuthorization()
@@ -270,6 +280,7 @@ public final class WatchSessionStore {
             if let session = self.state.session, !self.workout.isRunning, self.healthRetry.mayStart(session.workoutId) {
                 await self.startHealth(for: session.workoutId)
             }
+            await self.restAlerts.requestPermissionOnce()
         }
         reportIfChanged()
     }
@@ -304,6 +315,7 @@ public final class WatchSessionStore {
         healthChain = Task { @MainActor in
             await previous?.value
             await operation()
+            self.syncRestAlert()
             self.keepReporting()
             self.reportIfChanged()
         }
@@ -357,6 +369,7 @@ public final class WatchSessionStore {
     /// Rescheduled whenever the rest changes.
     private func scheduleRest() {
         restTask?.cancel()
+        syncRestAlert()
         guard let rest = state.rest else { return }
         let cues = restCues(endsAt: rest.endsAt, seconds: rest.seconds, now: Date())
         let id = rest.id
@@ -374,19 +387,46 @@ public final class WatchSessionStore {
         }
     }
 
+    /// The rest-over notification follows the rest and Health: wanted while
+    /// a rest runs and no Health workout keeps the app running.
+    private func syncRestAlert() {
+        restAlerts.sync(RestAlert.wanted(
+            for: state.rest, healthRecording: workout.isRunning, vibrate: state.settings.vibrate, now: Date()
+        ))
+    }
+
+    /// The rest's cues, and the rest-over repeat, stop: the session they
+    /// belonged to ended, was replaced, or went to the phone.
+    private func stopRestCues() {
+        restTask?.cancel()
+        repeatTask?.cancel()
+    }
+
     /// The rest is over: the strong cue, and once more 8 s later unless the
-    /// screen was woken or touched in between.
-    private func restRanOut(id: String) {
+    /// screen was woken or touched in between, another rest began, or the
+    /// session it belonged to is over. From the rest's own timer, or from its
+    /// notification in the foreground: whichever comes first plays it.
+    func restRanOut(id: String) {
         guard state.restRanOut(id: id) else { return }
         haptics.play(.restOver)
+        // In the foreground the cue above plays, so the notification goes.
+        // Not otherwise: without a workout session a tap may not play in the
+        // background, and the notification firing now is what reaches the wrist.
+        if isForeground { syncRestAlert() }
         let endedAt = Date()
         let awakeAtEnd = screenAwake
+        let restSession = state.session?.workoutId
         repeatTask?.cancel()
         repeatTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(restOverRepeatSeconds))
             guard !Task.isCancelled, let self else { return }
             let noticed = awakeAtEnd || self.lastWoke > endedAt || self.lastTouch > endedAt
-            if !noticed, self.state.rest == nil { self.haptics.play(.restOver) }
+            if restOverPlaysAgain(
+                noticed: noticed, restRunning: self.state.rest != nil,
+                restSession: restSession, runningSession: self.state.session?.workoutId
+            ) {
+                self.haptics.play(.restOver)
+            }
         }
         save()
         reportIfChanged()
