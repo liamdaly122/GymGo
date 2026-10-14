@@ -1,71 +1,127 @@
-#if !os(macOS)
+#if os(watchOS)
 import GymGoKit
 import SwiftUI
 
-/// The rest: the clock counting down by itself, what is next, and a record in
-/// blue when the set just done was one. The watch counts down on its own, so
-/// this works with the phone locked in a bag; one tap on the wrist ends it.
-public struct RestView: View {
+/// The rest: the clock counting down by itself, what is next, and a record
+/// in blue when the set just done was one. The watch counts down on its own,
+/// so this works with the phone locked in a bag. Turning the Crown or tapping
+/// "Up next" folds it into a blue countdown on the set screen, so the next
+/// set can be dialled in while resting. Wrist-down it keeps only the clock.
+struct RestView: View {
     let store: WatchSessionStore
-    let rest: WatchSessionStore.Rest
+    let rest: RestState
+    let showSets: () -> Void
 
-    public init(store: WatchSessionStore, rest: WatchSessionStore.Rest) {
-        self.store = store
-        self.rest = rest
-    }
+    @Environment(\.isLuminanceReduced) private var dimmed
+    @State private var crown = 0.0
+    @FocusState private var focused: Bool
 
-    public var body: some View {
+    var body: some View {
+        let record = store.state.lastRecord
         VStack(spacing: 2) {
-            if let record = store.lastRecord {
+            if let record {
                 Text(recordLine(record))
                     .font(Theme.text(12, semiBold: true))
                     .foregroundStyle(Theme.hot)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
                     .accessibilityLabel("New record. \(recordLine(record))")
             } else {
                 Text("Rest")
-                    .font(Theme.text(12))
+                    .font(Theme.text(12, semiBold: true))
                     .textCase(.uppercase)
                     .foregroundStyle(Theme.muted)
             }
 
-            Text(timerInterval: Date()...rest.endsAt, countsDown: true)
-                .font(Theme.display(store.lastRecord == nil ? 54 : 46, extraBold: true))
-                .foregroundStyle(Theme.chalk)
-                .monospacedDigit()
-                .multilineTextAlignment(.center)
-                .accessibilityAddTraits(.updatesFrequently)
-
-            VStack(spacing: 0) {
-                Text("Up next · \(rest.upNext.detail)")
-                    .font(Theme.text(11))
-                    .foregroundStyle(Theme.muted)
+            // The last ten seconds turn blue.
+            TimelineView(.explicit([rest.endsAt.addingTimeInterval(-10)])) { context in
+                let closing = context.date >= rest.endsAt.addingTimeInterval(-10)
+                countdown(to: rest.endsAt)
+                    .font(Theme.number(record == nil ? 60 : 50))
+                    .foregroundStyle(closing ? Theme.hot : Theme.chalk)
+                    .monospacedDigit()
+                    .multilineTextAlignment(.center)
                     .lineLimit(1)
-                Text(rest.upNext.name)
-                    .font(Theme.display(16))
-                    .textCase(.uppercase)
-                    .foregroundStyle(Theme.chalk)
-                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .accessibilityLabel("Rest")
+                    .accessibilityAddTraits(.updatesFrequently)
             }
+
+            Button {
+                store.touched()
+                showSets()
+            } label: {
+                VStack(spacing: 0) {
+                    Text("Up next · \(rest.upNext.detail)")
+                        .font(Theme.text(11))
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
+                    Text(rest.upNext.name)
+                        .font(Theme.display(16))
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.chalk)
+                        .lineLimit(1)
+                    if let note = nextSetupNote {
+                        Text(note)
+                            .font(Theme.text(11))
+                            .foregroundStyle(Theme.muted)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows the next set")
 
             Spacer(minLength: 2)
 
-            HStack(spacing: 6) {
-                Button("+30s") { store.adjustRest(by: 30) }
-                    .font(Theme.display(17))
-                    .tint(Theme.raised)
-                Button("Skip") { store.skipRest() }
-                    .font(Theme.display(17))
-                    .textCase(.uppercase)
-                    .tint(Theme.chalk)
-                    .foregroundStyle(Theme.ground)
-                    #if os(watchOS)
+            if !dimmed {
+                HStack(spacing: 6) {
+                    Button {
+                        store.addRest()
+                    } label: {
+                        Text("+30s")
+                            .font(Theme.display(18))
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                    }
+                    .raisedButton()
+                    .accessibilityLabel("Add 30 seconds")
+
+                    Button {
+                        store.skipRest()
+                    } label: {
+                        Text("Skip")
+                            .font(Theme.display(18, extraBold: true))
+                            .textCase(.uppercase)
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                    }
+                    .chalkButton()
                     .handGestureShortcut(.primaryAction)
-                    #endif
                     .accessibilityLabel("Skip rest")
+                }
             }
-            .buttonStyle(.borderedProminent)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .focusable()
+        .focused($focused)
+        .digitalCrownRotation($crown, from: -1000, through: 1000, by: 1, sensitivity: .low, isContinuous: true, isHapticFeedbackEnabled: false)
+        .onChange(of: crown) {
+            guard abs(crown) >= 1, !dimmed else { return }
+            store.touched()
+            showSets()
+        }
+        .onAppear {
+            crown = 0
+            focused = true
+        }
+    }
+
+    /// The next lift's setup note, when the rest leads to a new station.
+    private var nextSetupNote: String? {
+        guard let next = store.setInHand,
+              rest.upNext.name == next.station.name, rest.upNext.detail == next.station.outline,
+              let note = next.lift.setupNote, !note.isEmpty else { return nil }
+        return note
     }
 
     private func recordLine(_ record: SetRecord) -> String {

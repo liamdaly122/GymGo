@@ -1,0 +1,364 @@
+import Foundation
+import GymGoKit
+import Observation
+#if os(watchOS)
+import HealthKit
+#endif
+
+/// The watch's HealthKit workout: one `HKWorkoutSession`
+/// (traditionalStrengthTraining, indoor) with its live builder per GymGo
+/// workout. It is what keeps the app on the wrist when the arm drops, lets
+/// the haptics play wrist-down, reads the heart rate and active energy, and
+/// saves the workout to Health and Fitness so it counts towards the rings.
+///
+/// One instance for the app (`shared`), because watchOS can hand the app a
+/// workout to start or recover before any screen exists. HealthKit calls the
+/// delegates on its own queues: every delegate method is `nonisolated`, copies
+/// what it needs, and hops to the main actor.
+///
+/// Nothing here may take the app down. If HealthKit is unavailable (the
+/// simulator, an older watch), refused, or fails, the session on the wrist
+/// carries on without it, and `health` says why.
+@MainActor
+@Observable
+public final class WorkoutController: NSObject {
+    public static let shared = WorkoutController()
+
+    public enum Authorization: Sendable, Equatable { case unknown, authorized, denied, unavailable }
+
+    /// A HealthKit workout session is running (started, recovered, not yet ended).
+    public private(set) var isRunning = false
+    /// The GymGo workout the Health workout is tagged with.
+    public private(set) var workoutId: String?
+    public private(set) var startDate: Date?
+    /// Beats per minute, most recent.
+    public private(set) var heartRate: Double?
+    public private(set) var averageHeartRate: Double?
+    /// Active energy since the workout began.
+    public private(set) var activeKcal: Double?
+    public private(set) var authorization: Authorization = .unknown
+    public private(set) var lastError: String?
+
+    /// Called when a session the app did not end fails or ends.
+    @ObservationIgnored public var onFailure: (@MainActor () -> Void)?
+
+    /// What the state report says about the Health workout.
+    public var health: WatchStateReport.Health {
+        if isRunning { return .recording }
+        switch authorization {
+        case .unavailable: return .unavailable
+        case .denied: return .denied
+        default: return .off
+        }
+    }
+
+    #if os(watchOS)
+    @ObservationIgnored let healthStore = HKHealthStore()
+    @ObservationIgnored private var session: HKWorkoutSession?
+    @ObservationIgnored private var builder: HKLiveWorkoutBuilder?
+    @ObservationIgnored private var discardOnStop = false
+    @ObservationIgnored private var ending = false
+    @ObservationIgnored private var closed = false
+    @ObservationIgnored private var waiters: [CheckedContinuation<Bool, Never>] = []
+
+    static let share: Set<HKSampleType> = [
+        HKObjectType.workoutType(),
+        HKQuantityType(.activeEnergyBurned),
+        HKQuantityType(.heartRate),
+    ]
+    static let read: Set<HKObjectType> = [
+        HKObjectType.workoutType(),
+        HKQuantityType(.heartRate),
+        HKQuantityType(.activeEnergyBurned),
+        HKQuantityType(.bodyMass),
+        HKObjectType.activitySummaryType(),
+    ]
+    #endif
+
+    override public init() {
+        super.init()
+    }
+
+    // MARK: - Authorisation
+
+    /// Asks once, in the foreground, before the first start. Returns whether
+    /// the app may save workouts.
+    @discardableResult
+    public func authorize() async -> Bool {
+        #if os(watchOS)
+        guard HKHealthStore.isHealthDataAvailable() else {
+            authorization = .unavailable
+            return false
+        }
+        do {
+            if try await healthStore.statusForAuthorizationRequest(toShare: Self.share, read: Self.read) == .shouldRequest {
+                try await healthStore.requestAuthorization(toShare: Self.share, read: Self.read)
+            }
+        } catch {
+            lastError = String(describing: error)
+        }
+        refreshAuthorization()
+        return authorization == .authorized
+        #else
+        authorization = .unavailable
+        return false
+        #endif
+    }
+
+    /// Whether asking would show a prompt: the app has not asked yet.
+    public func needsAuthorization() async -> Bool {
+        #if os(watchOS)
+        guard HKHealthStore.isHealthDataAvailable() else { return false }
+        let status = try? await healthStore.statusForAuthorizationRequest(toShare: Self.share, read: Self.read)
+        return status == .shouldRequest
+        #else
+        return false
+        #endif
+    }
+
+    #if os(watchOS)
+    private func refreshAuthorization() {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            authorization = .unavailable
+            return
+        }
+        switch healthStore.authorizationStatus(for: HKObjectType.workoutType()) {
+        case .sharingAuthorized: authorization = .authorized
+        case .sharingDenied: authorization = .denied
+        default: authorization = .unknown
+        }
+    }
+    #endif
+
+    // MARK: - Lifecycle
+
+    /// Starts the Health workout, tagged with the GymGo workout when known.
+    /// From the foreground, or from `handle(_ workoutConfiguration:)`: anywhere
+    /// else watchOS refuses it. Already running: just tags it. Returns false
+    /// when no workout session could be started.
+    @discardableResult
+    public func start(workoutId: String?) async -> Bool {
+        #if os(watchOS)
+        if session != nil {
+            if let workoutId { await tag(workoutId) }
+            return true
+        }
+        refreshAuthorization()
+        guard authorization != .unavailable, authorization != .denied else { return false }
+
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .traditionalStrengthTraining
+        configuration.locationType = .indoor
+        do {
+            let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+            let builder = session.associatedWorkoutBuilder()
+            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+            session.delegate = self
+            builder.delegate = self
+            adopt(session, builder)
+            let start = Date()
+            startDate = start
+            session.startActivity(with: start)
+            try await builder.beginCollection(at: start)
+            if let workoutId { await tag(workoutId) }
+            return true
+        } catch {
+            lastError = String(describing: error)
+            if let code = (error as? HKError)?.code, code == .errorAuthorizationDenied || code == .errorAuthorizationNotDetermined {
+                authorization = .denied
+            }
+            if let session { session.end() }
+            teardown()
+            return false
+        }
+        #else
+        authorization = .unavailable
+        return false
+        #endif
+    }
+
+    /// Tags the Health workout with the GymGo workout, so the phone can find
+    /// it and never saves a second copy.
+    public func tag(_ workoutId: String) async {
+        #if os(watchOS)
+        guard let builder, self.workoutId != workoutId else { return }
+        self.workoutId = workoutId
+        do {
+            try await builder.addMetadata([
+                HKMetadataKeyExternalUUID: workoutId,
+                HKMetadataKeySyncIdentifier: "gymgo.workout.\(workoutId)",
+                HKMetadataKeySyncVersion: 1,
+            ])
+        } catch {
+            lastError = String(describing: error)
+        }
+        #endif
+    }
+
+    /// Ends the Health workout and saves it to Health and Fitness. True when
+    /// it was saved. False straight away when nothing was recording.
+    public func finish() async -> Bool {
+        await end(discarding: false)
+    }
+
+    /// Ends the Health workout and throws it away. Samples already written
+    /// stay in Health: HealthKit does not delete them.
+    public func discard() async {
+        _ = await end(discarding: true)
+    }
+
+    /// After a crash mid-workout watchOS relaunches the app; this takes the
+    /// running session back, with its delegates and data source set again.
+    public func recover() async {
+        #if os(watchOS)
+        guard session == nil else { return }
+        do {
+            guard let recovered = try await healthStore.recoverActiveWorkoutSession() else { return }
+            let builder = recovered.associatedWorkoutBuilder()
+            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: recovered.workoutConfiguration)
+            recovered.delegate = self
+            builder.delegate = self
+            adopt(recovered, builder)
+            startDate = builder.startDate ?? recovered.startDate
+            workoutId = builder.metadata[HKMetadataKeyExternalUUID] as? String
+        } catch {
+            lastError = String(describing: error)
+        }
+        #endif
+    }
+
+    // MARK: - Internals
+
+    #if os(watchOS)
+    private func adopt(_ session: HKWorkoutSession, _ builder: HKLiveWorkoutBuilder) {
+        self.session = session
+        self.builder = builder
+        isRunning = true
+        ending = false
+        closed = false
+        discardOnStop = false
+        workoutId = nil
+        heartRate = nil
+        averageHeartRate = nil
+        activeKcal = nil
+    }
+
+    private func end(discarding: Bool) async -> Bool {
+        guard let session else { return false }
+        discardOnStop = discarding
+        return await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+            guard !ending else { return }
+            ending = true
+            switch session.state {
+            case .running, .paused:
+                session.stopActivity(with: Date())
+                // If `.stopped` never arrives, close anyway.
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(8))
+                    await self?.close(at: Date())
+                }
+            default:
+                Task { await self.close(at: Date()) }
+            }
+        }
+    }
+
+    /// Runs once the session has stopped: end the collection, save or
+    /// discard, end the session.
+    private func close(at date: Date) async {
+        guard !closed, let session, let builder else { return }
+        closed = true
+        var saved = false
+        do {
+            try await builder.endCollection(at: date)
+            if discardOnStop {
+                builder.discardWorkout()
+            } else {
+                // A nil workout with no error is a save while the watch is locked.
+                _ = try await builder.finishWorkout()
+                saved = true
+            }
+        } catch {
+            lastError = String(describing: error)
+        }
+        session.end()
+        teardown()
+        resolve(saved)
+    }
+
+    private func resolve(_ saved: Bool) {
+        let pending = waiters
+        waiters = []
+        for waiter in pending { waiter.resume(returning: saved) }
+    }
+
+    private func teardown() {
+        session = nil
+        builder = nil
+        isRunning = false
+        ending = false
+    }
+
+    fileprivate func sessionChanged(_ changed: HKWorkoutSession, to state: HKWorkoutSessionState, at date: Date) async {
+        guard changed === session else { return }
+        switch state {
+        case .stopped:
+            await close(at: date)
+        case .ended:
+            // Ended without Finish or Discard here: another workout app took
+            // over, or watchOS ended it. What it collected is not saved.
+            let unexpected = !ending
+            teardown()
+            resolve(false)
+            if unexpected { onFailure?() }
+        default:
+            break
+        }
+    }
+
+    fileprivate func sessionFailed(_ failed: HKWorkoutSession, _ message: String) {
+        guard failed === session else { return }
+        lastError = message
+        onFailure?()
+    }
+
+    fileprivate func collected(from source: HKLiveWorkoutBuilder, heartRate: Double?, average: Double?, kcal: Double?) {
+        guard source === builder else { return }
+        if let heartRate { self.heartRate = heartRate }
+        if let average { averageHeartRate = average }
+        if let kcal { activeKcal = kcal }
+    }
+    #else
+    private func end(discarding: Bool) async -> Bool { false }
+    #endif
+}
+
+#if os(watchOS)
+extension WorkoutController: HKWorkoutSessionDelegate {
+    nonisolated public func workoutSession(
+        _ workoutSession: HKWorkoutSession, didChangeTo toState: HKWorkoutSessionState,
+        from fromState: HKWorkoutSessionState, date: Date
+    ) {
+        Task { @MainActor in await self.sessionChanged(workoutSession, to: toState, at: date) }
+    }
+
+    nonisolated public func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: any Error) {
+        let message = String(describing: error)
+        Task { @MainActor in self.sessionFailed(workoutSession, message) }
+    }
+}
+
+extension WorkoutController: HKLiveWorkoutBuilderDelegate {
+    nonisolated public func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
+        let bpm = HKUnit.count().unitDivided(by: .minute())
+        let heart = workoutBuilder.statistics(for: HKQuantityType(.heartRate))
+        let heartRate = heart?.mostRecentQuantity()?.doubleValue(for: bpm)
+        let average = heart?.averageQuantity()?.doubleValue(for: bpm)
+        let kcal = workoutBuilder.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?.doubleValue(for: .kilocalorie())
+        Task { @MainActor in self.collected(from: workoutBuilder, heartRate: heartRate, average: average, kcal: kcal) }
+    }
+
+    nonisolated public func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
+}
+#endif

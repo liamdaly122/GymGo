@@ -5,172 +5,443 @@ import Observation
 import WatchKit
 #endif
 
-/// The session on the wrist, and everything the screens need from it.
+/// The watch app's state, and everything that happens because it changed.
 ///
-/// Saved to disk after every change, so a crash or a relaunch mid-session
-/// keeps its place. Every action becomes an event handed to `send`, which the
-/// watch app wires to WatchConnectivity; until the phone confirms one it stays
-/// in the session's outbox.
+/// `WatchAppState` (GymGoKit) decides; this does. It owns the state and saves
+/// it after every change, including a rest under way, so a crash or a
+/// relaunch keeps its place and its countdown. It hands events and state
+/// reports to the link, starts and ends the HealthKit workout, plays the
+/// haptics and times each rest's cues.
 @MainActor
 @Observable
 public final class WatchSessionStore {
-    public private(set) var session: WatchSession?
-    /// The rest under way, if any.
-    public private(set) var rest: Rest?
-    /// The last set's record, shown on the rest screen.
-    public private(set) var lastRecord: SetRecord?
-    public var sound = true
-    public var haptics = true
+    public private(set) var state: WatchAppState
+    public let workout: WorkoutController
 
-    public struct Rest: Equatable, Sendable {
-        public var endsAt: Date
-        public var seconds: Int
-        public var upNext: UpNext
-        public var id = UUID()
-    }
+    /// Hands an event to the phone. Wired by PhoneLink.
+    @ObservationIgnored public var sendEvent: @MainActor (WatchEvent) -> Void = { _ in }
+    /// Hands a state report, as JSON, to the phone. Wired by PhoneLink.
+    @ObservationIgnored public var sendState: @MainActor (String) -> Void = { _ in }
 
-    /// Hands an event to the phone. Replaced by the watch app at launch.
-    public var send: @MainActor (WatchEvent) -> Void = { _ in }
+    @ObservationIgnored private let haptics = Haptics()
+    @ObservationIgnored private let fileURL: URL?
+    @ObservationIgnored private var restTask: Task<Void, Never>?
+    @ObservationIgnored private var repeatTask: Task<Void, Never>?
+    @ObservationIgnored private var heartbeat: Task<Void, Never>?
+    @ObservationIgnored private var healthChain: Task<Void, Never>?
+    @ObservationIgnored private var lastReported: (key: WatchAppState.ReportKey, health: WatchStateReport.Health)?
+    @ObservationIgnored private var screenAwake = true
+    @ObservationIgnored private var lastWoke = Date.distantPast
+    @ObservationIgnored private var lastTouch = Date.distantPast
+    @ObservationIgnored private var askedForHealth = false
+    /// A workout whose Health workout would not start: not retried on every wake.
+    @ObservationIgnored private var healthFailedFor: String?
 
-    private let fileURL: URL?
-    private var restTask: Task<Void, Never>?
-
-    public init(fileURL: URL? = WatchSessionStore.defaultFileURL) {
+    public init(workout: WorkoutController = .shared, fileURL: URL? = WatchSessionStore.defaultFileURL) {
+        self.workout = workout
         self.fileURL = fileURL
-        if let fileURL, let data = try? Data(contentsOf: fileURL) {
-            session = try? JSONDecoder().decode(WatchSession.self, from: data)
+        state = Self.load(from: fileURL)
+        haptics.enabled = state.settings.vibrate
+        workout.onFailure = { [weak self] in
+            self?.haptics.play(.failed)
+            self?.reportIfChanged()
         }
+        if state.expireRest(now: Date()) { save() }
+        scheduleRest()
+        keepReporting()
     }
 
     public nonisolated static var defaultFileURL: URL? {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("session.json")
+            .appendingPathComponent("watch-state.json")
     }
 
-    // MARK: From the phone
+    /// What was dialled in for the set in hand, so the numbers survive the
+    /// set screen going away behind the rest and coming back.
+    public struct SetDraft: Equatable, Sendable {
+        public var setId: String
+        public var weightIndex: Double
+        public var reps: Double
+        public var onReps: Bool
+    }
 
-    /// A new list from the phone. A different workout replaces the session.
-    public func receive(_ snapshot: WatchSnapshot) {
-        if var current = session {
-            current.receive(snapshot)
-            session = current
-        } else {
-            session = WatchSession(snapshot: snapshot)
+    @ObservationIgnored public var draft: SetDraft?
+
+    // MARK: - What the screens read
+
+    public var session: WatchSession? { state.session }
+    public var setInHand: SetInHand? { state.setInHand }
+    public var rest: RestState? { state.rest }
+    public var todayCard: TodayCard { state.todayCard(now: Date()) }
+
+    // MARK: - From the phone
+
+    /// The phone's context, as JSON under "context".
+    public func receive(_ context: WatchContext) {
+        let change = state.apply(context)
+        guard change.applied else { return }
+        haptics.enabled = state.settings.vibrate
+
+        if let ended = change.ended {
+            haptics.play(.endedOnPhone)
+            restTask?.cancel()
+            if ended.how == .finished {
+                captureMetricsInSummary()
+                endHealthWorkout(saving: true)
+            } else {
+                health { await self.workout.discard() }
+            }
         }
+        if let adopted = change.adopted {
+            if change.replaced == nil, change.ended == nil { haptics.play(.workoutStarted) }
+            health {
+                if self.workout.isRunning {
+                    await self.workout.tag(adopted)
+                } else if self.isForeground {
+                    await self.startHealth(for: adopted)
+                }
+            }
+        }
+        if change.claimed {
+            restTask?.cancel()
+            repeatTask?.cancel()
+        }
+        scheduleRest()
         save()
+        keepReporting()
+        reportIfChanged()
     }
 
     /// The phone has applied these events.
     public func acknowledge(_ ids: Set<String>) {
-        session?.acknowledge(ids)
+        state.acknowledge(ids)
         save()
     }
 
     /// Every event not yet confirmed, to send again after a reconnection.
-    public var unconfirmed: [WatchEvent] { session?.outbox ?? [] }
+    public func unconfirmedEvents() -> [WatchEvent] {
+        state.prune(now: Date())
+        return state.unconfirmed
+    }
 
-    // MARK: From the wrist
+    // MARK: - From the wrist
 
-    public var setInHand: SetInHand? { session?.setInHand }
-
-    /// Logs the set in hand and starts whatever rest follows.
-    @discardableResult
-    public func done(weight: Double, reps: Int, at date: Date = Date()) -> LogOutcome? {
-        guard var current = session, let outcome = current.logSetInHand(weight: weight, reps: reps, at: date) else { return nil }
-        session = current
-        lastRecord = outcome.record
-        send(outcome.event)
-        if let seconds = outcome.restSeconds {
-            startRest(seconds: seconds, upNext: outcome.upNext, from: date)
-        } else {
-            rest = nil
-            restTask?.cancel()
-        }
-        play(outcome.record != nil ? .record : .logged)
+    /// Start on the Today page.
+    public func startToday() {
+        guard state.todayCard(now: Date()).canStart, let ready = state.home?.ready,
+              let event = state.start(ready, at: Date()) else { return }
+        sendEvent(event)
+        haptics.play(.workoutStarted)
         save()
-        return outcome
+        keepReporting()
+        reportIfChanged()
+        let workoutId = ready.snapshot.workoutId
+        health { await self.startHealth(for: workoutId) }
+    }
+
+    /// Done: logs the set in hand with these numbers and starts whatever rest follows.
+    public func done(weight: Double, reps: Int) {
+        touched()
+        guard let result = state.logSet(weight: weight, reps: reps, at: Date()) else { return }
+        sendEvent(result.outcome.event)
+        repeatTask?.cancel()
+        haptics.play(result.cue)
+        scheduleRest()
+        save()
+        reportIfChanged()
     }
 
     public func skipRest() {
-        guard rest != nil else { return }
-        rest = nil
+        touched()
+        guard let event = state.skipRest(at: Date()) else { return }
+        sendEvent(event)
         restTask?.cancel()
-        session?.skipRest()
-        if let event = session?.outbox.last { send(event) }
+        haptics.play(.restAdjusted)
         save()
+        reportIfChanged()
     }
 
-    /// Thirty seconds more or less, never below nothing.
-    public func adjustRest(by seconds: Int) {
-        guard var current = rest else { return }
-        let ends = max(Date(), current.endsAt.addingTimeInterval(TimeInterval(seconds)))
-        current.endsAt = ends
-        rest = current
-        scheduleRestEnd(current)
+    /// +30 s.
+    public func addRest(_ seconds: Int = 30) {
+        touched()
+        guard state.adjustRest(by: seconds, now: Date()) != nil else { return }
+        haptics.play(.restAdjusted)
+        scheduleRest()
+        save()
+        reportIfChanged()
     }
 
+    /// Finish and save, after the screen has asked.
     public func finish() {
-        rest = nil
+        touched()
+        guard let event = state.finish(at: Date()) else { return }
+        sendEvent(event)
         restTask?.cancel()
-        session?.finish()
-        if let event = session?.outbox.last { send(event) }
+        repeatTask?.cancel()
+        captureMetricsInSummary()
+        save()
+        keepReporting()
+        reportIfChanged()
+        endHealthWorkout(saving: true)
+    }
+
+    /// Discard, before the first set, after the screen has asked.
+    public func discard() {
+        touched()
+        guard let event = state.discard(at: Date()) else { return }
+        sendEvent(event)
+        restTask?.cancel()
+        save()
+        keepReporting()
+        reportIfChanged()
+        health { await self.workout.discard() }
+    }
+
+    /// "Log here instead".
+    public func reclaim() {
+        touched()
+        guard state.reclaim() else { return }
+        save()
+        reportIfChanged()
+    }
+
+    public func closeSummary() {
+        state.closeSummary()
         save()
     }
 
-    /// After Finish, once the phone has everything, the wrist is clear.
-    public func clearIfDone() {
-        guard let session, session.finished, session.outbox.isEmpty else { return }
-        self.session = nil
-        save()
+    /// The Health workout runs with no GymGo session behind it (the phone
+    /// opened the app, and no workout followed): end it, saved.
+    public func endStrayRecording() {
+        endHealthWorkout(saving: true)
     }
 
-    // MARK: Rest
+    // MARK: - The app and the screen
 
-    private func startRest(seconds: Int, upNext: UpNext, from date: Date) {
-        let current = Rest(endsAt: date.addingTimeInterval(TimeInterval(seconds)), seconds: seconds, upNext: upNext)
-        rest = current
-        scheduleRestEnd(current)
+    /// Any touch: the rest-over cue does not need repeating.
+    public func touched() {
+        lastTouch = Date()
     }
 
-    /// One firm tap when the rest runs out. A haptic briefly pauses heart-rate
-    /// collection, which is why it is one tap and not a pattern.
-    private func scheduleRestEnd(_ current: Rest) {
-        restTask?.cancel()
-        restTask = Task { [weak self] in
-            let wait = current.endsAt.timeIntervalSinceNow
-            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
-            guard !Task.isCancelled, let self, self.rest?.id == current.id else { return }
-            self.rest = nil
-            self.play(.restOver)
-        }
+    /// The screen is on and showing the app (raised, not dimmed), or not.
+    public func screenChanged(awake: Bool) {
+        if awake && !screenAwake { lastWoke = Date() }
+        screenAwake = awake
     }
 
-    enum Cue { case logged, record, restOver }
-
-    private func play(_ cue: Cue) {
-        guard haptics else { return }
+    /// Whether the app is in the foreground: the only time, apart from
+    /// `handle(_ workoutConfiguration:)`, it may start a Health workout.
+    var isForeground: Bool {
         #if os(watchOS)
-        switch cue {
-        case .logged: WKInterfaceDevice.current().play(.click)
-        case .record: WKInterfaceDevice.current().play(.success)
-        case .restOver: WKInterfaceDevice.current().play(.notification)
-        }
+        WKApplication.shared().applicationState == .active
+        #else
+        true
         #endif
     }
 
-    // MARK: Disk
+    /// The app came to the foreground: ask for Health once, and start the
+    /// Health workout for a session adopted while the app could not.
+    public func appBecameActive() {
+        screenChanged(awake: true)
+        if state.expireRest(now: Date()) {
+            save()
+            reportIfChanged()
+        }
+        health {
+            if !self.askedForHealth, await self.workout.needsAuthorization() {
+                self.askedForHealth = true
+                await self.workout.authorize()
+            }
+            if let session = self.state.session, !self.workout.isRunning, self.healthFailedFor != session.workoutId,
+               self.workout.authorization != .denied, self.workout.authorization != .unavailable {
+                await self.startHealth(for: session.workoutId)
+            }
+        }
+        reportIfChanged()
+    }
+
+    /// The phone started a workout and opened the app for it
+    /// (`startWatchApp`). Start the Health workout now, the one moment the
+    /// app may do so from the background; the context names the workout.
+    public func phoneStartedWorkout() {
+        health {
+            let ok = await self.workout.start(workoutId: self.state.session?.workoutId)
+            if !ok, self.workout.health == .off { self.haptics.play(.failed) }
+        }
+    }
+
+    /// watchOS relaunched the app mid-workout.
+    public func recoverWorkout() {
+        health {
+            await self.workout.recover()
+            if let id = self.state.session?.workoutId, self.workout.isRunning, self.workout.workoutId == nil {
+                await self.workout.tag(id)
+            }
+        }
+    }
+
+    // MARK: - Health
+
+    /// Runs Health work one piece at a time, in order, so a finish and the
+    /// next start cannot interleave.
+    private func health(_ operation: @escaping @MainActor () async -> Void) {
+        let previous = healthChain
+        healthChain = Task { @MainActor in
+            await previous?.value
+            await operation()
+            self.keepReporting()
+            self.reportIfChanged()
+        }
+    }
+
+    private func startHealth(for workoutId: String) async {
+        if !askedForHealth, await workout.needsAuthorization() {
+            askedForHealth = true
+            await workout.authorize()
+        }
+        let ok = await workout.start(workoutId: workoutId)
+        if !ok, workout.authorization != .denied, workout.authorization != .unavailable {
+            healthFailedFor = workoutId
+            haptics.play(.failed)
+        }
+    }
+
+    private func captureMetricsInSummary() {
+        let average = workout.averageHeartRate, kcal = workout.activeKcal
+        let recording = workout.isRunning
+        state.updateSummary {
+            $0.averageHeartRate = average
+            $0.activeKcal = kcal
+            $0.health = recording ? .saving : .off
+        }
+    }
+
+    private func endHealthWorkout(saving: Bool) {
+        health {
+            guard self.workout.isRunning else { return }
+            let summaryFor = self.state.summary?.workoutId
+            let saved = await self.workout.finish()
+            if let summaryFor, self.state.summary?.workoutId == summaryFor {
+                let average = self.workout.averageHeartRate, kcal = self.workout.activeKcal
+                self.state.updateSummary {
+                    $0.health = saved ? .saved : .notSaved
+                    if let average { $0.averageHeartRate = average }
+                    if let kcal { $0.activeKcal = kcal }
+                }
+                self.save()
+            }
+            self.haptics.play(saved ? .savedToHealth : .failed)
+        }
+    }
+
+    // MARK: - The rest's cues
+
+    /// Times the cues for the rest under way: 10 s left, 3-2-1, the end.
+    /// Rescheduled whenever the rest changes.
+    private func scheduleRest() {
+        restTask?.cancel()
+        guard let rest = state.rest else { return }
+        let cues = restCues(endsAt: rest.endsAt, seconds: rest.seconds, now: Date())
+        let id = rest.id
+        restTask = Task { @MainActor [weak self] in
+            for (at, cue) in cues {
+                let wait = at.timeIntervalSinceNow
+                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+                guard !Task.isCancelled, let self else { return }
+                if cue == .restOver {
+                    self.restRanOut(id: id)
+                } else {
+                    self.haptics.play(cue)
+                }
+            }
+        }
+    }
+
+    /// The rest is over: the strong cue, and once more 8 s later unless the
+    /// screen was woken or touched in between.
+    private func restRanOut(id: String) {
+        guard state.restRanOut(id: id) else { return }
+        haptics.play(.restOver)
+        let endedAt = Date()
+        let awakeAtEnd = screenAwake
+        repeatTask?.cancel()
+        repeatTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(restOverRepeatSeconds))
+            guard !Task.isCancelled, let self else { return }
+            let noticed = awakeAtEnd || self.lastWoke > endedAt || self.lastTouch > endedAt
+            if !noticed, self.state.rest == nil { self.haptics.play(.restOver) }
+        }
+        save()
+        reportIfChanged()
+    }
+
+    // MARK: - State reports
+
+    /// A report whenever what it says changes.
+    private func reportIfChanged() {
+        let key = state.reportKey, health = workout.health
+        if let last = lastReported, last.key == key, last.health == health { return }
+        report()
+    }
+
+    private func report() {
+        let report = state.report(at: Date(), heartRate: workout.heartRate, activeKcal: workout.activeKcal, health: workout.health)
+        lastReported = (state.reportKey, workout.health)
+        save()
+        if let json = try? report.json() { sendState(json) }
+    }
+
+    /// Every 30 s while a session or a Health workout runs, so the phone
+    /// knows the watch is still there.
+    private func keepReporting() {
+        let needed = state.session != nil || workout.isRunning
+        if !needed {
+            heartbeat?.cancel()
+            heartbeat = nil
+            return
+        }
+        guard heartbeat == nil else { return }
+        heartbeat = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled, let self else { return }
+                if self.state.session == nil && !self.workout.isRunning {
+                    self.heartbeat = nil
+                    return
+                }
+                self.report()
+            }
+        }
+    }
+
+    /// For a reconnection: the newest report again.
+    public func reportNow() {
+        report()
+    }
+
+    // MARK: - Disk
+
+    private static func load(from fileURL: URL?) -> WatchAppState {
+        guard let fileURL else { return WatchAppState() }
+        if let data = try? Data(contentsOf: fileURL), let state = try? JSONDecoder().decode(WatchAppState.self, from: data) {
+            return state
+        }
+        // Build 4 saved only the session, beside where the state now goes.
+        let old = fileURL.deletingLastPathComponent().appendingPathComponent("session.json")
+        if let data = try? Data(contentsOf: old), let session = try? JSONDecoder().decode(WatchSession.self, from: data) {
+            try? FileManager.default.removeItem(at: old)
+            return WatchAppState(session: session.isOver ? nil : session)
+        }
+        return WatchAppState()
+    }
 
     private func save() {
         guard let fileURL else { return }
         do {
-            if let session {
-                try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try JSONEncoder().encode(session).write(to: fileURL, options: .atomic)
-            } else {
-                try? FileManager.default.removeItem(at: fileURL)
-            }
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(state).write(to: fileURL, options: .atomic)
         } catch {
-            print("GymGo watch: could not save the session: \(error)")
+            print("GymGo watch: could not save the state: \(error)")
         }
     }
 }

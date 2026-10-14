@@ -1,92 +1,70 @@
-#if !os(macOS)
+#if os(watchOS)
 import GymGoKit
 import SwiftUI
 
-/// What the watch shows: the rest while one runs, else the set in hand, else
-/// Finish. With no session, it says where to start one.
+/// The watch app's one screen: the summary of a session just ended; else
+/// the workout, as horizontal pages like Apple's Workout app; else, with
+/// nothing running, today's session and the week as vertical pages.
 public struct WatchRootView: View {
-    @Bindable var store: WatchSessionStore
-    @State private var confirmingFinish = false
+    let store: WatchSessionStore
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.isLuminanceReduced) private var dimmed
 
     public init(store: WatchSessionStore) {
         self.store = store
     }
 
     public var body: some View {
-        NavigationStack {
-            Group {
-                if let session = store.session, !session.finished {
-                    if let rest = store.rest {
-                        RestView(store: store, rest: rest)
-                    } else if let hand = store.setInHand {
-                        SetInHandView(store: store, hand: hand)
-                    } else {
-                        finishPrompt
-                    }
-                } else {
-                    VStack(spacing: 6) {
-                        Text("GymGo")
-                            .font(Theme.display(28, extraBold: true))
-                            .foregroundStyle(Theme.chalk)
-                        Text("Start a session on your iPhone and it opens here.")
-                            .font(Theme.text(13))
-                            .foregroundStyle(Theme.muted)
-                            .multilineTextAlignment(.center)
-                    }
-                }
-            }
-            .toolbar {
-                if let session = store.session, !session.finished {
-                    ToolbarItem(placement: .topBarLeading) {
-                        NavigationLink {
-                            SessionListView(session: session)
-                        } label: {
-                            Image(systemName: "list.bullet")
-                                .foregroundStyle(Theme.chalk)
-                        }
-                        .tint(Theme.raised)
-                        .accessibilityLabel("Show the whole session")
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            confirmingFinish = true
-                        } label: {
-                            Image(systemName: "flag.checkered")
-                                .foregroundStyle(Theme.chalk)
-                        }
-                        .tint(Theme.raised)
-                        .accessibilityLabel("Finish")
-                    }
-                }
-            }
-            .confirmationDialog("Finish this workout?", isPresented: $confirmingFinish) {
-                Button("Finish and save") { store.finish() }
-                Button("Keep going", role: .cancel) {}
-            } message: {
-                Text("It saves on your iPhone. Sets you did not log are discarded.")
+        Group {
+            if let summary = store.state.summary {
+                SummaryView(store: store, summary: summary)
+            } else if store.session != nil {
+                WorkoutPages(store: store)
+            } else {
+                IdlePages(store: store)
             }
         }
         .tint(Theme.hot)
         .background(Theme.ground)
+        .onChange(of: scenePhase, initial: true) { screenChanged() }
+        .onChange(of: dimmed) { screenChanged() }
     }
 
-    private var finishPrompt: some View {
-        VStack(spacing: 6) {
-            Text("Last set done")
-                .font(Theme.text(13))
-                .foregroundStyle(Theme.muted)
-            Button {
-                confirmingFinish = true
-            } label: {
-                Text("Finish")
-                    .font(Theme.display(20))
-                    .textCase(.uppercase)
-                    .frame(maxWidth: .infinity)
-            }
+    private func screenChanged() {
+        store.screenChanged(awake: scenePhase == .active && !dimmed)
+    }
+}
+
+/// A countdown to `end` that never builds a backwards range once `end` has passed.
+func countdown(to end: Date) -> Text {
+    let now = Date()
+    return Text(timerInterval: now...max(now, end), countsDown: true)
+}
+
+/// A chalk button: the one thing to press next.
+struct ChalkButtonStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
             .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.roundedRectangle(radius: 14))
             .tint(Theme.chalk)
             .foregroundStyle(Theme.ground)
-        }
     }
+}
+
+/// A raised button: there, but not the next thing.
+struct RaisedButtonStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.roundedRectangle(radius: 14))
+            .tint(Theme.raised)
+            .foregroundStyle(Theme.chalk)
+    }
+}
+
+extension View {
+    func chalkButton() -> some View { modifier(ChalkButtonStyle()) }
+    func raisedButton() -> some View { modifier(RaisedButtonStyle()) }
 }
 #endif
