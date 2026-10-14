@@ -219,6 +219,7 @@ struct WeekPage: View {
                             dayMark(day, isToday: day.date == today)
                         }
                     }
+                    .padding(.trailing, 10) // clear of the page dots
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(week.filter { $0.name != nil }, id: \.date) { day in
                             HStack(spacing: 4) {

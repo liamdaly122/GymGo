@@ -159,7 +159,11 @@ public final class WorkoutController: NSObject {
             let start = Date()
             startDate = start
             session.startActivity(with: start)
-            try await builder.beginCollection(at: start)
+            // Bounded: a collection that never begins must not hold up a finish.
+            let began = await withTimeout(10, otherwise: true) {
+                do { try await builder.beginCollection(at: start); return true } catch { return false }
+            }
+            guard began else { throw HKError(.errorInvalidArgument) }
             if let workoutId { await tag(workoutId) }
             return true
         } catch {
@@ -183,15 +187,19 @@ public final class WorkoutController: NSObject {
         #if os(watchOS)
         guard let builder, self.workoutId != workoutId else { return }
         self.workoutId = workoutId
-        do {
-            try await builder.addMetadata([
-                HKMetadataKeyExternalUUID: workoutId,
-                HKMetadataKeySyncIdentifier: "gymgo.workout.\(workoutId)",
-                HKMetadataKeySyncVersion: 1,
-            ])
-        } catch {
-            lastError = String(describing: error)
+        let tagged = await withTimeout(5, otherwise: false) {
+            do {
+                try await builder.addMetadata([
+                    HKMetadataKeyExternalUUID: workoutId,
+                    HKMetadataKeySyncIdentifier: "gymgo.workout.\(workoutId)",
+                    HKMetadataKeySyncVersion: 1,
+                ])
+                return true
+            } catch {
+                return false
+            }
         }
+        if !tagged { lastError = "Could not tag the Health workout with \(workoutId)" }
         #endif
     }
 
@@ -212,18 +220,18 @@ public final class WorkoutController: NSObject {
     public func recover() async {
         #if os(watchOS)
         guard session == nil else { return }
-        do {
-            guard let recovered = try await healthStore.recoverActiveWorkoutSession() else { return }
-            let builder = recovered.associatedWorkoutBuilder()
-            builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: recovered.workoutConfiguration)
-            recovered.delegate = self
-            builder.delegate = self
-            adopt(recovered, builder)
-            startDate = builder.startDate ?? recovered.startDate
-            workoutId = builder.metadata[HKMetadataKeyExternalUUID] as? String
-        } catch {
-            lastError = String(describing: error)
+        let store = healthStore
+        let found = await withTimeout(10, otherwise: nil as HKWorkoutSession?) {
+            try? await store.recoverActiveWorkoutSession()
         }
+        guard let recovered = found, session == nil else { return }
+        let builder = recovered.associatedWorkoutBuilder()
+        builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: recovered.workoutConfiguration)
+        recovered.delegate = self
+        builder.delegate = self
+        adopt(recovered, builder)
+        startDate = builder.startDate ?? recovered.startDate
+        workoutId = builder.metadata[HKMetadataKeyExternalUUID] as? String
         #endif
     }
 
@@ -270,17 +278,20 @@ public final class WorkoutController: NSObject {
         guard !closed, let session, let builder else { return }
         closed = true
         var saved = false
-        do {
-            try await builder.endCollection(at: date)
-            if discardOnStop {
-                builder.discardWorkout()
-            } else {
-                // A nil workout with no error is a save while the watch is locked.
-                _ = try await builder.finishWorkout()
-                saved = true
+        // Each step bounded, so a HealthKit call that never answers cannot
+        // keep the next workout from starting.
+        let collected = await withTimeout(10, otherwise: false) {
+            do { try await builder.endCollection(at: date); return true } catch { return false }
+        }
+        if !collected { lastError = "The Health workout's collection did not end" }
+        if discardOnStop {
+            builder.discardWorkout()
+        } else {
+            // A nil workout with no error is a save while the watch is locked.
+            saved = await withTimeout(15, otherwise: false) {
+                do { _ = try await builder.finishWorkout(); return true } catch { return false }
             }
-        } catch {
-            lastError = String(describing: error)
+            if !saved { lastError = "The Health workout was not saved" }
         }
         session.end()
         teardown()
@@ -317,9 +328,18 @@ public final class WorkoutController: NSObject {
         }
     }
 
-    fileprivate func sessionFailed(_ failed: HKWorkoutSession, _ message: String) {
+    fileprivate func sessionFailed(_ failed: HKWorkoutSession, _ message: String, code: Int?) {
         guard failed === session else { return }
         lastError = message
+        if code == HKError.Code.errorAuthorizationDenied.rawValue || code == HKError.Code.errorAuthorizationNotDetermined.rawValue {
+            authorization = .denied
+        }
+        // A session that never got going is not recording, whatever it was asked.
+        if failed.state == .notStarted || failed.state == .prepared || failed.state == .ended {
+            if failed.state != .ended { failed.end() }
+            teardown()
+            resolve(false)
+        }
         onFailure?()
     }
 
@@ -345,7 +365,8 @@ extension WorkoutController: HKWorkoutSessionDelegate {
 
     nonisolated public func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: any Error) {
         let message = String(describing: error)
-        Task { @MainActor in self.sessionFailed(workoutSession, message) }
+        let code = (error as? HKError)?.code.rawValue ?? ((error as NSError).domain == HKErrorDomain ? (error as NSError).code : nil)
+        Task { @MainActor in self.sessionFailed(workoutSession, message, code: code) }
     }
 }
 
@@ -362,3 +383,34 @@ extension WorkoutController: HKLiveWorkoutBuilderDelegate {
     nonisolated public func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
 }
 #endif
+
+/// The value of `operation`, or `fallback` if it has not answered within
+/// `seconds`. The operation is left to finish on its own: HealthKit calls
+/// cannot be cancelled, but nothing waits for them past the deadline.
+func withTimeout<T: Sendable>(_ seconds: Double, otherwise fallback: T, _ operation: @escaping @Sendable () async -> T) async -> T {
+    await withCheckedContinuation { continuation in
+        let gate = OnceGate()
+        Task {
+            let value = await operation()
+            if gate.pass() { continuation.resume(returning: value) }
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(seconds))
+            if gate.pass() { continuation.resume(returning: fallback) }
+        }
+    }
+}
+
+/// Lets exactly one caller through.
+private final class OnceGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var passed = false
+
+    func pass() -> Bool {
+        lock.withLock {
+            if passed { return false }
+            passed = true
+            return true
+        }
+    }
+}

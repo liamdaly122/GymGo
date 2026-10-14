@@ -24,7 +24,9 @@ public struct WatchRootView: View {
                 IdlePages(store: store)
             }
         }
-        .tint(Theme.hot)
+        // The system's own controls (a sheet's close button) stay raised:
+        // blue on a button would blur the one signal blue carries.
+        .tint(Theme.raised)
         .background(Theme.ground)
         .onChange(of: scenePhase, initial: true) { screenChanged() }
         .onChange(of: dimmed) { screenChanged() }
@@ -41,30 +43,26 @@ func countdown(to end: Date) -> Text {
     return Text(timerInterval: now...max(now, end), countsDown: true)
 }
 
-/// A chalk button: the one thing to press next.
-struct ChalkButtonStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.roundedRectangle(radius: 14))
-            .tint(Theme.chalk)
-            .foregroundStyle(Theme.ground)
-    }
-}
+/// A solid button at exactly the size its label asks for: the system's
+/// bordered styles pad it, and on a watch every point counts.
+struct SolidButtonStyle: ButtonStyle {
+    let fill: Color
+    let text: Color
 
-/// A raised button: there, but not the next thing.
-struct RaisedButtonStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.roundedRectangle(radius: 14))
-            .tint(Theme.raised)
-            .foregroundStyle(Theme.chalk)
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(text)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(fill))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
     }
 }
 
 extension View {
-    func chalkButton() -> some View { modifier(ChalkButtonStyle()) }
-    func raisedButton() -> some View { modifier(RaisedButtonStyle()) }
+    /// Chalk: the one thing to press next.
+    func chalkButton() -> some View { buttonStyle(SolidButtonStyle(fill: Theme.chalk, text: Theme.ground)) }
+    /// Raised: there, but not the next thing.
+    func raisedButton() -> some View { buttonStyle(SolidButtonStyle(fill: Theme.raised, text: Theme.chalk)) }
 }
 #endif

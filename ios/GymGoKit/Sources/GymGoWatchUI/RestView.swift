@@ -19,25 +19,24 @@ struct RestView: View {
     var body: some View {
         let record = store.state.lastRecord
         VStack(spacing: 2) {
-            if let record {
-                Text(recordLine(record))
-                    .font(Theme.text(12, semiBold: true))
-                    .foregroundStyle(Theme.hot)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .accessibilityLabel("New record. \(recordLine(record))")
-            } else {
-                Text("Rest")
-                    .font(Theme.text(12, semiBold: true))
+            // The clock's row: what this is, and the heart rate.
+            HStack(spacing: 6) {
+                Text(record == nil ? "Rest" : "New record")
+                    .font(Theme.text(13, semiBold: true))
                     .textCase(.uppercase)
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(record == nil ? Theme.muted : Theme.hot)
+                    .accessibilityHidden(record != nil)
+                HeartRateBadge(workout: store.workout)
+                Spacer(minLength: 0)
             }
+            .padding(.trailing, 50)
 
-            // The last ten seconds turn blue.
-            TimelineView(.explicit([rest.endsAt.addingTimeInterval(-10)])) { context in
+            // The last ten seconds turn blue. The schedule starts now: with
+            // only the future moment in it, the first frame is drawn as of then.
+            TimelineView(.explicit([Date(), rest.endsAt.addingTimeInterval(-10)].sorted())) { context in
                 let closing = context.date >= rest.endsAt.addingTimeInterval(-10)
                 countdown(to: rest.endsAt)
-                    .font(Theme.number(record == nil ? 60 : 50))
+                    .font(Theme.number(record == nil ? 64 : 54))
                     .foregroundStyle(closing ? Theme.hot : Theme.chalk)
                     .monospacedDigit()
                     .multilineTextAlignment(.center)
@@ -47,12 +46,21 @@ struct RestView: View {
                     .accessibilityAddTraits(.updatesFrequently)
             }
 
+            if let record {
+                Text(recordLine(record))
+                    .font(Theme.text(12, semiBold: true))
+                    .foregroundStyle(Theme.hot)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .accessibilityLabel("New record. \(recordLine(record))")
+            }
+
             Button {
                 store.touched()
                 showSets()
             } label: {
                 VStack(spacing: 0) {
-                    Text("Up next · \(rest.upNext.detail)")
+                    Text("Up next · \(upNextDetail)")
                         .font(Theme.text(11))
                         .foregroundStyle(Theme.muted)
                         .lineLimit(1)
@@ -103,6 +111,7 @@ struct RestView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .focusable()
+        .focusEffectDisabled()
         .focused($focused)
         .digitalCrownRotation($crown, from: -1000, through: 1000, by: 1, sensitivity: .low, isContinuous: true, isHapticFeedbackEnabled: false)
         .onChange(of: crown) {
@@ -116,6 +125,16 @@ struct RestView: View {
         }
     }
 
+    /// The phone wrote "Set 2 of 3 · 100 × 5" before the set just done; the
+    /// watch's own rules (carry forward, the back-off target) may have moved
+    /// the numbers since. When the next set is the same lift, say what the
+    /// set screen will actually start at.
+    private var upNextDetail: String {
+        guard let next = store.setInHand, next.lift.name == rest.upNext.name,
+              let weight = next.weight, let reps = next.reps, reps > 0 else { return rest.upNext.detail }
+        return "\(next.set.label) · \(formatLogged(weight, reps))"
+    }
+
     /// The next lift's setup note, when the rest leads to a new station.
     private var nextSetupNote: String? {
         guard let next = store.setInHand,
@@ -126,9 +145,9 @@ struct RestView: View {
 
     private func recordLine(_ record: SetRecord) -> String {
         switch record.kind {
-        case .weight: "New record · \(formatWeight(record.value))kg, was \(formatWeight(record.previous))"
-        case .e1rm: "New record · est. max \(formatWeight((record.value * 10).rounded() / 10))kg"
-        case .reps: "New record · \(Int(record.value)) reps, was \(Int(record.previous))"
+        case .weight: "\(formatWeight(record.value))kg, was \(formatWeight(record.previous))"
+        case .e1rm: "Est. max \(formatWeight((record.value * 10).rounded() / 10))kg"
+        case .reps: "\(Int(record.value)) reps, was \(Int(record.previous))"
         }
     }
 }

@@ -32,9 +32,12 @@ struct SetInHandView: View {
     // Sized from the screen: 49mm is 205 points wide, 41mm 176.
     private var compact: Bool { Theme.screenWidth < 190 }
     private var hero: CGFloat { (Theme.screenWidth * 0.27).rounded() }
-    private var tileHeight: CGFloat { compact ? 58 : 66 }
+    private var tileHeight: CGFloat { compact ? 62 : 72 }
     private var buttonHeight: CGFloat { compact ? 36 : 42 }
+    private var doneHeight: CGFloat { compact ? 40 : 46 }
     private var gap: CGFloat { compact ? 4 : 6 }
+    /// The system clock sits at the top right, in the name's row.
+    private var clockWidth: CGFloat { compact ? 44 : 50 }
 
     private var weightText: String {
         weight == 0 && hand.lift.unit == "kg added" ? "BW" : formatWeight(weight)
@@ -58,6 +61,7 @@ struct SetInHandView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .focusable()
+        .focusEffectDisabled()
         .focused($crownFocused)
         .digitalCrownRotation(
             field == .weight ? $weightIndex : $reps,
@@ -75,8 +79,9 @@ struct SetInHandView: View {
         }
         .sheet(isPresented: $pickingReps) {
             RepsGrid(title: "\(formatWeight(weight)) \(hand.lift.unit) ×") { picked in
+                // Logged as picked: changing `reps` here would leave this
+                // set's numbers behind as the next set's draft.
                 pickingReps = false
-                reps = Double(picked)
                 log(reps: picked)
             }
         }
@@ -115,26 +120,32 @@ struct SetInHandView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
+            .padding(.trailing, clockWidth)
             .accessibilityAddTraits(.isHeader)
             .accessibilityHint("Shows the lift's notes and today's sets")
 
-            if let rest = store.rest {
-                Button(action: expandRest) {
-                    HStack(spacing: 4) {
-                        Text("Rest")
-                        countdown(to: rest.endsAt).monospacedDigit()
+            HStack(spacing: 4) {
+                if let rest = store.rest {
+                    Button(action: expandRest) {
+                        HStack(spacing: 4) {
+                            Text("Rest")
+                            countdown(to: rest.endsAt).monospacedDigit()
+                        }
+                        .font(Theme.text(12, semiBold: true))
+                        .textCase(.uppercase)
+                        .foregroundStyle(Theme.hot)
                     }
-                    .font(Theme.text(12, semiBold: true))
-                    .textCase(.uppercase)
-                    .foregroundStyle(Theme.hot)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Resting, show the rest")
+                } else {
+                    Text("\(hand.set.label) · \(hand.set.station + 1)/\(max(1, store.session?.snapshot.stations.count ?? 1))")
+                        .font(Theme.text(12))
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Resting, show the rest")
-            } else {
-                Text("\(hand.set.label) · \(hand.set.station + 1)/\(max(1, store.session?.snapshot.stations.count ?? 1))")
-                    .font(Theme.text(12))
-                    .foregroundStyle(Theme.muted)
-                    .lineLimit(1)
+                Spacer(minLength: 2)
+                HeartRateBadge(workout: store.workout)
             }
         }
     }
@@ -199,7 +210,7 @@ struct SetInHandView: View {
                 .textCase(.uppercase)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity, minHeight: buttonHeight)
+                .frame(maxWidth: .infinity, minHeight: doneHeight)
         }
         .chalkButton()
         .handGestureShortcut(.primaryAction)

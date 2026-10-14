@@ -73,16 +73,11 @@ struct MainPage: View {
                 AllLoggedView(store: store)
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                HeartRateBadge(workout: store.workout)
-            }
-        }
     }
 }
 
-/// The heart rate, small, top left. It never animates: Always On redraws
-/// at most once a second.
+/// The heart rate, small, under the clock. It never animates: Always On
+/// redraws at most once a second.
 struct HeartRateBadge: View {
     let workout: WorkoutController
 

@@ -43,8 +43,12 @@ public final class WatchSessionStore {
         state = Self.load(from: fileURL)
         haptics.enabled = state.settings.vibrate
         workout.onFailure = { [weak self] in
-            self?.haptics.play(.failed)
-            self?.reportIfChanged()
+            guard let self else { return }
+            // Not retried on every wake: once refused, this workout runs without Health.
+            self.healthFailedFor = self.state.session?.workoutId
+            self.haptics.play(.failed)
+            self.keepReporting()
+            self.reportIfChanged()
         }
         if state.expireRest(now: Date()) { save() }
         scheduleRest()
