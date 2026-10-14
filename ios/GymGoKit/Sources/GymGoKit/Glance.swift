@@ -205,6 +205,19 @@ public struct GlanceMoment: Sendable, Equatable {
     public var done: Int
     /// A session done on the wrist today, the phone not caught up: a tick.
     public var doneHereToday: Bool
+    /// The day the session on offer is due, when that is not today: "Fri",
+    /// "24 Oct". Nil when it is due today, or nothing is on offer.
+    public var dueLater: String?
+
+    /// One line for the inline and corner families: "Push A · Today",
+    /// "Push A · Fri", else the card's heading.
+    public var shortLine: String {
+        switch card.kind {
+        case .ready: "\(card.title ?? "GymGo") · \(dueLater ?? "Today")"
+        case .noPhone: "Open GymGo on your iPhone"
+        default: card.heading
+        }
+    }
 }
 
 extension WatchGlance {
@@ -267,7 +280,10 @@ extension WatchGlance {
             date: date, day: day, card: card, phase: phase, week: marks,
             planned: marks.filter { $0.state != .rest }.count,
             done: marks.filter { $0.state == .done }.count,
-            doneHereToday: doneHereToday
+            doneHereToday: doneHereToday,
+            dueLater: today?.ready.flatMap { ready in
+                card.kind == .ready && ready.date > day ? dayLabel(ready.date, from: day, timeZone: timeZone) : nil
+            }
         )
     }
 

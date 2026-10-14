@@ -125,10 +125,24 @@ private func midnight(_ day: String) -> Date {
 
     #expect(moments.count == 8)
     #expect(moments[0].card.heading == "Next · Fri")
+    #expect(moments[0].dueLater == "Fri" && moments[0].shortLine == "Push A · Fri")
     let friday = try #require(moments.first { $0.day == "2026-10-16" })
     #expect(friday.date == midnight("2026-10-16"))
     #expect(friday.card.heading == "Today · Week 3 of 5")
     #expect(friday.card.startLabel == "Start")
+    #expect(friday.dueLater == nil && friday.shortLine == "Push A · Today")
+}
+
+@Test func theShortLineSaysTheHeadingOrWhereToGo() throws {
+    #expect(WatchGlance.empty.moment(at: minute(6), timeZone: london).shortLine == "Open GymGo on your iPhone")
+    var blockDone = WatchAppState()
+    blockDone.apply(try context(state: "blockDone"))
+    let moment = glance(blockDone, at: minute(6)).moment(at: minute(6), timeZone: london)
+    #expect(moment.shortLine == "Block done" && moment.dueLater == nil)
+    // Far off: the date, not a weekday.
+    var later = WatchAppState()
+    later.apply(try context(ready: readyObject(date: "2026-10-24", status: "upcoming")))
+    #expect(glance(later, at: minute(6)).moment(at: minute(6), timeZone: london).dueLater == "24 Oct")
 }
 
 @Test func doneTodayEmptiesAtMidnight() throws {
