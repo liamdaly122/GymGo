@@ -459,10 +459,33 @@ public final class WatchSessionStore {
 
     /// The rest-over notification follows the rest and Health: wanted while
     /// a rest runs and no Health workout keeps the app running.
-    private func syncRestAlert() {
+    // TEMP stub (watch-platform): internal, and paused counts as not
+    // recording, until watch-logic's version lands. The merge takes theirs.
+    func syncRestAlert() {
         restAlerts.sync(RestAlert.wanted(
-            for: state.rest, healthRecording: workout.isRunning, vibrate: state.settings.vibrate, now: Date()
+            for: state.rest, healthRecording: workout.isRunning && !workout.isPaused, vibrate: state.settings.vibrate, now: Date()
         ))
+    }
+
+    // TEMP stub (watch-platform): watch-logic builds the real one, with the
+    // pure "numbers on screen" function SetInHandView shares. The merge
+    // takes theirs.
+    func logSetOnScreen() -> Bool {
+        guard let hand = setInHand else { return false }
+        let ladder = hand.lift.ladder.isEmpty ? [0] : hand.lift.ladder
+        let weight: Double, reps: Int
+        if let draft, draft.setId == hand.set.id {
+            weight = ladder[min(max(Int(draft.weightIndex.rounded()), 0), ladder.count - 1)]
+            reps = min(max(Int(draft.reps.rounded()), 0), 50)
+        } else {
+            let target = hand.weight ?? 0
+            weight = ladder[ladder.lastIndex { $0 <= target + 1e-9 } ?? 0]
+            reps = hand.reps ?? 0
+        }
+        guard reps > 0 else { return false }
+        draft = nil
+        done(weight: weight, reps: reps)
+        return true
     }
 
     /// The rest's cues, and the rest-over repeat, stop: the session they
