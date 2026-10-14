@@ -876,6 +876,13 @@ export async function completeSet(setId: string, completed = true): Promise<void
  * suggestion when nothing was. An empty tick used to save 0kg × 0, and writing
  * the numbers and the tick separately would leave a window in which the set is
  * ticked at zero — the same bug, briefly.
+ *
+ * Checked and written in one transaction, as `finishWorkout` is: a Finish
+ * landing between the check and the write (a drain applying a set from the
+ * watch while Finish is pressed on the phone) ticked a set that Finish had
+ * just tidied away, leaving it ticked and deleted, beyond `reviveTidiedSet`.
+ * Now a Finish comes wholly before the check, which throws, or wholly after
+ * the write, and keeps the set.
  */
 export async function completeSetWith(
   setId: string,
@@ -899,7 +906,6 @@ export async function completeSetWith(
   if (options.completedAt !== undefined && Number.isNaN(Date.parse(options.completedAt))) {
     throw new Error(`Cannot stamp a set with ${options.completedAt}`);
   }
-  await assertSetEditable(setId);
   const now = nowIso();
   const patch = {
     weight_kg: values.weight_kg,
@@ -908,7 +914,8 @@ export async function completeSetWith(
     completed_at: options.completedAt ? new Date(options.completedAt).toISOString() : now,
     updated_at: now,
   };
-  await db.transaction('rw', db.sets, db.outbox, async () => {
+  await db.transaction('rw', db.workouts, db.workout_exercises, db.sets, db.outbox, async () => {
+    await assertSetEditable(setId);
     await db.sets.update(setId, patch);
     await enqueue('sets', setId, 'put', patch);
   });

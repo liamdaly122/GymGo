@@ -321,33 +321,45 @@ interface ApplyContext {
 
 const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
+/**
+ * Applies a set from the wrist. Everything it reads and writes is in one
+ * transaction, so a Finish pressed on the phone meanwhile comes wholly before
+ * (the set goes back, `reviveTidiedSet`) or wholly after (Finish keeps it).
+ * Read outside one, a Finish landing between reading the workout as open and
+ * reading the set it had just tidied away skipped the set, and acknowledged
+ * it, so it was lost on both.
+ */
 async function applyCompleteSet(event: WatchEvent, context: ApplyContext = {}): Promise<WatchEventOutcome> {
-  const workout = await db.workouts.get(event.workoutId);
-  // Its start has not been applied yet: a quick copy can overtake the queued one.
-  if (!workout) return 'deferred';
-  if (workout.deleted_at !== null) return 'skipped';
-  // Malformed: retrying cannot mend it.
-  if (!event.setId || !isNumber(event.weight) || !isNumber(event.reps) || Number.isNaN(Date.parse(event.at))) {
-    return 'skipped';
-  }
+  const outcome = await db.transaction('rw', db.workouts, db.workout_exercises, db.sets, db.outbox, async () => {
+    const workout = await db.workouts.get(event.workoutId);
+    // Its start has not been applied yet: a quick copy can overtake the queued one.
+    if (!workout) return 'deferred';
+    if (workout.deleted_at !== null) return 'skipped';
+    // Malformed: retrying cannot mend it.
+    if (!event.setId || !isNumber(event.weight) || !isNumber(event.reps) || Number.isNaN(Date.parse(event.at))) {
+      return 'skipped';
+    }
 
-  const set = await db.sets.get(event.setId);
-  const workoutExercise = set ? await db.workout_exercises.get(set.workout_exercise_id) : undefined;
-  if (!set || !workoutExercise || workoutExercise.workout_id !== event.workoutId) return 'skipped';
+    const set = await db.sets.get(event.setId);
+    const workoutExercise = set ? await db.workout_exercises.get(set.workout_exercise_id) : undefined;
+    if (!set || !workoutExercise || workoutExercise.workout_id !== event.workoutId) return 'skipped';
 
-  if (workout.finished_at !== null) {
-    // Finished on the phone before this set arrived from the wrist, where it
-    // was logged before that Finish: Finish tidied it away as unticked, so it
-    // goes back. Anything else about a finished workout stays as it is.
-    if (!(await reviveTidiedSet(event.setId, { weight_kg: event.weight, reps: event.reps }, event.at))) return 'skipped';
-    context.revived?.add(event.workoutId);
+    if (workout.finished_at !== null) {
+      // Finished on the phone before this set arrived from the wrist, where it
+      // was logged before that Finish: Finish tidied it away as unticked, so it
+      // goes back. Anything else about a finished workout stays as it is.
+      const values = { weight_kg: event.weight, reps: event.reps };
+      return (await reviveTidiedSet(event.setId, values, event.at)) ? 'revived' : 'skipped';
+    }
+    if (set.deleted_at !== null || workoutExercise.deleted_at !== null) return 'skipped';
+    // The same set logged on both: the later time wins, as everywhere else. An
+    // equal time is this very event applied before.
+    if (set.completed && set.completed_at && Date.parse(set.completed_at) >= Date.parse(event.at)) return 'skipped';
+    await completeSetWith(event.setId, { weight_kg: event.weight, reps: event.reps }, { completedAt: event.at });
     return 'applied';
-  }
-  if (set.deleted_at !== null || workoutExercise.deleted_at !== null) return 'skipped';
-  // The same set logged on both: the later time wins, as everywhere else. An
-  // equal time is this very event applied before.
-  if (set.completed && set.completed_at && Date.parse(set.completed_at) >= Date.parse(event.at)) return 'skipped';
-  await completeSetWith(event.setId, { weight_kg: event.weight, reps: event.reps }, { completedAt: event.at });
+  });
+  if (outcome !== 'revived') return outcome;
+  context.revived?.add(event.workoutId);
   return 'applied';
 }
 

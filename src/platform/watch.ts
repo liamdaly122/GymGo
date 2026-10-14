@@ -129,6 +129,8 @@ async function drainOnce(): Promise<void> {
   if (ids.length > 0) await WatchBridge.acknowledge({ ids });
   // Finish on the watch is a Finish: the phone keeps its own copy, as after Finish on the phone.
   // So is a set put back into a finished workout: the copy taken at Finish lacks it.
+  // Late sets land a drain apiece, seconds apart; each copy replaces one under a
+  // minute old (`writeSnapshot`), so they leave one copy, not one each.
   if (result.finished.length > 0 || result.revived.length > 0) await snapshotEverything();
 }
 

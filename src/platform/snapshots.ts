@@ -10,7 +10,8 @@ import { isNativeApp } from './native';
  * iOS can reclaim a web view's IndexedDB when the phone runs short of space,
  * and the backup only helps once you are signed in. So inside the app the same
  * JSON as "Export everything" is written into the app's Documents folder after
- * every finished session and once a day, and the newest seven are kept. iOS
+ * every finished session and once a day, and the newest seven are kept; one
+ * written within a minute of the one before replaces it. iOS
  * does not reclaim those files; they go into the phone's own iCloud backup;
  * and they show in Files under On My iPhone → GymGo. On a launch with nothing
  * of the lifter's own in the database, the newest is offered back
@@ -44,6 +45,27 @@ export function snapshotsToPrune(names: readonly string[], keep = SNAPSHOTS_KEPT
   return sortSnapshots(names).slice(keep);
 }
 
+/** A snapshot taken this soon after another replaces it rather than joining it. */
+export const SNAPSHOT_REPLACES_WITHIN_MS = 60_000;
+
+/**
+ * The snapshots one taken at `at` replaces: any taken in the minute before it.
+ *
+ * A Finish on the phone writes one, and each late set from the watch that a
+ * drain puts back into that workout wrote another. They land one by one,
+ * seconds apart, so a Finish and three late sets made four near-identical
+ * copies and pushed three older, distinct restore points out of the seven.
+ * A copy under a minute old is no restore point of its own: the newest is
+ * the same data a few seconds on.
+ */
+export function snapshotsReplacedBy(names: readonly string[], at: Date): string[] {
+  const written = snapshotName(at);
+  return sortSnapshots(names).filter((name) => {
+    const age = at.getTime() - Date.parse(snapshotTakenAt(name)!);
+    return name !== written && age >= 0 && age < SNAPSHOT_REPLACES_WITHIN_MS;
+  });
+}
+
 export interface Snapshot {
   takenAt: string;
   json: string;
@@ -58,6 +80,11 @@ async function listSnapshots(): Promise<string[]> {
   }
 }
 
+/**
+ * Writes a snapshot, then deletes any it replaces (`snapshotsReplacedBy`) and
+ * any beyond the newest seven. Written first, so a write that fails leaves the
+ * one before it in place.
+ */
 export async function writeSnapshot(json: string, at = new Date()): Promise<void> {
   if (!isNativeApp()) return;
   await Filesystem.writeFile({
@@ -67,7 +94,10 @@ export async function writeSnapshot(json: string, at = new Date()): Promise<void
     encoding: Encoding.UTF8,
     recursive: true,
   });
-  for (const name of snapshotsToPrune(await listSnapshots())) {
+  const names = await listSnapshots();
+  const replaced = snapshotsReplacedBy(names, at);
+  const kept = names.filter((name) => !replaced.includes(name));
+  for (const name of [...replaced, ...snapshotsToPrune(kept)]) {
     await Filesystem.deleteFile({ path: `${FOLDER}/${name}`, directory: Directory.Documents }).catch(() => {});
   }
 }
