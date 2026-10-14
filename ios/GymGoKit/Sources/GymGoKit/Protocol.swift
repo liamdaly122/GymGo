@@ -220,4 +220,30 @@ public struct WatchStateReport: Codable, Sendable, Equatable {
         self.activeKcal = activeKcal
         self.health = health
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case v, at, seq, workoutId, session, owner, seenPhoneClaim, setId, inHand, rest, skipped, paused
+        case heartRate, activeKcal, health
+    }
+
+    /// From build 7 the phone decodes reports natively (the Live Activity), so
+    /// a report from a build 6 watch, with no `skipped`, must still decode.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        v = try c.decode(Int.self, forKey: .v)
+        at = try c.decode(String.self, forKey: .at)
+        seq = try c.decode(Int.self, forKey: .seq)
+        workoutId = try c.decodeIfPresent(String.self, forKey: .workoutId)
+        session = try c.decode(Session.self, forKey: .session)
+        owner = try c.decode(Owner.self, forKey: .owner)
+        seenPhoneClaim = try c.decodeIfPresent(String.self, forKey: .seenPhoneClaim)
+        setId = try c.decodeIfPresent(String.self, forKey: .setId)
+        inHand = try c.decodeIfPresent(InHand.self, forKey: .inHand)
+        rest = try c.decodeIfPresent(Rest.self, forKey: .rest)
+        skipped = try c.decodeIfPresent([String].self, forKey: .skipped) ?? []
+        paused = try c.decodeIfPresent(String.self, forKey: .paused)
+        heartRate = try c.decodeIfPresent(Double.self, forKey: .heartRate)
+        activeKcal = try c.decodeIfPresent(Double.self, forKey: .activeKcal)
+        health = try c.decode(Health.self, forKey: .health)
+    }
 }

@@ -11,7 +11,9 @@ build 4") and decisions 8, 9 and 13, and extended for build 7
 **Versions.** The protocol and the snapshot are both still version 1: every
 change since has been additive. A field added since build 6 is **Optional in
 Swift** wherever it is decoded from the phone or saved in `watch-state.json`
-(the snapshot types, `LoggedSet`, `WatchSession`): a synthesised decoder
+(the snapshot types, `LoggedSet`, `WatchSession`), and in the state report,
+which the phone decodes natively from build 7 for the Live Activity (its
+decoder reads `skipped` as `[]` when missing): a synthesised decoder
 throws on a missing non-Optional key, and a saved state that fails to decode
 loses the sets the phone has not confirmed. A missing Optional decodes to nil,
 not to a default, so readers treat nil as false or empty. A build 6 watch
@@ -252,7 +254,7 @@ The set in hand is the first of the list's sets that is neither logged nor
 skipped in the focused station; if that station has none, the first in the
 station `nextStation(open, focus)` picks; with no focus, the first in the
 list. Logging a set focuses its station. Tapping a station on This session
-focuses it, bringing back any sets of it that were only skipped. Skip this set
+focuses it; if all it has left are skipped sets, they come back. Skip this set
 skips the set and its children; Done with this lift skips every remaining set
 of the station in hand. When the set just logged has no rest only because its
 round's partner was skipped, it takes that partner's rest. Once the wrist has

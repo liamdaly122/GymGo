@@ -46,7 +46,8 @@ function entry(we: string, overrides: Partial<WatchEntryInput> = {}): WatchEntry
 function previous(day: string, sets: Array<[number, number]>): PreviousPerformance {
   const working = sets.map(([weight, reps], index) => done('old', index, weight, reps, `${day}T17:0${index}:00.000Z`));
   const top = working.reduce((best, set) => (set.weight_kg > best.weight_kg || (set.weight_kg === best.weight_kg && set.reps > best.reps) ? set : best));
-  return { workout_id: 'w-0', performed_at: `${day}T12:00:00.000Z`, top_set: top, working_sets: working };
+  const [y = 0, m = 1, d = 1] = day.split('-').map(Number);
+  return { workout_id: 'w-0', performed_at: new Date(y, m - 1, d, 12).toISOString(), top_set: top, working_sets: working };
 }
 
 function input(entries: WatchEntryInput[], stations?: WatchInput['stations']): WatchInput {

@@ -277,7 +277,9 @@ function lastSession(day: string, sets: Array<[number, number]>): NonNullable<Wa
     completed: true, completed_at: `${day}T11:${String(index * 3).padStart(2, '0')}:00.000Z`,
   }));
   const top = working.reduce((best, set) => (set.weight_kg > best.weight_kg || (set.weight_kg === best.weight_kg && set.reps > best.reps) ? set : best));
-  return { workout_id: 'w-old', performed_at: `${day}T12:00:00.000Z`, top_set: top, working_sets: working };
+  // Local midday, so the local date sent as lastTime.day is the fixture day in every time zone.
+  const [y = 0, m = 1, d = 1] = day.split('-').map(Number);
+  return { workout_id: 'w-old', performed_at: new Date(y, m - 1, d, 12).toISOString(), top_set: top, working_sets: working };
 }
 
 function snapshotCases() {

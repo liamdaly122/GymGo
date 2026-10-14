@@ -161,3 +161,13 @@ private func fixture(_ name: String) throws -> Any {
         #expect(!event.id.isEmpty)
     }
 }
+
+/// A report from a build 6 watch has none of build 7's fields; the phone
+/// decodes it natively for the Live Activity, so it must still decode.
+@Test func aBuild6ReportStillDecodes() throws {
+    let json = #"{"v":1,"at":"2026-10-14T10:00:00.000Z","seq":4,"workoutId":"w-1","session":"running","owner":"watch","seenPhoneClaim":null,"setId":"s-1","rest":{"endsAt":"2026-10-14T10:01:30.000Z","upNext":{"name":"Bench Press","detail":"Set 2 of 4 · 100 × 5"}},"heartRate":121,"activeKcal":88,"health":"recording"}"#
+    let report = try JSONDecoder().decode(WatchStateReport.self, from: Data(json.utf8))
+    #expect(report.skipped == [])
+    #expect(report.paused == nil && report.inHand == nil && report.rest?.startedAt == nil)
+    #expect(report.setId == "s-1")
+}
