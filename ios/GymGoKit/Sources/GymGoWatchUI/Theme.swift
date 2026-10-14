@@ -1,5 +1,8 @@
 import CoreText
 import SwiftUI
+#if os(watchOS)
+import WatchKit
+#endif
 
 /// The app's look, on the wrist: near-black ground, chalk numbers, one blue
 /// highlight. The same two colours with the same two jobs as on the phone
@@ -24,6 +27,23 @@ public enum Theme {
         return .custom(semiBold ? "Barlow-SemiBold" : "Barlow-Medium", size: size)
     }
 
+    /// The big digits: Big Shoulders Display at a fixed size, so a large text
+    /// setting cannot push a weight out of its tile. Labels still scale.
+    public static func number(_ size: CGFloat) -> Font {
+        registerFonts()
+        return .custom("BigShouldersDisplayThin-ExtraBold", fixedSize: size)
+    }
+
+    /// The screen's width in points: 205 on a 49mm Ultra, 176 on a 41mm.
+    @MainActor
+    public static var screenWidth: CGFloat {
+        #if os(watchOS)
+        WKInterfaceDevice.current().screenBounds.width
+        #else
+        205
+        #endif
+    }
+
     private static let registered: Bool = {
         for name in ["BigShouldersDisplay-Bold", "BigShouldersDisplay-ExtraBold", "Barlow-Medium", "Barlow-SemiBold"] {
             guard let url = Bundle.module.url(forResource: name, withExtension: "ttf") else { continue }
@@ -45,4 +65,12 @@ func formatWeight(_ weight: Double) -> String {
 /// "102.5 × 6", or "BW × 12" for unloaded bodyweight work.
 func formatLogged(_ weight: Double, _ reps: Int) -> String {
     "\(weight > 0 ? formatWeight(weight) : "BW") × \(reps)"
+}
+
+/// "1:02:15" or "42:07"; "1:02" when only minutes may show (Always On).
+func formatElapsed(_ seconds: TimeInterval, minutesOnly: Bool = false) -> String {
+    let total = max(0, Int(seconds))
+    let hours = total / 3600, minutes = (total % 3600) / 60, secs = total % 60
+    if minutesOnly { return hours > 0 ? String(format: "%d:%02d", hours, minutes) : "\(minutes) min" }
+    return hours > 0 ? String(format: "%d:%02d:%02d", hours, minutes, secs) : String(format: "%d:%02d", minutes, secs)
 }
