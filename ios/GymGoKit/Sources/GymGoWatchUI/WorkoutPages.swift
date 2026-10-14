@@ -144,21 +144,28 @@ struct HeartRateBadge: View {
     }
 }
 
+/// Nothing left to log: "All sets logged", or "Nothing left · 2 skipped"
+/// when what is left was skipped (`WatchSession.nothingLeftTitle`), and
+/// Finish. The last set of a session often has no rest after it, so this is
+/// where its "Logged · Undo" shows, in the place of the explanation.
 struct AllLoggedView: View {
     let store: WatchSessionStore
     @State private var confirming = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("All sets logged")
+            Text(store.session?.nothingLeftTitle ?? "All sets logged")
                 .font(Theme.display(26, extraBold: true))
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.chalk)
-                .accessibilityAddTraits(.isHeader)
-            Text("Finish to save it on your iPhone and in Health.")
-                .font(Theme.text(13))
-                .foregroundStyle(Theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            UndoOr(store: store, height: 40) {
+                Text("Finish to save it on your iPhone and in Health.")
+                    .font(Theme.text(13))
+                    .foregroundStyle(Theme.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Spacer(minLength: 4)
             Button {
                 store.touched()
@@ -307,20 +314,18 @@ struct ControlsPage: View {
     }
 }
 
-/// "Finish and save? 14 of 18 logged; sets not logged are dropped."
+/// "Finish and save? 14 of 18 logged · 2 skipped; sets not logged are
+/// dropped." (`WatchSession.finishMessage`, worded and tested in GymGoKit.)
 struct FinishConfirmation: ViewModifier {
     let store: WatchSessionStore
     @Binding var isPresented: Bool
 
     func body(content: Content) -> some View {
-        let progress: (done: Int, total: Int) = store.session?.progress ?? (0, 0)
         content.confirmationDialog("Finish and save?", isPresented: $isPresented) {
             Button("Finish and save") { store.finish() }
             Button("Keep going", role: .cancel) {}
         } message: {
-            Text(progress.done < progress.total
-                 ? "\(progress.done) of \(progress.total) logged; sets not logged are dropped."
-                 : "Every set is logged.")
+            Text(store.session?.finishMessage ?? "Every set is logged.")
         }
     }
 }
