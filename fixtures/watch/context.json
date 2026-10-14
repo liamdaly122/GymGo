@@ -1,0 +1,1299 @@
+[
+  {
+    "name": "a workout under way on the phone, nothing to start",
+    "context": {
+      "v": 1,
+      "sentAt": "2026-10-14T17:05:00.000Z",
+      "phoneClaim": null,
+      "settings": {
+        "sound": true,
+        "vibrate": true
+      },
+      "live": {
+        "version": 1,
+        "workoutId": "00000000-0000-4000-8000-000000000500",
+        "title": "Push A",
+        "startedAt": "2026-10-14T17:00:00.000Z",
+        "sentAt": "2026-10-14T17:05:00.000Z",
+        "stations": [
+          {
+            "name": "Lift a",
+            "outline": "Barbell · 3 × 5",
+            "exerciseIds": [
+              "ex-a"
+            ]
+          },
+          {
+            "name": "Lift b",
+            "outline": "Dumbbell · 3 × 10",
+            "exerciseIds": [
+              "ex-b"
+            ]
+          }
+        ],
+        "sets": [
+          {
+            "id": "a-s1",
+            "exerciseId": "ex-a",
+            "workoutExerciseId": "a",
+            "station": 0,
+            "type": "working",
+            "parentSetId": null,
+            "label": "Set 2 of 3",
+            "weight": 100,
+            "reps": 5,
+            "source": "carried",
+            "carries": true,
+            "scheme": null,
+            "restAfter": 150,
+            "upNext": {
+              "name": "Lift a",
+              "detail": "Set 3 of 3 · 100 × 5"
+            }
+          },
+          {
+            "id": "a-s2",
+            "exerciseId": "ex-a",
+            "workoutExerciseId": "a",
+            "station": 0,
+            "type": "working",
+            "parentSetId": null,
+            "label": "Set 3 of 3",
+            "weight": 100,
+            "reps": 5,
+            "source": "carried",
+            "carries": true,
+            "scheme": null,
+            "restAfter": 150,
+            "upNext": {
+              "name": "Lift b",
+              "detail": "Dumbbell · 3 × 10"
+            }
+          },
+          {
+            "id": "b-s0",
+            "exerciseId": "ex-b",
+            "workoutExerciseId": "b",
+            "station": 1,
+            "type": "working",
+            "parentSetId": null,
+            "label": "Set 1 of 3",
+            "weight": 22.5,
+            "reps": 10,
+            "source": "suggestion",
+            "carries": true,
+            "scheme": null,
+            "restAfter": 90,
+            "upNext": {
+              "name": "Lift b",
+              "detail": "Set 2 of 3 · 22.5 × 10"
+            }
+          },
+          {
+            "id": "b-s1",
+            "exerciseId": "ex-b",
+            "workoutExerciseId": "b",
+            "station": 1,
+            "type": "working",
+            "parentSetId": null,
+            "label": "Set 2 of 3",
+            "weight": 22.5,
+            "reps": 10,
+            "source": "suggestion",
+            "carries": true,
+            "scheme": null,
+            "restAfter": 90,
+            "upNext": {
+              "name": "Lift b",
+              "detail": "Set 3 of 3 · 22.5 × 10"
+            }
+          },
+          {
+            "id": "b-s2",
+            "exerciseId": "ex-b",
+            "workoutExerciseId": "b",
+            "station": 1,
+            "type": "working",
+            "parentSetId": null,
+            "label": "Set 3 of 3",
+            "weight": 22.5,
+            "reps": 10,
+            "source": "suggestion",
+            "carries": true,
+            "scheme": null,
+            "restAfter": 90,
+            "upNext": {
+              "name": "Finish",
+              "detail": "Last set done"
+            }
+          }
+        ],
+        "lifts": {
+          "ex-a": {
+            "name": "Lift a",
+            "unit": "kg",
+            "ladder": [
+              20,
+              22.5,
+              25,
+              27.5,
+              30,
+              32.5,
+              35,
+              37.5,
+              40,
+              42.5,
+              45,
+              47.5,
+              50,
+              52.5,
+              55,
+              57.5,
+              60,
+              62.5,
+              65,
+              67.5,
+              70,
+              72.5,
+              75,
+              77.5,
+              80,
+              82.5,
+              85,
+              87.5,
+              90,
+              92.5,
+              95,
+              97.5,
+              100,
+              102.5,
+              105,
+              107.5,
+              110,
+              112.5,
+              115,
+              117.5,
+              120,
+              122.5,
+              125,
+              127.5,
+              130,
+              132.5,
+              135,
+              137.5,
+              140,
+              142.5,
+              145,
+              147.5,
+              150
+            ],
+            "setupNote": null,
+            "priorMarks": {
+              "weight": 100,
+              "e1rm": 116.7,
+              "unloadedReps": 0
+            },
+            "doneToday": [
+              {
+                "setId": "a-s0",
+                "weight": 100,
+                "reps": 5,
+                "completedAt": "2026-10-14T17:03:00.000Z"
+              }
+            ],
+            "loading": {
+              "mode": "barbell",
+              "barWeight": 20,
+              "plates": [
+                25,
+                20,
+                15,
+                10,
+                5,
+                2.5,
+                1.25
+              ]
+            }
+          },
+          "ex-b": {
+            "name": "Lift b",
+            "unit": "kg each",
+            "ladder": [
+              0,
+              2.5,
+              5,
+              7.5,
+              10,
+              12.5,
+              15,
+              17.5,
+              20,
+              22.5,
+              25,
+              27.5,
+              30,
+              32.5,
+              35,
+              37.5,
+              40,
+              42.5,
+              45,
+              47.5,
+              50,
+              52.5,
+              55,
+              57.5,
+              60,
+              62.5,
+              65,
+              67.5,
+              70,
+              72.5,
+              75,
+              77.5,
+              80,
+              82.5,
+              85,
+              87.5,
+              90,
+              92.5,
+              95,
+              97.5,
+              100,
+              102.5,
+              105,
+              107.5,
+              110,
+              112.5,
+              115,
+              117.5,
+              120,
+              122.5,
+              125,
+              127.5,
+              130,
+              132.5,
+              135,
+              137.5,
+              140,
+              142.5,
+              145,
+              147.5,
+              150
+            ],
+            "setupNote": null,
+            "priorMarks": {
+              "weight": 100,
+              "e1rm": 116.7,
+              "unloadedReps": 0
+            },
+            "doneToday": [],
+            "loading": {
+              "mode": "fixed_step",
+              "step": 2.5
+            }
+          }
+        }
+      },
+      "home": {
+        "today": "2026-10-14",
+        "state": "running",
+        "doneToday": [],
+        "closed": [],
+        "ready": null,
+        "week": [
+          {
+            "date": "2026-10-12",
+            "weekday": "Mon",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-13",
+            "weekday": "Tue",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-14",
+            "weekday": "Wed",
+            "state": "today",
+            "name": "Push A"
+          },
+          {
+            "date": "2026-10-15",
+            "weekday": "Thu",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-16",
+            "weekday": "Fri",
+            "state": "planned",
+            "name": "Pull A"
+          },
+          {
+            "date": "2026-10-17",
+            "weekday": "Sat",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-18",
+            "weekday": "Sun",
+            "state": "planned",
+            "name": "Legs A"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "idle, with today's session ready to start on the wrist",
+    "context": {
+      "v": 1,
+      "sentAt": "2026-10-14T17:05:00.000Z",
+      "phoneClaim": null,
+      "settings": {
+        "sound": true,
+        "vibrate": true
+      },
+      "live": null,
+      "home": {
+        "today": "2026-10-14",
+        "state": "ready",
+        "doneToday": [],
+        "closed": [],
+        "ready": {
+          "key": "00000000-0000-4000-8000-000000000902:2:0",
+          "routineId": "00000000-0000-4000-8000-000000000900",
+          "name": "Push A",
+          "date": "2026-10-14",
+          "status": "today",
+          "movedFrom": "2026-10-13",
+          "week": {
+            "week": 2,
+            "totalWeeks": 5,
+            "label": "Build"
+          },
+          "minutes": 30,
+          "exercises": [
+            {
+              "name": "Barbell Bench Press",
+              "kit": "Barbell",
+              "work": "4 × 6–10",
+              "badge": null,
+              "superset": null
+            },
+            {
+              "name": "Cable Crossover",
+              "kit": "Cable",
+              "work": "4 × 10–15",
+              "badge": "A1",
+              "superset": "ss-1"
+            },
+            {
+              "name": "Side Lateral Raise",
+              "kit": "Dumbbell",
+              "work": "4 × 12–15",
+              "badge": "A2",
+              "superset": "ss-1"
+            }
+          ],
+          "layout": "{\"workoutId\":\"00000000-0000-4000-8000-000000000001\",\"routineId\":\"00000000-0000-4000-8000-000000000900\",\"gymId\":\"00000000-0000-4000-8000-000000000901\",\"slot\":{\"planId\":\"00000000-0000-4000-8000-000000000902\",\"week\":2,\"sessionIndex\":0},\"exercises\":[{\"id\":\"00000000-0000-4000-8000-000000000002\",\"exerciseId\":\"ex-bench\",\"supersetGroup\":null,\"technique\":\"straight\",\"restSeconds\":null,\"tempo\":\"3-1-1-0\",\"sets\":[{\"id\":\"00000000-0000-4000-8000-000000000003\",\"type\":\"working\"},{\"id\":\"00000000-0000-4000-8000-000000000004\",\"type\":\"working\"},{\"id\":\"00000000-0000-4000-8000-000000000005\",\"type\":\"working\"},{\"id\":\"00000000-0000-4000-8000-000000000006\",\"type\":\"working\"}]},{\"id\":\"00000000-0000-4000-8000-000000000007\",\"exerciseId\":\"ex-fly\",\"supersetGroup\":\"ss-1\",\"technique\":\"straight\",\"restSeconds\":null,\"tempo\":null,\"sets\":[{\"id\":\"00000000-0000-4000-8000-000000000008\",\"type\":\"working\"},{\"id\":\"00000000-0000-4000-8000-000000000009\",\"type\":\"working\"},{\"id\":\"00000000-0000-4000-8000-000000000010\",\"type\":\"working\"},{\"id\":\"00000000-0000-4000-8000-000000000011\",\"type\":\"working\"}]},{\"id\":\"00000000-0000-4000-8000-000000000012\",\"exerciseId\":\"ex-raise\",\"supersetGroup\":\"ss-1\",\"technique\":\"straight\",\"restSeconds\":75,\"tempo\":null,\"sets\":[{\"id\":\"00000000-0000-4000-8000-000000000013\",\"type\":\"working\"},{\"id\":\"00000000-0000-4000-8000-000000000014\",\"type\":\"working\"},{\"id\":\"00000000-0000-4000-8000-000000000015\",\"type\":\"working\"},{\"id\":\"00000000-0000-4000-8000-000000000016\",\"type\":\"working\"}]}]}",
+          "snapshot": {
+            "version": 1,
+            "workoutId": "00000000-0000-4000-8000-000000000001",
+            "title": "Push A",
+            "startedAt": "2026-10-14T17:05:00.000Z",
+            "sentAt": "2026-10-14T17:05:00.000Z",
+            "stations": [
+              {
+                "name": "Barbell Bench Press",
+                "outline": "Barbell · 4 × 6–10",
+                "exerciseIds": [
+                  "ex-bench"
+                ]
+              },
+              {
+                "name": "Cable Crossover + Side Lateral Raise",
+                "outline": "Superset · Cable + Dumbbell",
+                "exerciseIds": [
+                  "ex-fly",
+                  "ex-raise"
+                ]
+              }
+            ],
+            "sets": [
+              {
+                "id": "00000000-0000-4000-8000-000000000003",
+                "exerciseId": "ex-bench",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000002",
+                "station": 0,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 1 of 4",
+                "weight": 82.5,
+                "reps": 8,
+                "source": "suggestion",
+                "carries": true,
+                "scheme": null,
+                "restAfter": 150,
+                "upNext": {
+                  "name": "Barbell Bench Press",
+                  "detail": "Set 2 of 4 · 82.5 × 8"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000004",
+                "exerciseId": "ex-bench",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000002",
+                "station": 0,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 2 of 4",
+                "weight": 82.5,
+                "reps": 8,
+                "source": "suggestion",
+                "carries": true,
+                "scheme": null,
+                "restAfter": 150,
+                "upNext": {
+                  "name": "Barbell Bench Press",
+                  "detail": "Set 3 of 4 · 82.5 × 8"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000005",
+                "exerciseId": "ex-bench",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000002",
+                "station": 0,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 3 of 4",
+                "weight": 82.5,
+                "reps": 8,
+                "source": "suggestion",
+                "carries": true,
+                "scheme": null,
+                "restAfter": 150,
+                "upNext": {
+                  "name": "Barbell Bench Press",
+                  "detail": "Set 4 of 4 · 82.5 × 8"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000006",
+                "exerciseId": "ex-bench",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000002",
+                "station": 0,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 4 of 4",
+                "weight": 82.5,
+                "reps": 8,
+                "source": "suggestion",
+                "carries": true,
+                "scheme": null,
+                "restAfter": 150,
+                "upNext": {
+                  "name": "Cable Crossover + Side Lateral Raise",
+                  "detail": "Superset · Cable + Dumbbell"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000008",
+                "exerciseId": "ex-fly",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000007",
+                "station": 1,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 1 of 4",
+                "weight": 25,
+                "reps": 12,
+                "source": "suggestion",
+                "carries": true,
+                "scheme": null,
+                "restAfter": null,
+                "upNext": {
+                  "name": "Side Lateral Raise",
+                  "detail": "Set 1 of 4"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000013",
+                "exerciseId": "ex-raise",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000012",
+                "station": 1,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 1 of 4",
+                "weight": null,
+                "reps": null,
+                "source": "none",
+                "carries": true,
+                "scheme": null,
+                "restAfter": 75,
+                "upNext": {
+                  "name": "Cable Crossover",
+                  "detail": "Set 2 of 4 · 25 × 12"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000009",
+                "exerciseId": "ex-fly",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000007",
+                "station": 1,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 2 of 4",
+                "weight": 25,
+                "reps": 12,
+                "source": "suggestion",
+                "carries": true,
+                "scheme": null,
+                "restAfter": null,
+                "upNext": {
+                  "name": "Side Lateral Raise",
+                  "detail": "Set 2 of 4"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000014",
+                "exerciseId": "ex-raise",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000012",
+                "station": 1,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 2 of 4",
+                "weight": null,
+                "reps": null,
+                "source": "none",
+                "carries": true,
+                "scheme": null,
+                "restAfter": 75,
+                "upNext": {
+                  "name": "Cable Crossover",
+                  "detail": "Set 3 of 4 · 25 × 12"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000010",
+                "exerciseId": "ex-fly",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000007",
+                "station": 1,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 3 of 4",
+                "weight": 25,
+                "reps": 12,
+                "source": "suggestion",
+                "carries": true,
+                "scheme": null,
+                "restAfter": null,
+                "upNext": {
+                  "name": "Side Lateral Raise",
+                  "detail": "Set 3 of 4"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000015",
+                "exerciseId": "ex-raise",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000012",
+                "station": 1,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 3 of 4",
+                "weight": null,
+                "reps": null,
+                "source": "none",
+                "carries": true,
+                "scheme": null,
+                "restAfter": 75,
+                "upNext": {
+                  "name": "Cable Crossover",
+                  "detail": "Set 4 of 4 · 25 × 12"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000011",
+                "exerciseId": "ex-fly",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000007",
+                "station": 1,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 4 of 4",
+                "weight": 25,
+                "reps": 12,
+                "source": "suggestion",
+                "carries": true,
+                "scheme": null,
+                "restAfter": null,
+                "upNext": {
+                  "name": "Side Lateral Raise",
+                  "detail": "Set 4 of 4"
+                }
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000016",
+                "exerciseId": "ex-raise",
+                "workoutExerciseId": "00000000-0000-4000-8000-000000000012",
+                "station": 1,
+                "type": "working",
+                "parentSetId": null,
+                "label": "Set 4 of 4",
+                "weight": null,
+                "reps": null,
+                "source": "none",
+                "carries": true,
+                "scheme": null,
+                "restAfter": 75,
+                "upNext": {
+                  "name": "Finish",
+                  "detail": "Last set done"
+                }
+              }
+            ],
+            "lifts": {
+              "ex-bench": {
+                "name": "Barbell Bench Press",
+                "unit": "kg",
+                "ladder": [
+                  20,
+                  22.5,
+                  25,
+                  27.5,
+                  30,
+                  32.5,
+                  35,
+                  37.5,
+                  40,
+                  42.5,
+                  45,
+                  47.5,
+                  50,
+                  52.5,
+                  55,
+                  57.5,
+                  60,
+                  62.5,
+                  65,
+                  67.5,
+                  70,
+                  72.5,
+                  75,
+                  77.5,
+                  80,
+                  82.5,
+                  85,
+                  87.5,
+                  90,
+                  92.5,
+                  95,
+                  97.5,
+                  100,
+                  102.5,
+                  105,
+                  107.5,
+                  110,
+                  112.5,
+                  115,
+                  117.5,
+                  120,
+                  122.5
+                ],
+                "setupNote": "Bench at 3, feet flat",
+                "priorMarks": {
+                  "weight": 80,
+                  "e1rm": 101.3,
+                  "unloadedReps": 0
+                },
+                "doneToday": [],
+                "loading": {
+                  "mode": "barbell",
+                  "barWeight": 20,
+                  "plates": [
+                    25,
+                    20,
+                    15,
+                    10,
+                    5,
+                    2.5,
+                    1.25
+                  ]
+                }
+              },
+              "ex-fly": {
+                "name": "Cable Crossover",
+                "unit": "kg",
+                "ladder": [
+                  0,
+                  5,
+                  10,
+                  15,
+                  20,
+                  25,
+                  30,
+                  35,
+                  40,
+                  45,
+                  50,
+                  55,
+                  60,
+                  65
+                ],
+                "setupNote": null,
+                "priorMarks": null,
+                "doneToday": [],
+                "loading": {
+                  "mode": "fixed_step",
+                  "step": 5
+                }
+              },
+              "ex-raise": {
+                "name": "Side Lateral Raise",
+                "unit": "kg each",
+                "ladder": [
+                  0,
+                  2.5,
+                  5,
+                  7.5,
+                  10,
+                  12.5,
+                  15,
+                  17.5,
+                  20,
+                  22.5,
+                  25,
+                  27.5,
+                  30,
+                  32.5,
+                  35,
+                  37.5,
+                  40,
+                  42.5,
+                  45,
+                  47.5,
+                  50,
+                  52.5,
+                  55,
+                  57.5,
+                  60
+                ],
+                "setupNote": null,
+                "priorMarks": null,
+                "doneToday": [],
+                "loading": {
+                  "mode": "fixed_step",
+                  "step": 2.5
+                }
+              }
+            }
+          }
+        },
+        "week": [
+          {
+            "date": "2026-10-12",
+            "weekday": "Mon",
+            "state": "done",
+            "name": "Legs B"
+          },
+          {
+            "date": "2026-10-13",
+            "weekday": "Tue",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-14",
+            "weekday": "Wed",
+            "state": "today",
+            "name": "Push A"
+          },
+          {
+            "date": "2026-10-15",
+            "weekday": "Thu",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-16",
+            "weekday": "Fri",
+            "state": "planned",
+            "name": "Pull A"
+          },
+          {
+            "date": "2026-10-17",
+            "weekday": "Sat",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-18",
+            "weekday": "Sun",
+            "state": "planned",
+            "name": "Legs A"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "ended on the phone, and logging taken back on the phone",
+    "context": {
+      "v": 1,
+      "sentAt": "2026-10-14T19:30:00.000Z",
+      "phoneClaim": {
+        "workoutId": "00000000-0000-4000-8000-000000000503",
+        "at": "2026-10-14T19:29:41.000Z"
+      },
+      "settings": {
+        "sound": false,
+        "vibrate": true
+      },
+      "live": {
+        "version": 1,
+        "workoutId": "00000000-0000-4000-8000-000000000503",
+        "title": "Push A",
+        "startedAt": "2026-10-14T17:00:00.000Z",
+        "sentAt": "2026-10-14T17:05:00.000Z",
+        "stations": [
+          {
+            "name": "Lift a",
+            "outline": "Barbell · 3 × 5",
+            "exerciseIds": [
+              "ex-a"
+            ]
+          },
+          {
+            "name": "Lift b",
+            "outline": "Dumbbell · 3 × 10",
+            "exerciseIds": [
+              "ex-b"
+            ]
+          }
+        ],
+        "sets": [
+          {
+            "id": "a-s1",
+            "exerciseId": "ex-a",
+            "workoutExerciseId": "a",
+            "station": 0,
+            "type": "working",
+            "parentSetId": null,
+            "label": "Set 2 of 3",
+            "weight": 100,
+            "reps": 5,
+            "source": "carried",
+            "carries": true,
+            "scheme": null,
+            "restAfter": 150,
+            "upNext": {
+              "name": "Lift a",
+              "detail": "Set 3 of 3 · 100 × 5"
+            }
+          },
+          {
+            "id": "a-s2",
+            "exerciseId": "ex-a",
+            "workoutExerciseId": "a",
+            "station": 0,
+            "type": "working",
+            "parentSetId": null,
+            "label": "Set 3 of 3",
+            "weight": 100,
+            "reps": 5,
+            "source": "carried",
+            "carries": true,
+            "scheme": null,
+            "restAfter": 150,
+            "upNext": {
+              "name": "Lift b",
+              "detail": "Dumbbell · 3 × 10"
+            }
+          },
+          {
+            "id": "b-s0",
+            "exerciseId": "ex-b",
+            "workoutExerciseId": "b",
+            "station": 1,
+            "type": "working",
+            "parentSetId": null,
+            "label": "Set 1 of 3",
+            "weight": 22.5,
+            "reps": 10,
+            "source": "suggestion",
+            "carries": true,
+            "scheme": null,
+            "restAfter": 90,
+            "upNext": {
+              "name": "Lift b",
+              "detail": "Set 2 of 3 · 22.5 × 10"
+            }
+          },
+          {
+            "id": "b-s1",
+            "exerciseId": "ex-b",
+            "workoutExerciseId": "b",
+            "station": 1,
+            "type": "working",
+            "parentSetId": null,
+            "label": "Set 2 of 3",
+            "weight": 22.5,
+            "reps": 10,
+            "source": "suggestion",
+            "carries": true,
+            "scheme": null,
+            "restAfter": 90,
+            "upNext": {
+              "name": "Lift b",
+              "detail": "Set 3 of 3 · 22.5 × 10"
+            }
+          },
+          {
+            "id": "b-s2",
+            "exerciseId": "ex-b",
+            "workoutExerciseId": "b",
+            "station": 1,
+            "type": "working",
+            "parentSetId": null,
+            "label": "Set 3 of 3",
+            "weight": 22.5,
+            "reps": 10,
+            "source": "suggestion",
+            "carries": true,
+            "scheme": null,
+            "restAfter": 90,
+            "upNext": {
+              "name": "Finish",
+              "detail": "Last set done"
+            }
+          }
+        ],
+        "lifts": {
+          "ex-a": {
+            "name": "Lift a",
+            "unit": "kg",
+            "ladder": [
+              20,
+              22.5,
+              25,
+              27.5,
+              30,
+              32.5,
+              35,
+              37.5,
+              40,
+              42.5,
+              45,
+              47.5,
+              50,
+              52.5,
+              55,
+              57.5,
+              60,
+              62.5,
+              65,
+              67.5,
+              70,
+              72.5,
+              75,
+              77.5,
+              80,
+              82.5,
+              85,
+              87.5,
+              90,
+              92.5,
+              95,
+              97.5,
+              100,
+              102.5,
+              105,
+              107.5,
+              110,
+              112.5,
+              115,
+              117.5,
+              120,
+              122.5,
+              125,
+              127.5,
+              130,
+              132.5,
+              135,
+              137.5,
+              140,
+              142.5,
+              145,
+              147.5,
+              150
+            ],
+            "setupNote": null,
+            "priorMarks": {
+              "weight": 100,
+              "e1rm": 116.7,
+              "unloadedReps": 0
+            },
+            "doneToday": [
+              {
+                "setId": "a-s0",
+                "weight": 100,
+                "reps": 5,
+                "completedAt": "2026-10-14T17:03:00.000Z"
+              }
+            ],
+            "loading": {
+              "mode": "barbell",
+              "barWeight": 20,
+              "plates": [
+                25,
+                20,
+                15,
+                10,
+                5,
+                2.5,
+                1.25
+              ]
+            }
+          },
+          "ex-b": {
+            "name": "Lift b",
+            "unit": "kg each",
+            "ladder": [
+              0,
+              2.5,
+              5,
+              7.5,
+              10,
+              12.5,
+              15,
+              17.5,
+              20,
+              22.5,
+              25,
+              27.5,
+              30,
+              32.5,
+              35,
+              37.5,
+              40,
+              42.5,
+              45,
+              47.5,
+              50,
+              52.5,
+              55,
+              57.5,
+              60,
+              62.5,
+              65,
+              67.5,
+              70,
+              72.5,
+              75,
+              77.5,
+              80,
+              82.5,
+              85,
+              87.5,
+              90,
+              92.5,
+              95,
+              97.5,
+              100,
+              102.5,
+              105,
+              107.5,
+              110,
+              112.5,
+              115,
+              117.5,
+              120,
+              122.5,
+              125,
+              127.5,
+              130,
+              132.5,
+              135,
+              137.5,
+              140,
+              142.5,
+              145,
+              147.5,
+              150
+            ],
+            "setupNote": null,
+            "priorMarks": {
+              "weight": 100,
+              "e1rm": 116.7,
+              "unloadedReps": 0
+            },
+            "doneToday": [],
+            "loading": {
+              "mode": "fixed_step",
+              "step": 2.5
+            }
+          }
+        }
+      },
+      "home": {
+        "today": "2026-10-14",
+        "state": "running",
+        "doneToday": [
+          {
+            "workoutId": "00000000-0000-4000-8000-000000000501",
+            "name": "Push A"
+          }
+        ],
+        "closed": [
+          {
+            "workoutId": "00000000-0000-4000-8000-000000000502",
+            "how": "discarded",
+            "at": "2026-10-14T19:01:12.000Z"
+          },
+          {
+            "workoutId": "00000000-0000-4000-8000-000000000501",
+            "how": "finished",
+            "at": "2026-10-14T18:22:05.000Z"
+          }
+        ],
+        "ready": null,
+        "week": [
+          {
+            "date": "2026-10-12",
+            "weekday": "Mon",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-13",
+            "weekday": "Tue",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-14",
+            "weekday": "Wed",
+            "state": "done",
+            "name": "Push A"
+          },
+          {
+            "date": "2026-10-15",
+            "weekday": "Thu",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-16",
+            "weekday": "Fri",
+            "state": "planned",
+            "name": "Pull A"
+          },
+          {
+            "date": "2026-10-17",
+            "weekday": "Sat",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-18",
+            "weekday": "Sun",
+            "state": "planned",
+            "name": "Legs A"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "the block is finished",
+    "context": {
+      "v": 1,
+      "sentAt": "2026-10-14T17:05:00.000Z",
+      "phoneClaim": null,
+      "settings": {
+        "sound": true,
+        "vibrate": true
+      },
+      "live": null,
+      "home": {
+        "today": "2026-10-14",
+        "state": "blockDone",
+        "doneToday": [
+          {
+            "workoutId": "00000000-0000-4000-8000-000000000504",
+            "name": "Legs A"
+          }
+        ],
+        "closed": [],
+        "ready": null,
+        "week": [
+          {
+            "date": "2026-10-12",
+            "weekday": "Mon",
+            "state": "done",
+            "name": "Push A"
+          },
+          {
+            "date": "2026-10-13",
+            "weekday": "Tue",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-14",
+            "weekday": "Wed",
+            "state": "done",
+            "name": "Legs A"
+          },
+          {
+            "date": "2026-10-15",
+            "weekday": "Thu",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-16",
+            "weekday": "Fri",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-17",
+            "weekday": "Sat",
+            "state": "rest",
+            "name": null
+          },
+          {
+            "date": "2026-10-18",
+            "weekday": "Sun",
+            "state": "rest",
+            "name": null
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "no plan",
+    "context": {
+      "v": 1,
+      "sentAt": "2026-10-14T17:05:00.000Z",
+      "phoneClaim": null,
+      "settings": {
+        "sound": true,
+        "vibrate": true
+      },
+      "live": null,
+      "home": {
+        "today": "2026-10-14",
+        "state": "noPlan",
+        "doneToday": [],
+        "closed": [],
+        "ready": null,
+        "week": []
+      }
+    }
+  }
+]
