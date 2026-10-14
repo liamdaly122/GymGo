@@ -3,9 +3,9 @@ import Testing
 @testable import GymGoKit
 
 // JSON shaped exactly as src/domain/watchProtocol.ts writes it decodes into
-// the Swift mirror, and what the watch writes reads back. The data builder's
-// fixtures (fixtures/watch/context.json, events.json) are decoded too once
-// they exist: every object in them that has a context's or an event's keys.
+// the Swift mirror, and what the watch writes reads back. The fixtures the
+// TypeScript side writes (fixtures/watch/context.json, events.json) are decoded
+// too: every object in them that has a context's or an event's keys.
 
 @Test func aContextAsThePhoneSendsItDecodes() throws {
     let json = """
@@ -104,14 +104,15 @@ private func objects(in value: Any, with keys: Set<String>) -> [[String: Any]] {
     return []
 }
 
-private func fixture(_ name: String) throws -> Any? {
+/// A fixture the TypeScript side writes (`npm run fixtures:watch`). Missing is
+/// a failure: these tests are what holds the two sides of the contract together.
+private func fixture(_ name: String) throws -> Any {
     let url = fixturesFolder.appendingPathComponent(name)
-    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
     return try JSONSerialization.jsonObject(with: Data(contentsOf: url))
 }
 
 @Test func theContextFixturesDecode() throws {
-    guard let value = try fixture("context.json") else { return }
+    let value = try fixture("context.json")
     let found = objects(in: value, with: ["v", "sentAt", "home", "settings"])
     #expect(!found.isEmpty, "context.json holds no context")
     for object in found {
@@ -126,7 +127,7 @@ private func fixture(_ name: String) throws -> Any? {
 }
 
 @Test func theEventFixturesDecode() throws {
-    guard let value = try fixture("events.json") else { return }
+    let value = try fixture("events.json")
     let found = objects(in: value, with: ["id", "kind", "workoutId", "at"])
     #expect(!found.isEmpty, "events.json holds no event")
     for object in found {
