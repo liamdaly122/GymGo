@@ -72,6 +72,10 @@ public final class WatchSessionStore {
         }
         restAlerts.onPresented = { [weak self] restId in self?.restRanOut(id: restId) ?? true }
         restAlerts.activate()
+        // A launch in the background (a rest restored from disk) must know
+        // whether its notification sounds before the rest runs out, or the
+        // cue goes to a haptic that may not reach the wrist.
+        Task { await self.restAlerts.refreshPermission() }
         retireLegacyFile()
         if state.expireRest(now: Date()) { save() }
         scheduleRest()

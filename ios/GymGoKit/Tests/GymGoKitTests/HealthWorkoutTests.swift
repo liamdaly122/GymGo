@@ -132,6 +132,17 @@ private func closed(_ workoutId: String, _ how: String, at: Date) -> [String: An
     #expect(WatchAppState().healthRecordingAction(taggedWith: nil, startedAt: started, now: waited) == .discard)
 }
 
+@Test func aRecordingThatWaitedOutIsNeverSavedUnderAnEarlierFinish() throws {
+    // w-1 finished on the phone at minute 10; the phone starts w-2 a minute
+    // later and the context naming it is held up. The only finish the watch
+    // knows ended before this recording began: it is not this recording's.
+    let started = minute(11)
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(10), closed: [closed("w-1", "finished", at: minute(10))]))
+    let waited = started.addingTimeInterval(WatchAppState.strayRecordingWait)
+    #expect(state.healthRecordingAction(taggedWith: nil, startedAt: started, now: waited) == .discard)
+}
+
 @Test func aRecordingAContextNamesAsLiveOrTaggedWithTheRunningSessionIsNeverThrownAway() throws {
     let started = minute(10)
     let hoursLater = minute(10 + 180)

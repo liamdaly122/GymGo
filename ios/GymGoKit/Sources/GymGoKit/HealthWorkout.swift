@@ -47,9 +47,9 @@ extension WatchAppState {
     ///   workout, and the context naming it has not arrived. Once a context
     ///   sent after the recording began has no workout open, or the recording
     ///   has waited `strayRecordingWait` with none open, that workout is
-    ///   over: saved if it ended as a finish just now and the recording is
-    ///   more than a few seconds long, otherwise thrown away. A recording a
-    ///   context names as live is never ended here.
+    ///   over: saved if a context sent after it began says it ended as a
+    ///   finish and the recording is more than a few seconds long, otherwise
+    ///   thrown away. A recording a context names as live is never ended here.
     /// - Anything else is left alone: the idle page offers to end it.
     public func healthRecordingAction(taggedWith tagged: String?, startedAt: Date?, now: Date) -> HealthRecordingAction {
         let closed = home?.closed ?? []
@@ -64,6 +64,10 @@ extension WatchAppState {
         guard let startedAt, liveWorkoutId == nil else { return .keep }
         let heardSince = lastSentAt.map { WatchSession.date($0) > startedAt } ?? false
         guard heardSince || now.timeIntervalSince(startedAt) >= Self.strayRecordingWait else { return .keep }
+        // Only a context sent after the recording began can say that its own
+        // workout finished. Waited out with none, any finish in `closed`
+        // ended before it began: an earlier workout, never this one.
+        guard heardSince else { return .discard }
         let justClosed = closed
             .filter { WatchSession.date($0.at) >= startedAt.addingTimeInterval(-Self.strayRecordingSlack) }
             .max { WatchSession.date($0.at) < WatchSession.date($1.at) }
