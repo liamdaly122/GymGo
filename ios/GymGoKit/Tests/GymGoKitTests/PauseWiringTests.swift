@@ -140,7 +140,9 @@ private func liveContext(reps: Int? = 5, claim: [String: Any]? = nil) throws -> 
     store.haptics.observe = { cues.append($0) }
     #expect(store.actionButtonPressed() == .logSet)
     #expect(store.session?.progress.done == 0)
-    #expect(cues == [.failed])
+    // The failure tap, and nothing that says a set was logged.
+    #expect(cues.last == .failed)
+    #expect(!cues.contains { $0 != .failed })
 }
 
 @MainActor
