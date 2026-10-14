@@ -20,37 +20,65 @@ private func log(_ session: inout WatchSession, _ weight: Double, _ reps: Int, a
 @Test func thePlansVerbShowsOnlyWhileTheNumbersAreItsSuggestion() throws {
     var session = WatchSession(snapshot: try named("two straight lifts"))
     let first = try #require(session.setInHand)
-    #expect(first.verb == "Go up")
-    #expect(first.headerLine(stations: 2) == "Set 1 of 3 · Go up")
+    #expect(first.verb(draft: nil) == "Go up")
+    #expect(first.headerLine(stations: 2, draft: nil) == "Set 1 of 3 · Go up")
 
     // After a carry the numbers are what was just done: no verb, and the
     // station's place is back.
     try log(&session, 100, 5, at: 1)
     let carried = try #require(session.setInHand)
-    #expect(carried.verb == nil)
-    #expect(carried.headerLine(stations: 2) == "Set 2 of 3 · 1/2")
+    #expect(carried.verb(draft: nil) == nil)
+    #expect(carried.headerLine(stations: 2, draft: nil) == "Set 2 of 3 · 1/2")
 }
 
 @Test func aSteppedSetSaysLighterAndWhy() throws {
     let session = WatchSession(snapshot: try named("a plan, last time, a step down and an AMRAP set"))
     let hand = try #require(session.setInHand)
-    #expect(hand.verb == "Lighter")
-    #expect(hand.headerLine(stations: 3) == "Set 2 of 3 · Lighter")
-    #expect(hand.stepDownReason == "5 was under 8, so 90kg for 8.")
+    #expect(hand.verb(draft: nil) == "Lighter")
+    #expect(hand.headerLine(stations: 3, draft: nil) == "Set 2 of 3 · Lighter")
+    #expect(hand.stepDownReason(draft: nil) == "5 was under 8, so 90kg for 8.")
+}
+
+@Test func lighterShowsOnlyWhileTheStepsNumbersAreOnScreen() throws {
+    let session = WatchSession(snapshot: try named("a plan, last time, a step down and an AMRAP set"))
+    let hand = try #require(session.setInHand)
+    let rung = Double(hand.dial.index(for: 90))
+    func draft(_ index: Double, _ reps: Double, onReps: Bool = false, setId: String? = nil) -> SetDraft {
+        SetDraft(setId: setId ?? hand.set.id, weightIndex: index, reps: reps, onReps: onReps)
+    }
+    // Where it opened, the reps tile chosen or not: still the step.
+    for opened in [draft(rung, 8), draft(rung, 8, onReps: true)] {
+        #expect(hand.headerLine(stations: 3, draft: opened) == "Set 2 of 3 · Lighter")
+        #expect(hand.stepDownReason(draft: opened) == "5 was under 8, so 90kg for 8.")
+    }
+    // A rung up, a rep more, or back to what fell short: not the step any more.
+    for dialled in [draft(rung + 1, 8), draft(rung, 9), draft(Double(hand.dial.index(for: 100)), 5)] {
+        #expect(hand.verb(draft: dialled) == nil)
+        #expect(hand.headerLine(stations: 3, draft: dialled) == "Set 2 of 3 · 1/3")
+        #expect(hand.stepDownReason(draft: dialled) == nil)
+    }
+    // A draft left from another set is not this one's.
+    #expect(hand.headerLine(stations: 3, draft: draft(rung + 1, 9, setId: "b-s0")) == "Set 2 of 3 · Lighter")
+}
+
+@Test func thePlansVerbStaysWhateverIsDialled() throws {
+    let hand = try #require(WatchSession(snapshot: try named("two straight lifts")).setInHand)
+    let down = SetDraft(setId: hand.set.id, weightIndex: Double(hand.dial.index(for: 90)), reps: 3, onReps: false)
+    #expect(hand.headerLine(stations: 2, draft: down) == "Set 1 of 3 · Go up")
 }
 
 @Test func noVerbForABackOffAWarmUpOrALiftWithNoPlan() throws {
     var pyramid = WatchSession(snapshot: try named("a superset and a pyramid"))
     try log(&pyramid, 110, 5, at: 1)
-    #expect(pyramid.setInHand?.verb == nil)
+    #expect(pyramid.setInHand?.verb(draft: nil) == nil)
 
     var noPlan = try named("two straight lifts")
     noPlan.lifts["ex-a"]!.plan = nil
-    #expect(WatchSession(snapshot: noPlan).setInHand?.verb == nil)
+    #expect(WatchSession(snapshot: noPlan).setInHand?.verb(draft: nil) == nil)
 
     var warmUp = try named("two straight lifts")
     warmUp.sets[0].type = "warmup"
-    #expect(WatchSession(snapshot: warmUp).setInHand?.verb == nil)
+    #expect(WatchSession(snapshot: warmUp).setInHand?.verb(draft: nil) == nil)
 }
 
 /// The header shares its row with the heart rate on a 41 mm screen (176
