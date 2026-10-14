@@ -200,13 +200,67 @@ private func claim(_ workoutId: String, at: Date) -> [String: Any] {
     #expect(state.summary == nil)
     #expect(state.unconfirmed.map(\.id) == ["start", "discard"])
 
-    // The stale offer, with the discarded workout's IDs, stays refused.
+    // The stale offer, with the discarded workout's IDs, stays refused when
+    // its layout is not one the watch can lay out again (this helper's does
+    // not list the snapshot's sets; FreshIdsTests has one that can).
     #expect(state.start(ready, at: minute(8)) == nil)
     #expect(state.todayCard(now: minute(8), timeZone: london).heading == "Discarded")
     // The phone's fresh offer of the same slot starts.
     state.apply(try context(sentAt: minute(9), ready: readyObject(workoutId: "w-again")))
     #expect(state.start(state.home!.ready!, at: minute(10)) != nil)
     #expect(state.session?.workoutId == "w-again")
+}
+
+@Test func aWristStartThePhoneDiscardedCanBeStartedAgainFromTheWrist() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), ready: readyObject()))
+    let stale = try #require(state.home?.ready)
+    _ = state.start(stale, at: minute(6), eventId: "start")
+    #expect(state.session?.workoutId == "w-ready")
+
+    // Discard on the phone: the session ends here, and the phone offers the
+    // same slot again with new IDs.
+    let change = state.apply(try context(
+        sentAt: minute(8), ready: readyObject(workoutId: "w-again"), closed: [closed("w-ready", "discarded", at: minute(7))]
+    ))
+    #expect(change.ended?.how == .discarded)
+    #expect(state.session == nil)
+    #expect(state.usedReadyKeys.isEmpty)
+    let card = state.todayCard(now: minute(9), timeZone: london)
+    #expect(card.canStart)
+    #expect(card.heading != "Done today")
+    #expect(state.start(state.home!.ready!, at: minute(9)) != nil)
+    #expect(state.session?.workoutId == "w-again")
+}
+
+@Test func aWristStartThePhoneDeletedFromHistoryCanBeStartedAgain() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), ready: readyObject()))
+    _ = state.start(state.home!.ready!, at: minute(6), eventId: "start")
+    _ = state.logSet(weight: 100, reps: 5, at: minute(7))
+    _ = state.finish(at: minute(30), eventId: "fin")
+    #expect(state.todayCard(now: minute(31), timeZone: london).kind == .started)
+
+    // The phone has applied the start and the finish (it lists the workout),
+    // and still offers that slot: the workout was deleted from history.
+    state.apply(try context(
+        sentAt: minute(40), ready: readyObject(workoutId: "w-again"), closed: [closed("w-ready", "finished", at: minute(30))]
+    ))
+    #expect(state.todayCard(now: minute(41), timeZone: london).canStart)
+    #expect(state.start(state.home!.ready!, at: minute(41)) != nil)
+}
+
+@Test func aWristStartIsNotOfferedAgainBeforeThePhoneHasIt() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), ready: readyObject()))
+    _ = state.start(state.home!.ready!, at: minute(6), eventId: "start")
+    _ = state.finish(at: minute(30), eventId: "fin")
+    // A context from before the drain, with another workout closed: the key stays used.
+    state.apply(try context(
+        sentAt: minute(31), ready: readyObject(workoutId: "w-new"), closed: [closed("w-other", "discarded", at: minute(2))]
+    ))
+    #expect(!state.todayCard(now: minute(32), timeZone: london).canStart)
+    #expect(state.start(state.home!.ready!, at: minute(32)) == nil)
 }
 
 @Test func nothingStartsWhileASessionRuns() throws {
@@ -321,6 +375,53 @@ private func claim(_ workoutId: String, at: Date) -> [String: Any] {
     let a1 = try #require(a1Result)
     #expect(a1.cue == .partnerNext)
     #expect(state.rest == nil)
+}
+
+@Test func aRecordOnASupersetsFirstHalfIsSaidUntilTheRestThatEndsTheRound() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: live("w-1", name: "a superset and a pyramid")))
+    for m in 6...8 { _ = state.logSet(weight: 100, reps: 5, at: minute(Double(m))) }
+    let roundRest = try #require(state.rest)
+    let ranOut = state.restRanOut(id: roundRest.id)
+    #expect(ranOut)
+
+    // A1 beats 100kg, and no rest follows: the record waits on the set screen.
+    let a1Result = state.logSet(weight: 102.5, reps: 5, at: minute(10), eventId: "a1")
+    let a1 = try #require(a1Result)
+    #expect(a1.cue == .record)
+    #expect(state.rest == nil)
+    #expect(state.setInHand?.set.id == "c-s0")
+    #expect(state.lastRecord?.kind == .weight)
+    #expect(state.lastRecord?.value == 102.5)
+
+    // A2 is no record, and its rest ends the round: the rest leads with A1's.
+    let a2Result = state.logSet(weight: 25, reps: 15, at: minute(11), eventId: "a2")
+    let a2 = try #require(a2Result)
+    #expect(a2.outcome.record == nil)
+    #expect(state.rest?.id == "a2")
+    #expect(state.lastRecord?.value == 102.5)
+
+    // Once that rest is over, it is not said again.
+    let a2RanOut = state.restRanOut(id: "a2")
+    #expect(a2RanOut)
+    #expect(state.lastRecord == nil)
+    _ = state.logSet(weight: 40, reps: 12, at: minute(13))
+    #expect(state.lastRecord == nil)
+}
+
+@Test func aRecordIsNotCarriedPastASkippedOrExpiredRest() throws {
+    var state = WatchAppState()
+    state.apply(try context(sentAt: minute(5), live: live("w-1")))
+    _ = state.logSet(weight: 102.5, reps: 5, at: minute(6), eventId: "s1")
+    #expect(state.lastRecord != nil)
+    _ = state.skipRest(at: minute(7))
+    #expect(state.lastRecord == nil)
+
+    _ = state.logSet(weight: 105, reps: 5, at: minute(8), eventId: "s2")
+    #expect(state.lastRecord != nil)
+    let expired = state.expireRest(now: minute(20))
+    #expect(expired)
+    #expect(state.lastRecord == nil)
 }
 
 @Test func skipAdjustAndRunOut() throws {
@@ -474,4 +575,54 @@ private func claim(_ workoutId: String, at: Date) -> [String: Any] {
 @Test func anEmptyObjectIsAFreshState() throws {
     let state = try JSONDecoder().decode(WatchAppState.self, from: Data("{}".utf8))
     #expect(state == WatchAppState())
+}
+
+// MARK: - Upgrading from build 4
+
+/// A session as build 4 saved it in session.json: the wrist logged a set the
+/// phone never confirmed, and the workout was finished on the phone.
+private func build4Session(finishedHere: Bool = false) throws -> Data {
+    var session = WatchSession(snapshot: try decodeSnapshot(snapshotObject("two straight lifts", workoutId: "w-old")))
+    _ = session.logSetInHand(weight: 100, reps: 5, at: minute(-3000), eventId: "old-set")
+    if finishedHere { _ = session.finish(at: minute(-2990), eventId: "old-finish") }
+    return try JSONEncoder().encode(session)
+}
+
+@Test func aBuildFourSessionDoesNotComeBackAsRunning() throws {
+    var state = WatchAppState.restore(saved: nil, build4Session: try build4Session())
+    #expect(state.session == nil)
+    #expect(state.setInHand == nil)
+    // What the wrist logged in it still goes to the phone.
+    #expect(state.unconfirmed.map(\.id) == ["old-set"])
+    #expect(state.report(at: minute(1), heartRate: nil, activeKcal: nil, health: .off).session == .none)
+
+    // The phone finished it days ago: it is neither live nor closed. Today's
+    // session can start.
+    state.apply(try context(sentAt: minute(5), ready: readyObject()))
+    #expect(state.session == nil)
+    #expect(state.todayCard(now: minute(6), timeZone: london).canStart)
+    #expect(state.start(state.home!.ready!, at: minute(6)) != nil)
+}
+
+@Test func aBuildFourSessionThePhoneStillHasOpenIsAdoptedFromItsContext() throws {
+    var state = WatchAppState.restore(saved: nil, build4Session: try build4Session())
+    let live = try snapshotObject("two straight lifts", workoutId: "w-old", sentAt: iso(minute(5)))
+    let change = state.apply(try context(sentAt: minute(5), live: live))
+    #expect(change.adopted == "w-old")
+    #expect(state.session?.workoutId == "w-old")
+}
+
+@Test func aBuildFourSessionFinishedOnTheWristStillSendsItsFinish() throws {
+    let state = WatchAppState.restore(saved: nil, build4Session: try build4Session(finishedHere: true))
+    #expect(state.session == nil)
+    #expect(state.unconfirmed.map(\.id) == ["old-set", "old-finish"])
+}
+
+@Test func theSavedStateWinsOverBuildFoursFile() throws {
+    var saved = WatchAppState()
+    saved.apply(try context(sentAt: minute(5), vibrate: false))
+    let state = WatchAppState.restore(saved: try JSONEncoder().encode(saved), build4Session: try build4Session())
+    #expect(state == saved)
+    #expect(WatchAppState.restore(saved: nil, build4Session: nil) == WatchAppState())
+    #expect(WatchAppState.restore(saved: Data("not json".utf8), build4Session: Data("{}".utf8)) == WatchAppState())
 }

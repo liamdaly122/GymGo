@@ -15,6 +15,8 @@ public struct TodayCard: Equatable, Sendable {
         case started
         /// Finished here; it saves when the phone next opens GymGo.
         case waitingForPhone
+        /// Discarded here; the phone catches up when it next opens GymGo.
+        case discarded
         /// A workout is open on the phone.
         case runningOnPhone
         case blockDone
@@ -84,6 +86,12 @@ extension WatchAppState {
         let doneToday = home.today == today ? home.doneToday.map(\.name) : []
 
         if home.state == .running || liveWorkoutId != nil {
+            if let live = liveWorkoutId, discardedHere.contains(live) {
+                return TodayCard(
+                    kind: .discarded, heading: "Discarded", doneToday: doneToday,
+                    message: "Your iPhone catches up next time you open GymGo."
+                )
+            }
             if let live = liveWorkoutId, endedWorkouts.contains(live) {
                 return TodayCard(
                     kind: .waitingForPhone, heading: "Done today", doneToday: doneToday,
@@ -100,10 +108,12 @@ extension WatchAppState {
                     message: "Next session loads from your iPhone."
                 )
             }
-            if endedWorkouts.contains(ready.snapshot.workoutId) {
-                // Discarded here: the phone offers it again once it has caught up.
+            if endedWorkouts.contains(ready.snapshot.workoutId), ready.mintedIds == nil {
+                // Discarded here, and its layout is not one the watch can lay
+                // out again under new IDs: the phone offers it again once it
+                // has caught up. Otherwise it starts again, under new IDs.
                 return TodayCard(
-                    kind: .started, heading: "Discarded", title: ready.name, doneToday: doneToday,
+                    kind: .discarded, heading: "Discarded", title: ready.name, doneToday: doneToday,
                     message: "It comes back when your iPhone next opens GymGo."
                 )
             }

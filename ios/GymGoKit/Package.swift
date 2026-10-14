@@ -22,6 +22,9 @@ let package = Package(
             dependencies: ["GymGoKit"],
             resources: [.process("Fonts")]
         ),
-        .testTarget(name: "GymGoKitTests", dependencies: ["GymGoKit"])
+        // GymGoWatchUI too: the store's wiring (which cues and notifications
+        // a change starts or stops) is tested on the Mac, with HealthKit and
+        // WatchKit compiled out.
+        .testTarget(name: "GymGoKitTests", dependencies: ["GymGoKit", "GymGoWatchUI"])
     ]
 )

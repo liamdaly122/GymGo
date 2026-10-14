@@ -96,6 +96,8 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     /// Workouts whose session ended while this watch knew of them, on either
     /// device. One of these is never adopted again.
     public private(set) var endedWorkouts: [String] = []
+    /// Workouts discarded on the wrist, which the phone may still show as open.
+    public private(set) var discardedHere: [String] = []
     /// The ready session the running one was started from on the wrist.
     public private(set) var startedFrom: StartedFrom?
     /// The workout whose session ended last, for the state report.
@@ -104,6 +106,8 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public private(set) var pending: [WatchEvent] = []
 
     public private(set) var rest: RestState?
+    /// The record to say: from the set just logged, or from the first half of
+    /// a superset round, until the rest after it is over.
     public private(set) var lastRecord: SetRecord?
     public private(set) var summary: WatchSummary?
     /// The number on the last state report sent.
@@ -111,14 +115,33 @@ public struct WatchAppState: Codable, Sendable, Equatable {
 
     public init() {}
 
-    /// For a watch upgrading from a build that saved only the session.
-    public init(session: WatchSession?) {
-        self.session = session
+    /// For a watch upgrading from build 4, which saved only the session.
+    ///
+    /// That session does not come back as running. Build 4 kept every workout
+    /// finished on the phone running on the watch, so the one it saved has
+    /// most likely ended days ago, and nothing would end it now: the phone
+    /// lists only the last day's endings in `closed`. Brought back, it would
+    /// hide Today and its Start, and start a Health workout for a session
+    /// long over. What the wrist logged in it that the phone has not
+    /// confirmed is still sent; if the phone really does still have it open,
+    /// its next context hands it back as `live`.
+    public init(upgradingFrom session: WatchSession?) {
+        pending = session?.outbox ?? []
+    }
+
+    /// What the app starts with: the state it saved, else build 4's session,
+    /// upgraded, else nothing.
+    public static func restore(saved: Data?, build4Session: Data?) -> WatchAppState {
+        if let saved, let state = try? JSONDecoder().decode(WatchAppState.self, from: saved) { return state }
+        if let build4Session, let session = try? JSONDecoder().decode(WatchSession.self, from: build4Session) {
+            return WatchAppState(upgradingFrom: session)
+        }
+        return WatchAppState()
     }
 
     enum CodingKeys: String, CodingKey {
         case lastSentAt, home, settings, phoneClaim, liveWorkoutId, session, owner, seenPhoneClaim, usedReadyKeys
-        case endedWorkouts, startedFrom, lastEnded, pending, rest, lastRecord, summary, seq
+        case endedWorkouts, discardedHere, startedFrom, lastEnded, pending, rest, lastRecord, summary, seq
     }
 
     /// Reads a state saved by any earlier build: fields added since default.
@@ -134,6 +157,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         seenPhoneClaim = try c.decodeIfPresent(String.self, forKey: .seenPhoneClaim)
         usedReadyKeys = try c.decodeIfPresent([String].self, forKey: .usedReadyKeys) ?? []
         endedWorkouts = try c.decodeIfPresent([String].self, forKey: .endedWorkouts) ?? []
+        discardedHere = try c.decodeIfPresent([String].self, forKey: .discardedHere) ?? []
         startedFrom = try c.decodeIfPresent(StartedFrom.self, forKey: .startedFrom)
         lastEnded = try c.decodeIfPresent(String.self, forKey: .lastEnded)
         pending = try c.decodeIfPresent([WatchEvent].self, forKey: .pending) ?? []
@@ -165,10 +189,22 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         phoneClaim = context.phoneClaim
         liveWorkoutId = context.live?.workoutId
 
-        // Finish or Discard on the phone ends the session here.
+        // Finish or Discard on the phone ends the session here. A start on the
+        // wrist that the phone threw away did not use its ready key, as a
+        // Discard here does not: the phone offers that session again.
         if let running = session, let closed = context.home.closed.first(where: { $0.workoutId == running.workoutId }) {
+            if closed.how == .discarded { releaseReadyKey(of: running.workoutId) }
             endSession(summary: closed.how == .finished ? .finishedOnPhone : nil, at: closed.at)
             change.ended = closed
+        }
+
+        // The phone has the workout the wrist started from this offer, and
+        // still offers the same slot: it was deleted, or filed elsewhere, and
+        // the slot is open again. The phone decides what is next.
+        if let offer = context.home.ready, let started = startedFrom, started.key == offer.key,
+           session?.workoutId != started.workoutId,
+           context.home.closed.contains(where: { $0.workoutId == started.workoutId }) {
+            releaseReadyKey(of: started.workoutId)
         }
 
         if let live = context.live {
@@ -198,6 +234,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
             owner = .phone
             seenPhoneClaim = claim.at
             rest = nil
+            lastRecord = nil
             change.claimed = true
         }
         return change
@@ -227,11 +264,22 @@ public struct WatchAppState: Codable, Sendable, Equatable {
 
     /// Starts the ready session on the wrist. Nil when something already
     /// runs, or this ready session was started before.
-    public mutating func start(_ ready: WatchReady, at date: Date, eventId: String = UUID().uuidString) -> WatchEvent? {
-        guard session == nil,
-              !usedReadyKeys.contains(ready.key),
-              !endedWorkouts.contains(ready.snapshot.workoutId) else { return nil }
-        let started = WatchSession.start(from: ready, at: date, eventId: eventId)
+    ///
+    /// A start discarded here leaves the offer's IDs spent: the phone writes
+    /// a workout ID once, even a discarded one, and cannot offer new ones
+    /// until its app next opens. So the same session starts again under IDs
+    /// the watch mints (`WatchReady.withFreshIds`), and never under the
+    /// discarded workout's.
+    public mutating func start(
+        _ ready: WatchReady, at date: Date, eventId: String = UUID().uuidString, makeId: () -> String = WatchReady.newId
+    ) -> WatchEvent? {
+        guard session == nil, !usedReadyKeys.contains(ready.key) else { return nil }
+        var offer = ready
+        if endedWorkouts.contains(ready.snapshot.workoutId) {
+            guard let fresh = ready.withFreshIds(makeId) else { return nil }
+            offer = fresh
+        }
+        let started = WatchSession.start(from: offer, at: date, eventId: eventId)
         session = started
         remember(ready.key, in: &usedReadyKeys)
         beginSession()
@@ -245,7 +293,15 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         guard owner == .watch, var running = session,
               let outcome = running.logSetInHand(weight: weight, reps: reps, at: date, eventId: eventId) else { return nil }
         session = running
-        lastRecord = outcome.record
+        // A record is said until the rest after it is over. A set with no
+        // rest after it (the first half of a superset) hands its record on,
+        // so the set screen says it and the rest that ends the round leads
+        // with it; a set logged during a rest starts afresh.
+        if let record = outcome.record {
+            lastRecord = record
+        } else if rest != nil {
+            lastRecord = nil
+        }
         if let seconds = outcome.restSeconds {
             rest = RestState(id: eventId, startedAt: date, endsAt: date.addingTimeInterval(TimeInterval(seconds)), seconds: seconds, upNext: outcome.upNext)
         } else {
@@ -259,6 +315,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public mutating func skipRest(at date: Date, eventId: String = UUID().uuidString) -> WatchEvent? {
         guard rest != nil, var running = session else { return nil }
         rest = nil
+        lastRecord = nil
         let event = running.skipRest(at: date, eventId: eventId)
         session = running
         return event
@@ -277,6 +334,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public mutating func restRanOut(id: String) -> Bool {
         guard rest?.id == id else { return false }
         rest = nil
+        lastRecord = nil
         return true
     }
 
@@ -284,6 +342,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     public mutating func expireRest(now: Date) -> Bool {
         guard let current = rest, current.endsAt <= now else { return false }
         rest = nil
+        lastRecord = nil
         return true
     }
 
@@ -296,17 +355,22 @@ public struct WatchAppState: Codable, Sendable, Equatable {
     }
 
     /// Discard on the wrist, before the first set. A discarded start did not
-    /// use its ready key: once the phone has caught up it offers the same
-    /// session again, with new IDs, and that may start. The stale offer, with
-    /// the discarded workout's IDs, stays refused through `endedWorkouts`.
+    /// use its ready key: the same session may start again, under new IDs
+    /// (see `start`). The discarded workout's own IDs are never used again:
+    /// `endedWorkouts` keeps them.
     public mutating func discard(at date: Date, eventId: String = UUID().uuidString) -> WatchEvent? {
         guard var running = session, let event = running.discard(at: date, eventId: eventId) else { return nil }
         session = running
-        if let started = startedFrom, started.workoutId == running.workoutId {
-            usedReadyKeys.removeAll { $0 == started.key }
-        }
+        releaseReadyKey(of: running.workoutId)
+        remember(running.workoutId, in: &discardedHere)
         endSession(summary: nil, at: WatchSession.isoString(date))
         return event
+    }
+
+    /// The ready key a workout was started from on the wrist may start again.
+    private mutating func releaseReadyKey(of workoutId: String) {
+        guard let started = startedFrom, started.workoutId == workoutId else { return }
+        usedReadyKeys.removeAll { $0 == started.key }
     }
 
     /// "Log here instead": the watch takes logging back, having seen the

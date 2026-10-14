@@ -26,7 +26,8 @@ public final class WatchSessionStore {
     @ObservationIgnored private let haptics = Haptics()
     @ObservationIgnored private let fileURL: URL?
     @ObservationIgnored private var restTask: Task<Void, Never>?
-    @ObservationIgnored private var repeatTask: Task<Void, Never>?
+    /// The rest-over cue once more, 8 s on. Internal for the tests.
+    @ObservationIgnored var repeatTask: Task<Void, Never>?
     @ObservationIgnored private var heartbeat: Task<Void, Never>?
     @ObservationIgnored private var healthChain: Task<Void, Never>?
     @ObservationIgnored private var lastReported: (key: WatchAppState.ReportKey, health: WatchStateReport.Health)?
@@ -35,21 +36,36 @@ public final class WatchSessionStore {
     @ObservationIgnored private var lastTouch = Date.distantPast
     @ObservationIgnored private var askedForHealth = false
     /// A workout whose Health workout would not start: not retried on every wake.
-    @ObservationIgnored private var healthFailedFor: String?
+    @ObservationIgnored private var healthRetry = HealthRetry()
+    /// The rest-over cue as a notification, for when nothing keeps the app running.
+    @ObservationIgnored let restAlerts: RestAlerts
 
-    public init(workout: WorkoutController = .shared, fileURL: URL? = WatchSessionStore.defaultFileURL) {
+    public init(
+        workout: WorkoutController = .shared, fileURL: URL? = WatchSessionStore.defaultFileURL,
+        restAlerts: RestAlerts = RestAlerts()
+    ) {
         self.workout = workout
         self.fileURL = fileURL
+        self.restAlerts = restAlerts
         state = Self.load(from: fileURL)
         haptics.enabled = state.settings.vibrate
-        workout.onFailure = { [weak self] in
+        workout.onFailure = { [weak self] failure in
             guard let self else { return }
-            // Not retried on every wake: once refused, this workout runs without Health.
-            self.healthFailedFor = self.state.session?.workoutId
-            self.haptics.play(.failed)
+            // A failure while Health is allowed is not retried on every wake:
+            // this workout runs without it. Not asked yet is asked on the
+            // next foreground, and then tried again.
+            self.healthRetry.failed(
+                self.state.session?.workoutId, authorized: self.workout.authorization == .authorized,
+                notDetermined: failure == .notDetermined
+            )
+            if failure != .notDetermined { self.haptics.play(.failed) }
+            self.syncRestAlert()
             self.keepReporting()
             self.reportIfChanged()
         }
+        restAlerts.onPresented = { [weak self] restId in self?.restRanOut(id: restId) }
+        restAlerts.activate()
+        retireLegacyFile()
         if state.expireRest(now: Date()) { save() }
         scheduleRest()
         keepReporting()
@@ -88,17 +104,21 @@ public final class WatchSessionStore {
 
         if let ended = change.ended {
             haptics.play(.endedOnPhone)
-            restTask?.cancel()
+            stopRestCues()
             if ended.how == .finished {
                 captureMetricsInSummary()
-                endHealthWorkout(saving: true)
+                endHealthWorkout()
             } else {
                 health { await self.workout.discard() }
             }
         }
         if let adopted = change.adopted {
+            if change.replaced != nil { stopRestCues() }
             if change.replaced == nil, change.ended == nil { haptics.play(.workoutStarted) }
             health {
+                // One left over from a workout already over is ended, never
+                // relabelled; one untagged is this session's.
+                await self.settleHealthRecording()
                 if self.workout.isRunning {
                     await self.workout.tag(adopted)
                 } else if self.isForeground {
@@ -106,10 +126,10 @@ public final class WatchSessionStore {
                 }
             }
         }
-        if change.claimed {
-            restTask?.cancel()
-            repeatTask?.cancel()
-        }
+        if change.claimed { stopRestCues() }
+        // A Health workout recording with nothing behind it any more: the
+        // phone ended the workout it was opened for before this watch adopted it.
+        health { await self.settleHealthRecording() }
         scheduleRest()
         save()
         keepReporting()
@@ -139,7 +159,8 @@ public final class WatchSessionStore {
         save()
         keepReporting()
         reportIfChanged()
-        let workoutId = ready.snapshot.workoutId
+        // The session's own ID: a start again after a Discard here runs under new ones.
+        let workoutId = event.workoutId
         health { await self.startHealth(for: workoutId) }
     }
 
@@ -159,7 +180,7 @@ public final class WatchSessionStore {
         touched()
         guard let event = state.skipRest(at: Date()) else { return }
         sendEvent(event)
-        restTask?.cancel()
+        scheduleRest()
         haptics.play(.restAdjusted)
         save()
         reportIfChanged()
@@ -180,13 +201,13 @@ public final class WatchSessionStore {
         touched()
         guard let event = state.finish(at: Date()) else { return }
         sendEvent(event)
-        restTask?.cancel()
-        repeatTask?.cancel()
+        stopRestCues()
+        scheduleRest()
         captureMetricsInSummary()
         save()
         keepReporting()
         reportIfChanged()
-        endHealthWorkout(saving: true)
+        endHealthWorkout()
     }
 
     /// Discard, before the first set, after the screen has asked.
@@ -194,7 +215,8 @@ public final class WatchSessionStore {
         touched()
         guard let event = state.discard(at: Date()) else { return }
         sendEvent(event)
-        restTask?.cancel()
+        stopRestCues()
+        scheduleRest()
         save()
         keepReporting()
         reportIfChanged()
@@ -215,9 +237,11 @@ public final class WatchSessionStore {
     }
 
     /// The Health workout runs with no GymGo session behind it (the phone
-    /// opened the app, and no workout followed): end it, saved.
+    /// opened the app, and no workout followed): end it, not saved. A
+    /// workout that ended as a finish is saved without asking
+    /// (`settleHealthRecording`); what is left here has nothing to save.
     public func endStrayRecording() {
-        endHealthWorkout(saving: true)
+        health { await self.workout.discard() }
     }
 
     // MARK: - The app and the screen
@@ -251,15 +275,22 @@ public final class WatchSessionStore {
             save()
             reportIfChanged()
         }
+        syncRestAlert()
+        restAlerts.clearDelivered()
         health {
+            // Health can be turned on or off in Settings at any time.
+            self.workout.refreshAuthorization()
             if !self.askedForHealth, await self.workout.needsAuthorization() {
                 self.askedForHealth = true
-                await self.workout.authorize()
+                if await self.workout.authorize() { self.healthRetry.granted() }
             }
-            if let session = self.state.session, !self.workout.isRunning, self.healthFailedFor != session.workoutId,
-               self.workout.authorization != .denied, self.workout.authorization != .unavailable {
+            // `start` reads the authorisation afresh: refused or unavailable
+            // returns at once, and a grant since the last wake starts it.
+            if let session = self.state.session, !self.workout.isRunning, self.healthRetry.mayStart(session.workoutId) {
                 await self.startHealth(for: session.workoutId)
             }
+            await self.settleSavingSummary()
+            await self.restAlerts.requestPermissionOnce()
         }
         reportIfChanged()
     }
@@ -269,8 +300,10 @@ public final class WatchSessionStore {
     /// app may do so from the background; the context names the workout.
     public func phoneStartedWorkout() {
         health {
+            await self.settleHealthRecording()
             let ok = await self.workout.start(workoutId: self.state.session?.workoutId)
-            if !ok, self.workout.health == .off { self.haptics.play(.failed) }
+            // Expected while Health has not been asked yet: the next foreground asks.
+            if !ok, self.workout.authorization == .authorized { self.haptics.play(.failed) }
         }
     }
 
@@ -278,9 +311,9 @@ public final class WatchSessionStore {
     public func recoverWorkout() {
         health {
             await self.workout.recover()
-            if let id = self.state.session?.workoutId, self.workout.isRunning, self.workout.workoutId == nil {
-                await self.workout.tag(id)
-            }
+            // Tagged for the running session, or ended if the GymGo workout
+            // it recorded is over: a crash mid-finish leaves one behind.
+            await self.settleHealthRecording()
         }
     }
 
@@ -293,6 +326,7 @@ public final class WatchSessionStore {
         healthChain = Task { @MainActor in
             await previous?.value
             await operation()
+            self.syncRestAlert()
             self.keepReporting()
             self.reportIfChanged()
         }
@@ -301,13 +335,47 @@ public final class WatchSessionStore {
     private func startHealth(for workoutId: String) async {
         if !askedForHealth, await workout.needsAuthorization() {
             askedForHealth = true
-            await workout.authorize()
+            if await workout.authorize() { healthRetry.granted() }
         }
+        // A Health workout left over from a workout already over is ended
+        // first, so it is never relabelled as this one.
+        await settleHealthRecording()
         let ok = await workout.start(workoutId: workoutId)
-        if !ok, workout.authorization != .denied, workout.authorization != .unavailable {
-            healthFailedFor = workoutId
+        // Failing while Health is allowed is not retried on every wake. Not
+        // asked yet, refused or unavailable is read afresh next time.
+        if !ok, workout.authorization == .authorized {
+            healthRetry.failed(workoutId, authorized: true)
             haptics.play(.failed)
         }
+    }
+
+    /// The Health workout recording now, set straight: tagged with the
+    /// running session, or ended when the GymGo workout it recorded is over
+    /// (`WatchAppState.healthRecordingAction`).
+    private func settleHealthRecording() async {
+        guard workout.isRunning else { return }
+        switch state.healthRecordingAction(taggedWith: workout.workoutId, startedAt: workout.startDate, now: Date()) {
+        case .keep:
+            break
+        case .tag(let workoutId):
+            await workout.tag(workoutId)
+        case .finish(let tag):
+            if let tag { await workout.tag(tag) }
+            await saveHealthWorkout()
+        case .discard:
+            await workout.discard()
+        }
+    }
+
+    /// A summary still "Saving to Health…" with nothing saving it now: the
+    /// app was relaunched mid-save and no workout session came back. Health
+    /// says whether the save landed.
+    private func settleSavingSummary() async {
+        guard let summary = state.summary, summary.health == .saving, !workout.isRunning else { return }
+        let saved = await workout.isSaved(summary.workoutId)
+        guard state.summary?.workoutId == summary.workoutId, state.summary?.health == .saving else { return }
+        state.updateSummary { $0.health = saved == true ? .saved : .notSaved }
+        save()
     }
 
     private func captureMetricsInSummary() {
@@ -320,22 +388,29 @@ public final class WatchSessionStore {
         }
     }
 
-    private func endHealthWorkout(saving: Bool) {
-        health {
-            guard self.workout.isRunning else { return }
-            let summaryFor = self.state.summary?.workoutId
-            let saved = await self.workout.finish()
-            if let summaryFor, self.state.summary?.workoutId == summaryFor {
-                let average = self.workout.averageHeartRate, kcal = self.workout.activeKcal
-                self.state.updateSummary {
-                    $0.health = saved ? .saved : .notSaved
-                    if let average { $0.averageHeartRate = average }
-                    if let kcal { $0.activeKcal = kcal }
-                }
-                self.save()
+    private func endHealthWorkout() {
+        health { await self.saveHealthWorkout() }
+    }
+
+    /// Ends the Health workout, saved, and says so on the summary of the
+    /// workout it recorded.
+    private func saveHealthWorkout() async {
+        guard workout.isRunning else { return }
+        let summaryFor = state.summary?.workoutId
+        let tagged = workout.workoutId
+        var saved = await workout.finish()
+        // A save begun before a relaunch may have landed already.
+        if !saved, let tagged, await workout.isSaved(tagged) == true { saved = true }
+        if let summaryFor, state.summary?.workoutId == summaryFor, tagged == nil || tagged == summaryFor {
+            let average = workout.averageHeartRate, kcal = workout.activeKcal
+            state.updateSummary {
+                $0.health = saved ? .saved : .notSaved
+                if let average { $0.averageHeartRate = average }
+                if let kcal { $0.activeKcal = kcal }
             }
-            self.haptics.play(saved ? .savedToHealth : .failed)
+            save()
         }
+        haptics.play(saved ? .savedToHealth : .failed)
     }
 
     // MARK: - The rest's cues
@@ -344,6 +419,7 @@ public final class WatchSessionStore {
     /// Rescheduled whenever the rest changes.
     private func scheduleRest() {
         restTask?.cancel()
+        syncRestAlert()
         guard let rest = state.rest else { return }
         let cues = restCues(endsAt: rest.endsAt, seconds: rest.seconds, now: Date())
         let id = rest.id
@@ -361,19 +437,46 @@ public final class WatchSessionStore {
         }
     }
 
+    /// The rest-over notification follows the rest and Health: wanted while
+    /// a rest runs and no Health workout keeps the app running.
+    private func syncRestAlert() {
+        restAlerts.sync(RestAlert.wanted(
+            for: state.rest, healthRecording: workout.isRunning, vibrate: state.settings.vibrate, now: Date()
+        ))
+    }
+
+    /// The rest's cues, and the rest-over repeat, stop: the session they
+    /// belonged to ended, was replaced, or went to the phone.
+    private func stopRestCues() {
+        restTask?.cancel()
+        repeatTask?.cancel()
+    }
+
     /// The rest is over: the strong cue, and once more 8 s later unless the
-    /// screen was woken or touched in between.
-    private func restRanOut(id: String) {
+    /// screen was woken or touched in between, another rest began, or the
+    /// session it belonged to is over. From the rest's own timer, or from its
+    /// notification in the foreground: whichever comes first plays it.
+    func restRanOut(id: String) {
         guard state.restRanOut(id: id) else { return }
         haptics.play(.restOver)
+        // In the foreground the cue above plays, so the notification goes.
+        // Not otherwise: without a workout session a tap may not play in the
+        // background, and the notification firing now is what reaches the wrist.
+        if isForeground { syncRestAlert() }
         let endedAt = Date()
         let awakeAtEnd = screenAwake
+        let restSession = state.session?.workoutId
         repeatTask?.cancel()
         repeatTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(restOverRepeatSeconds))
             guard !Task.isCancelled, let self else { return }
             let noticed = awakeAtEnd || self.lastWoke > endedAt || self.lastTouch > endedAt
-            if !noticed, self.state.rest == nil { self.haptics.play(.restOver) }
+            if restOverPlaysAgain(
+                noticed: noticed, restRunning: self.state.rest != nil,
+                restSession: restSession, runningSession: self.state.session?.workoutId
+            ) {
+                self.haptics.play(.restOver)
+            }
         }
         save()
         reportIfChanged()
@@ -427,16 +530,24 @@ public final class WatchSessionStore {
 
     private static func load(from fileURL: URL?) -> WatchAppState {
         guard let fileURL else { return WatchAppState() }
-        if let data = try? Data(contentsOf: fileURL), let state = try? JSONDecoder().decode(WatchAppState.self, from: data) {
-            return state
-        }
         // Build 4 saved only the session, beside where the state now goes.
-        let old = fileURL.deletingLastPathComponent().appendingPathComponent("session.json")
-        if let data = try? Data(contentsOf: old), let session = try? JSONDecoder().decode(WatchSession.self, from: data) {
-            try? FileManager.default.removeItem(at: old)
-            return WatchAppState(session: session.isOver ? nil : session)
-        }
-        return WatchAppState()
+        // Its session is not brought back as running: see
+        // `WatchAppState.init(upgradingFrom:)`.
+        let old = legacyFileURL(beside: fileURL)
+        return WatchAppState.restore(saved: try? Data(contentsOf: fileURL), build4Session: try? Data(contentsOf: old))
+    }
+
+    private nonisolated static func legacyFileURL(beside fileURL: URL) -> URL {
+        fileURL.deletingLastPathComponent().appendingPathComponent("session.json")
+    }
+
+    /// Build 4's file goes once what came from it is saved in the new one.
+    private func retireLegacyFile() {
+        guard let fileURL else { return }
+        let old = Self.legacyFileURL(beside: fileURL)
+        guard FileManager.default.fileExists(atPath: old.path) else { return }
+        save()
+        try? FileManager.default.removeItem(at: old)
     }
 
     private func save() {

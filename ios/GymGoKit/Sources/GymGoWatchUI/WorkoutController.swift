@@ -25,6 +25,14 @@ public final class WorkoutController: NSObject {
     public static let shared = WorkoutController()
 
     public enum Authorization: Sendable, Equatable { case unknown, authorized, denied, unavailable }
+    /// Why a workout session failed, as far as trying again goes.
+    public enum Failure: Sendable, Equatable {
+        /// Health has not been asked yet: the next foreground asks.
+        case notDetermined
+        case denied
+        /// Another workout app took over, watchOS ended it, or HealthKit refused.
+        case other
+    }
 
     /// A HealthKit workout session is running (started, recovered, not yet ended).
     public private(set) var isRunning = false
@@ -40,7 +48,7 @@ public final class WorkoutController: NSObject {
     public private(set) var lastError: String?
 
     /// Called when a session the app did not end fails or ends.
-    @ObservationIgnored public var onFailure: (@MainActor () -> Void)?
+    @ObservationIgnored public var onFailure: (@MainActor (Failure) -> Void)?
 
     /// What the state report says about the Health workout.
     public var health: WatchStateReport.Health {
@@ -60,6 +68,9 @@ public final class WorkoutController: NSObject {
     @ObservationIgnored private var ending = false
     @ObservationIgnored private var closed = false
     @ObservationIgnored private var waiters: [CheckedContinuation<Bool, Never>] = []
+    /// Closes the session being ended if `.stopped` never arrives. Tied to
+    /// that session: it can never close a later one.
+    @ObservationIgnored private var fallback: Task<Void, Never>?
 
     static let share: Set<HKSampleType> = [
         HKObjectType.workoutType(),
@@ -116,8 +127,10 @@ public final class WorkoutController: NSObject {
         #endif
     }
 
-    #if os(watchOS)
-    private func refreshAuthorization() {
+    /// Reads the authorisation afresh: Health can be turned on or off for
+    /// GymGo in Settings at any time.
+    public func refreshAuthorization() {
+        #if os(watchOS)
         guard HKHealthStore.isHealthDataAvailable() else {
             authorization = .unavailable
             return
@@ -127,8 +140,10 @@ public final class WorkoutController: NSObject {
         case .sharingDenied: authorization = .denied
         default: authorization = .unknown
         }
+        #else
+        authorization = .unavailable
+        #endif
     }
-    #endif
 
     // MARK: - Lifecycle
 
@@ -236,10 +251,34 @@ public final class WorkoutController: NSObject {
         #endif
     }
 
+    /// Whether Health holds a saved workout for this GymGo workout, found by
+    /// its sync identifier. Nil when it cannot tell.
+    public func isSaved(_ workoutId: String) async -> Bool? {
+        #if os(watchOS)
+        guard HKHealthStore.isHealthDataAvailable() else { return nil }
+        let store = healthStore
+        return await withTimeout(5, otherwise: nil as Bool?) {
+            await withCheckedContinuation { continuation in
+                let predicate = HKQuery.predicateForObjects(
+                    withMetadataKey: HKMetadataKeySyncIdentifier, allowedValues: ["gymgo.workout.\(workoutId)"]
+                )
+                let query = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: 1, sortDescriptors: nil) { _, samples, error in
+                    continuation.resume(returning: error == nil ? !(samples ?? []).isEmpty : nil)
+                }
+                store.execute(query)
+            }
+        }
+        #else
+        return nil
+        #endif
+    }
+
     // MARK: - Internals
 
     #if os(watchOS)
     private func adopt(_ session: HKWorkoutSession, _ builder: HKLiveWorkoutBuilder) {
+        fallback?.cancel()
+        fallback = nil
         self.session = session
         self.builder = builder
         isRunning = true
@@ -262,21 +301,25 @@ public final class WorkoutController: NSObject {
             switch session.state {
             case .running, .paused:
                 session.stopActivity(with: Date())
-                // If `.stopped` never arrives, close anyway.
-                Task { [weak self] in
+                // If `.stopped` never arrives, close anyway: this session,
+                // and never one started after it.
+                fallback?.cancel()
+                fallback = Task { [weak self] in
                     try? await Task.sleep(for: .seconds(8))
-                    await self?.close(at: Date())
+                    guard !Task.isCancelled, let self, self.session === session else { return }
+                    await self.close(session, at: Date())
                 }
             default:
-                Task { await self.close(at: Date()) }
+                Task { await self.close(session, at: Date()) }
             }
         }
     }
 
     /// Runs once the session has stopped: end the collection, save or
-    /// discard, end the session.
-    private func close(at date: Date) async {
-        guard !closed, let session, let builder else { return }
+    /// discard, end the session. Only for the session it is given, while it
+    /// is still the one here.
+    private func close(_ target: HKWorkoutSession, at date: Date) async {
+        guard !closed, let session, session === target, let builder else { return }
         closed = true
         var saved = false
         // Each step bounded, so a HealthKit call that never answers cannot
@@ -295,6 +338,9 @@ public final class WorkoutController: NSObject {
             if !saved { lastError = "The Health workout was not saved" }
         }
         session.end()
+        // Ended meanwhile (`.ended` already tore it down and answered), or
+        // another session is here now: neither is this close's to touch.
+        guard self.session === target else { return }
         teardown()
         resolve(saved)
     }
@@ -306,6 +352,8 @@ public final class WorkoutController: NSObject {
     }
 
     private func teardown() {
+        fallback?.cancel()
+        fallback = nil
         session = nil
         builder = nil
         isRunning = false
@@ -316,14 +364,14 @@ public final class WorkoutController: NSObject {
         guard changed === session else { return }
         switch state {
         case .stopped:
-            await close(at: date)
+            await close(changed, at: date)
         case .ended:
             // Ended without Finish or Discard here: another workout app took
             // over, or watchOS ended it. What it collected is not saved.
             let unexpected = !ending
             teardown()
             resolve(false)
-            if unexpected { onFailure?() }
+            if unexpected { onFailure?(.other) }
         default:
             break
         }
@@ -341,7 +389,12 @@ public final class WorkoutController: NSObject {
             teardown()
             resolve(false)
         }
-        onFailure?()
+        let failure: Failure = switch code {
+        case HKError.Code.errorAuthorizationNotDetermined.rawValue: .notDetermined
+        case HKError.Code.errorAuthorizationDenied.rawValue: .denied
+        default: .other
+        }
+        onFailure?(failure)
     }
 
     fileprivate func collected(from source: HKLiveWorkoutBuilder, heartRate: Double?, average: Double?, kcal: Double?) {
