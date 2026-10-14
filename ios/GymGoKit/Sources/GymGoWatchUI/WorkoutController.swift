@@ -1,9 +1,12 @@
 import Foundation
 import GymGoKit
 import Observation
+import os
 #if os(watchOS)
 import HealthKit
 #endif
+
+private let log = Logger(subsystem: "com.liamdaly.gymgo.watchkitapp", category: "Health")
 
 /// The watch's HealthKit workout: one `HKWorkoutSession`
 /// (traditionalStrengthTraining, indoor) with its live builder per GymGo
@@ -19,6 +22,11 @@ import HealthKit
 /// Nothing here may take the app down. If HealthKit is unavailable (the
 /// simulator, an older watch), refused, or fails, the session on the wrist
 /// carries on without it, and `health` says why.
+///
+/// A pause is HealthKit's own state, read from the `HKWorkoutSession` (and
+/// again on recovery), never a copy kept in `WatchAppState`: a crash cannot
+/// leave a second copy stale. The rules for it are pure, in GymGoKit's
+/// `Pause.swift`.
 @MainActor
 @Observable
 public final class WorkoutController: NSObject {
@@ -46,9 +54,32 @@ public final class WorkoutController: NSObject {
     public private(set) var activeKcal: Double?
     public private(set) var authorization: Authorization = .unknown
     public private(set) var lastError: String?
+    /// The Health recording is paused (`HKWorkoutSessionState.paused`). The
+    /// session still runs, so `health` stays `recording` and the app keeps
+    /// its place on the wrist.
+    public private(set) var isPaused = false
+    /// When the pause began, on the watch's clock; nil while recording.
+    public private(set) var pausedAt: Date?
+    /// Health's active time, every pause left out: what the metrics clock
+    /// shows, and what Health saves as the workout's duration.
+    public private(set) var activeTime: ActiveTime?
 
     /// Called when a session the app did not end fails or ends.
     @ObservationIgnored public var onFailure: (@MainActor (Failure) -> Void)?
+    /// Called once each time a Health session starts recording: when its
+    /// collection has begun in `start`, and when `recover` has taken one
+    /// back. Never on adoption alone. The watch target donates the Action
+    /// button's next action from here, so every start gets one, however it
+    /// began: Start on the wrist, the phone, the Action button, a recovery.
+    @ObservationIgnored public var onRecordingStarted: (@MainActor () -> Void)?
+    /// Called when the Health session pauses or resumes, however that came
+    /// about: an intent, a button, both of the watch's buttons, a recovery.
+    @ObservationIgnored public var onPauseChanged: (@MainActor () -> Void)?
+    /// When a pause or resume was last asked for directly. A
+    /// `pauseOrResumeRequest` soon after is its echo (`PauseRequest`).
+    @ObservationIgnored private var lastAsked: Date?
+    /// Until when no Health permission sheet may show (`holdHealthPrompts`).
+    @ObservationIgnored private var promptsHeldUntil: Date?
 
     /// What the state report says about the Health workout.
     public var health: WatchStateReport.Health {
@@ -96,6 +127,10 @@ public final class WorkoutController: NSObject {
     /// the app may save workouts.
     @discardableResult
     public func authorize() async -> Bool {
+        if promptsHeld {
+            refreshAuthorization()
+            return authorization == .authorized
+        }
         #if os(watchOS)
         guard HKHealthStore.isHealthDataAvailable() else {
             authorization = .unavailable
@@ -116,8 +151,10 @@ public final class WorkoutController: NSObject {
         #endif
     }
 
-    /// Whether asking would show a prompt: the app has not asked yet.
+    /// Whether asking would show a prompt: the app has not asked yet. Never
+    /// while prompts are held: there is nothing to ask then.
     public func needsAuthorization() async -> Bool {
+        if promptsHeld { return false }
         #if os(watchOS)
         guard HKHealthStore.isHealthDataAvailable() else { return false }
         let status = try? await healthStore.statusForAuthorizationRequest(toShare: Self.share, read: Self.read)
@@ -126,6 +163,17 @@ public final class WorkoutController: NSObject {
         return false
         #endif
     }
+
+    /// The Action button's start must never ask for Health (it has 30
+    /// seconds to start a workout, and a sheet waits on the lifter): no
+    /// prompt shows for `seconds`. `needsAuthorization` says no, and
+    /// `authorize` only reads, so the next foreground after that asks.
+    public func holdHealthPrompts(for seconds: TimeInterval) {
+        promptsHeldUntil = Date().addingTimeInterval(seconds)
+    }
+
+    /// Internal for the tests.
+    var promptsHeld: Bool { (promptsHeldUntil ?? .distantPast) > Date() }
 
     /// Reads the authorisation afresh: Health can be turned on or off for
     /// GymGo in Settings at any time.
@@ -179,6 +227,9 @@ public final class WorkoutController: NSObject {
                 do { try await builder.beginCollection(at: start); return true } catch { return false }
             }
             guard began else { throw HKError(.errorInvalidArgument) }
+            readActiveTime()
+            mirrorToPhone(session)
+            onRecordingStarted?()
             if let workoutId { await tag(workoutId) }
             return true
         } catch {
@@ -248,7 +299,53 @@ public final class WorkoutController: NSObject {
         adopt(recovered, builder)
         startDate = builder.startDate ?? recovered.startDate
         workoutId = builder.metadata[HKMetadataKeyExternalUUID] as? String
+        readActiveTime()
+        // Paused before the crash: HealthKit kept it paused, and says since when.
+        if recovered.state == .paused {
+            let since = builder.workoutEvents.last { $0.type == .pause }?.dateInterval.start ?? Date()
+            pauseChanged(paused: true, at: since)
+        }
+        onRecordingStarted?()
         #endif
+    }
+
+    // MARK: - Pause and resume
+
+    /// Pauses the Health recording: the pause intent (the Action and side
+    /// buttons), or a Pause button. Only a running session pauses. `isPaused`
+    /// follows when HealthKit reports the new state, not before.
+    public func pause() {
+        lastAsked = Date()
+        #if os(watchOS)
+        guard let session, session.state == .running else { return }
+        session.pause()
+        #endif
+    }
+
+    /// Resumes a paused Health recording: the resume intent, a Resume
+    /// button, or a set logged while paused.
+    public func resume() {
+        lastAsked = Date()
+        #if os(watchOS)
+        guard let session, session.state == .paused else { return }
+        session.resume()
+        #endif
+    }
+
+    /// What HealthKit's `pauseOrResumeRequest` does now: a toggle on the
+    /// session's state, or nothing within 2 s of a pause or resume asked for
+    /// directly. Internal for the tests.
+    func answerRequest(_ phase: HealthSessionPhase, now: Date) -> PauseRequest.Answer? {
+        PauseRequest.answer(phase, lastAsked: lastAsked, now: now)
+    }
+
+    /// The session paused or resumed, as HealthKit reports it or recovery
+    /// finds it. Internal for the tests, which have no HealthKit.
+    func pauseChanged(paused: Bool, at date: Date) {
+        guard isPaused != paused else { return }
+        isPaused = paused
+        pausedAt = paused ? date : nil
+        onPauseChanged?()
     }
 
     /// Whether Health holds a saved workout for this GymGo workout, found by
@@ -289,6 +386,34 @@ public final class WorkoutController: NSObject {
         heartRate = nil
         averageHeartRate = nil
         activeKcal = nil
+        isPaused = false
+        pausedAt = nil
+        activeTime = nil
+        lastAsked = nil
+    }
+
+    /// Health's active time, read now from the builder.
+    private func readActiveTime() {
+        guard let session, let builder else {
+            activeTime = nil
+            return
+        }
+        let now = Date()
+        activeTime = ActiveTime(seconds: builder.elapsedTime(at: now), at: now, running: session.state == .running)
+    }
+
+    /// Mirrors the session to the iPhone, which launches GymGo there in the
+    /// background with leave to start its Live Activity. The watch's session
+    /// stays the only one that saves to Health. A failure is logged and goes
+    /// no further: it must never touch the workout.
+    private func mirrorToPhone(_ session: HKWorkoutSession) {
+        Task {
+            do {
+                try await session.startMirroringToCompanionDevice()
+            } catch {
+                log.error("Mirroring to the iPhone failed: \(String(describing: error), privacy: .public)")
+            }
+        }
     }
 
     private func end(discarding: Bool) async -> Bool {
@@ -358,6 +483,9 @@ public final class WorkoutController: NSObject {
         builder = nil
         isRunning = false
         ending = false
+        isPaused = false
+        pausedAt = nil
+        activeTime = nil
     }
 
     fileprivate func sessionChanged(_ changed: HKWorkoutSession, to state: HKWorkoutSessionState, at date: Date) async {
@@ -372,9 +500,33 @@ public final class WorkoutController: NSObject {
             teardown()
             resolve(false)
             if unexpected { onFailure?(.other) }
+        case .paused, .running:
+            readActiveTime()
+            pauseChanged(paused: state == .paused, at: date)
         default:
             break
         }
+    }
+
+    /// Both of the watch's buttons together.
+    fileprivate func requestedPauseOrResume(on source: HKWorkoutSession) {
+        guard source === session else { return }
+        let phase: HealthSessionPhase = switch source.state {
+        case .running: .running
+        case .paused: .paused
+        default: .other
+        }
+        switch answerRequest(phase, now: Date()) {
+        case .pause: source.pause()
+        case .resume: source.resume()
+        case nil: break
+        }
+    }
+
+    /// The builder took in an event: a pause or a resume moves its elapsed time.
+    fileprivate func collectedEvent(from source: HKLiveWorkoutBuilder) {
+        guard source === builder else { return }
+        readActiveTime()
     }
 
     fileprivate func sessionFailed(_ failed: HKWorkoutSession, _ message: String, code: Int?) {
@@ -422,6 +574,14 @@ extension WorkoutController: HKWorkoutSessionDelegate {
         let code = (error as? HKError)?.code.rawValue ?? ((error as NSError).domain == HKErrorDomain ? (error as NSError).code : nil)
         Task { @MainActor in self.sessionFailed(workoutSession, message, code: code) }
     }
+
+    /// The builder records pauses and resumes by itself
+    /// (`shouldCollectWorkoutEvents`); only the lifter's request to pause or
+    /// resume, from both of the watch's buttons, is acted on here.
+    nonisolated public func workoutSession(_ workoutSession: HKWorkoutSession, didGenerate event: HKWorkoutEvent) {
+        guard event.type == .pauseOrResumeRequest else { return }
+        Task { @MainActor in self.requestedPauseOrResume(on: workoutSession) }
+    }
 }
 
 extension WorkoutController: HKLiveWorkoutBuilderDelegate {
@@ -434,7 +594,11 @@ extension WorkoutController: HKLiveWorkoutBuilderDelegate {
         Task { @MainActor in self.collected(from: workoutBuilder, heartRate: heartRate, average: average, kcal: kcal) }
     }
 
-    nonisolated public func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
+    /// A pause or resume reached the builder: its elapsed time moves now
+    /// (`HKLiveWorkoutBuilder.elapsedTime`).
+    nonisolated public func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {
+        Task { @MainActor in self.collectedEvent(from: workoutBuilder) }
+    }
 }
 #endif
 

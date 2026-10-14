@@ -1,3 +1,4 @@
+import AppIntents
 import GymGoWatchUI
 import HealthKit
 import SwiftUI
@@ -9,6 +10,21 @@ import WatchKit
 @main
 struct GymGoWatchApp: App {
     @WKApplicationDelegateAdaptor(GymGoAppDelegate.self) private var appDelegate
+
+    /// The hooks GymGoWatchUI cannot set itself, because the intents live in
+    /// this target. Set before anything can start or recover a workout.
+    init() {
+        let workout = WorkoutController.shared
+        // Every Health recording, however it started, makes a press of the
+        // Action button the next action (log the set, skip the rest, resume).
+        workout.onRecordingStarted = { ActionButtonDonation.donateNextAction() }
+        // A pause or resume from any source: the rest-over notification and
+        // the phone follow.
+        workout.onPauseChanged = { WatchApp.shared.store.workoutPauseChanged() }
+        // Only phrases with parameters need it; with one fixed phrase set it
+        // just registers them.
+        GymGoShortcuts.updateAppShortcutParameters()
+    }
 
     var body: some Scene {
         WindowGroup {
