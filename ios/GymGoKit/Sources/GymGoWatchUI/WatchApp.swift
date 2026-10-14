@@ -14,15 +14,32 @@ public final class WatchApp {
     public static let shared = WatchApp()
 
     public let store: WatchSessionStore
+    /// The watch face's copy of Today and the session: written after every
+    /// save that changes it, for the complications extension.
+    private let glance: GlancePublisher
     #if os(watchOS)
     private let link: PhoneLink
     #endif
 
     private init() {
         store = WatchSessionStore(workout: .shared)
+        glance = .live
         #if os(watchOS)
         link = PhoneLink(store: store)
         #endif
+        let glance = glance
+        store.onSaved = { state in glance.publish(state) }
+        // A first launch of this build writes the file before anything changes.
+        glance.publish(store.state)
+        NotificationCenter.default.addObserver(forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.timeZoneChanged() }
+        }
+    }
+
+    /// Midnight moved: the complications' timeline is worked out again.
+    private func timeZoneChanged() {
+        NSTimeZone.resetSystemTimeZone()
+        glance.timeZoneChanged(store.state)
     }
 
     /// Makes sure everything is up: the link starts listening at launch.
