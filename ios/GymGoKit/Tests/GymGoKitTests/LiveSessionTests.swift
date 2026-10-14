@@ -56,6 +56,47 @@ private func waiting(_ workoutId: String = "w-1", since: Date = t0) -> LiveSessi
     #expect(LiveSession.step(report: report(), receivedAt: t0, now: late, showing: nil, mayStart: true, declined: []) == .nothing)
 }
 
+/// Launched in the background by the watch's message after the phone sat in
+/// a locker past the stale time: the report saved on disk is stale, but the
+/// watch is still there, and in the background nothing ended could come
+/// back. A stale report of its own leaves it up (its stale date already says
+/// "Out of touch") for the fresh report that follows.
+@Test func aStaleReportInTheBackgroundLeavesItForTheNextOne() {
+    let late = t0.addingTimeInterval(LiveSession.staleAfter + 60)
+    #expect(LiveSession.step(report: report(), receivedAt: t0, now: late, showing: shown(), mayStart: false, declined: []) == .nothing)
+    // The report that launched the app, a moment later: it carries on.
+    #expect(LiveSession.step(report: report(), receivedAt: late, now: late, showing: shown(), mayStart: false, declined: []) == .update)
+    // In the foreground a stale one still ends: a fresh report can start it again.
+    #expect(LiveSession.step(report: report(), receivedAt: t0, now: late, showing: shown(), mayStart: true, declined: []) == .end)
+    // Over is over, in the background too.
+    #expect(LiveSession.step(report: report(session: .ended), receivedAt: t0, now: late, showing: shown(), mayStart: false, declined: []) == .end)
+}
+
+/// What the phone holds is a report it can read, none at all, or one it
+/// cannot read (a newer watch's health value, or a broken one). The last
+/// changes nothing: read as "no report", it would end the activity on every
+/// report, with no way back while the phone is locked.
+@Test func aReportThePhoneCannotReadIsNotNoReport() throws {
+    #expect(LiveSession.heard(nil) == .nothing)
+    let json = try String(decoding: JSONEncoder().encode(report()), as: UTF8.self)
+    #expect(LiveSession.heard(json) == .report(report()))
+    let newerHealth = json.replacingOccurrences(of: "\"recording\"", with: "\"sleeping\"")
+    #expect(newerHealth != json)
+    #expect(LiveSession.heard(newerHealth) == .unreadable)
+    #expect(LiveSession.heard("not json") == .unreadable)
+}
+
+/// A rest is drawn only while the activity is fresh: gone stale, it would
+/// be long over, so no ring and no frozen 0:00 in the Dynamic Island or on
+/// the watch, as on the Lock Screen.
+@Test func aStaleRestIsNotDrawn() {
+    let resting = LiveSessionContent(phase: .resting, restStart: at(-30), restEnd: at(60))
+    #expect(resting.restRange(isStale: false) == at(-30)...at(60))
+    #expect(resting.restRange(isStale: true) == nil)
+    #expect(LiveSessionContent(phase: .lifting, restStart: at(-30), restEnd: at(60)).restRange(isStale: false) == nil)
+    #expect(LiveSessionContent(phase: .resting, restStart: at(60), restEnd: at(-30)).restRange(isStale: false) == nil)
+}
+
 @Test func anotherWorkoutReplacesOrEnds() {
     let next = report("w-2")
     #expect(LiveSession.step(report: next, receivedAt: t0, now: t0, showing: shown("w-1"), mayStart: true, declined: []) == .replace(workoutId: "w-2"))
@@ -138,8 +179,11 @@ private func waiting(_ workoutId: String = "w-1", since: Date = t0) -> LiveSessi
     #expect(LiveSession.staleAfter(report()) == 5 * 60)
     #expect(LiveSession.staleAfter(nil) == 5 * 60)
     #expect(LiveSession.step(report: paused, receivedAt: t0, now: at(10 * 60), showing: shown(), mayStart: false, declined: []) == .update)
-    #expect(LiveSession.step(report: paused, receivedAt: t0, now: at(61 * 60), showing: shown(), mayStart: false, declined: []) == .end)
-    #expect(LiveSession.step(report: report(), receivedAt: t0, now: at(10 * 60), showing: shown(), mayStart: false, declined: []) == .end)
+    // Stale past the hour, or past five minutes unpaused: ended where it
+    // could start again, left for the next report where it could not.
+    #expect(LiveSession.step(report: paused, receivedAt: t0, now: at(61 * 60), showing: shown(), mayStart: true, declined: []) == .end)
+    #expect(LiveSession.step(report: report(), receivedAt: t0, now: at(10 * 60), showing: shown(), mayStart: true, declined: []) == .end)
+    #expect(LiveSession.step(report: paused, receivedAt: t0, now: at(61 * 60), showing: shown(), mayStart: false, declined: []) == .nothing)
 }
 
 @Test func aPauseShowsAndStopsTheClock() {

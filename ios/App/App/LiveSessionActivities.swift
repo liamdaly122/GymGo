@@ -87,21 +87,33 @@ final class LiveSessionActivities {
 
     private init() {}
 
-    /// Called once at launch, from the app delegate.
+    /// Called once at launch, from the app delegate. The launch's own tidy
+    /// up waits for `linkActivated`.
     func begin() {
         NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { _ in
             MainActor.assumeIsolated { LiveSessionActivities.shared.reconcile() }
         }
-        // Tidies up after a launch: one left from a session that ended while
-        // the app was not running goes now.
+    }
+
+    /// The watch link is up (`WatchLink.onActivated`), and the report that
+    /// was waiting for this launch, if any, has been passed on first. Then
+    /// the launch tidies up: one left from a session that ended while the
+    /// app was not running goes now. Done before, it read the report saved
+    /// on disk, stale after a long gap, and ended an activity the watch was
+    /// still feeding a moment before its fresh report arrived.
+    func linkActivated() {
         reconcile()
     }
 
     /// A newer state report from the watch. The app may be in the background.
+    /// One this build cannot read changes nothing (`LiveSession.Heard`).
     func receive(json: String, receivedAt: Double) {
-        let report = Self.decode(json)
+        guard case .report(let report) = LiveSession.heard(json) else {
+            print("GymGo: a state report the Live Activity cannot read; left as it is")
+            return
+        }
         let at = Date(timeIntervalSince1970: receivedAt / 1000)
         run { await self.decide(report, receivedAt: at) }
     }
@@ -109,9 +121,16 @@ final class LiveSessionActivities {
     /// At launch and on every return to the foreground: the moments a start is allowed.
     func reconcile() {
         let last = source.lastState()
-        let report = last.flatMap { Self.decode($0.json) }
-        let at = last.map { Date(timeIntervalSince1970: $0.receivedAt / 1000) }
-        run { await self.decide(report, receivedAt: at) }
+        switch LiveSession.heard(last?.json) {
+        case .unreadable:
+            // Not "no report": that would end what is on screen.
+            return
+        case .nothing:
+            run { await self.decide(nil, receivedAt: nil) }
+        case .report(let report):
+            let at = last.map { Date(timeIntervalSince1970: $0.receivedAt / 1000) }
+            run { await self.decide(report, receivedAt: at) }
+        }
     }
 
     /// The phone's Start, just before the watch is asked to open GymGo, with
@@ -227,8 +246,8 @@ final class LiveSessionActivities {
             if let live { await end(live, report: nil) }
             // The watch may have been quicker than the tap: then it says what it is doing.
             var content = ActivityContent(state: LiveSession.starting, staleDate: Date().addingTimeInterval(LiveSession.staleAfter))
-            if let last = source.lastState(), let report = Self.decode(last.json), report.workoutId == start.workoutId,
-               report.session == .running {
+            if let last = source.lastState(), case .report(let report) = LiveSession.heard(last.json),
+               report.workoutId == start.workoutId, report.session == .running {
                 content = self.content(for: report, receivedAt: Date(timeIntervalSince1970: last.receivedAt / 1000))
             }
             request(start.workoutId, facts: start.facts, content: content)
@@ -282,11 +301,6 @@ final class LiveSessionActivities {
         let context = try? WatchContext.decode(json)
         cachedContext = (json, context)
         return context
-    }
-
-    /// Reports from a build 6 watch decode too (WatchStateReport's own decoder).
-    private static func decode(_ json: String) -> WatchStateReport? {
-        try? JSONDecoder().decode(WatchStateReport.self, from: Data(json.utf8))
     }
 }
 

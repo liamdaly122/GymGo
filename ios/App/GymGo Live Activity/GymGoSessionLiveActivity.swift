@@ -55,7 +55,7 @@ struct GymGoSessionLiveActivity: Widget {
             let state = context.state
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    ExpandedLeading(state: state)
+                    ExpandedLeading(state: state, isStale: context.isStale)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     HeartRate(bpm: context.isStale ? nil : state.heartRate, size: 17)
@@ -72,11 +72,11 @@ struct GymGoSessionLiveActivity: Widget {
                     ExpandedBottom(state: state, isStale: context.isStale)
                 }
             } compactLeading: {
-                CompactLeading(state: state)
+                CompactLeading(state: state, isStale: context.isStale)
             } compactTrailing: {
                 CompactTrailing(state: state, isStale: context.isStale)
             } minimal: {
-                Minimal(state: state)
+                Minimal(state: state, isStale: context.isStale)
             }
             .keylineTint(Look.hot)
         }
@@ -97,7 +97,7 @@ private struct SessionActivityView: View {
     var body: some View {
         switch family {
         case .small:
-            WatchSmall(state: context.state, title: context.attributes.title)
+            WatchSmall(state: context.state, title: context.attributes.title, isStale: context.isStale)
         default:
             LockScreen(context: context)
         }
@@ -210,12 +210,13 @@ private struct Elapsed: View {
     }
 }
 
-/// The rest on the Lock Screen: the clock, what is next, and the bar.
+/// The rest on the Lock Screen: the clock, what is next, and the bar. Only
+/// ever shown while the activity is fresh (`LockScreen`).
 private struct RestBlock: View {
     let state: LiveSessionContent
 
     var body: some View {
-        if let range = restRange(state) {
+        if let range = state.restRange(isStale: false) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .lastTextBaseline, spacing: 12) {
                     VStack(alignment: .leading, spacing: 0) {
@@ -306,13 +307,15 @@ private struct HeartRate: View {
 }
 
 /// The watch's Smart Stack: the rest clock, or the lift, and nothing else, so
-/// it adds to GymGo's own watch app rather than copying it.
+/// it adds to GymGo's own watch app rather than copying it. No rest once the
+/// activity is stale: it would be a 0:00 frozen long after.
 private struct WatchSmall: View {
     let state: LiveSessionContent
     let title: String
+    let isStale: Bool
 
     var body: some View {
-        if state.phase == .resting, let range = restRange(state) {
+        if let range = state.restRange(isStale: isStale) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(timerInterval: range, countsDown: true)
                     .font(Look.display(30))
@@ -332,9 +335,10 @@ private struct WatchSmall: View {
 
 private struct ExpandedLeading: View {
     let state: LiveSessionContent
+    let isStale: Bool
 
     var body: some View {
-        if state.phase == .resting, let range = restRange(state) {
+        if let range = state.restRange(isStale: isStale) {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Rest").font(Look.text(12, weight: .semibold)).textCase(.uppercase).foregroundStyle(Look.muted)
                 Text(timerInterval: range, countsDown: true)
@@ -367,7 +371,7 @@ private struct ExpandedBottom: View {
                 switch state.phase {
                 case .resting:
                     UpNextLine(name: state.upNext, detail: state.upNextDetail)
-                    if let range = restRange(state) {
+                    if let range = state.restRange(isStale: isStale) {
                         RestBar(range: range)
                     }
                 case .lifting:
@@ -393,11 +397,14 @@ private struct ExpandedBottom: View {
     }
 }
 
+/// The island's small spaces draw a rest only while the activity is fresh,
+/// as the Lock Screen does: stale, a ring and a 0:00 would be long over.
 private struct CompactLeading: View {
     let state: LiveSessionContent
+    let isStale: Bool
 
     var body: some View {
-        if state.phase == .resting, let range = restRange(state) {
+        if let range = state.restRange(isStale: isStale) {
             RestRing(range: range)
         } else if state.pausedAt != nil {
             Image(systemName: "pause.fill").foregroundStyle(Look.hot)
@@ -409,11 +416,11 @@ private struct CompactLeading: View {
 
 private struct CompactTrailing: View {
     let state: LiveSessionContent
-    /// An old heart rate is no heart rate.
+    /// An old heart rate is no heart rate, and an old rest no rest.
     let isStale: Bool
 
     var body: some View {
-        if state.phase == .resting, let range = restRange(state) {
+        if let range = state.restRange(isStale: isStale) {
             // A timer text takes all the width it is offered; the frame keeps
             // the compact view the width of "0:00".
             Text(timerInterval: range, countsDown: true)
@@ -434,9 +441,10 @@ private struct CompactTrailing: View {
 
 private struct Minimal: View {
     let state: LiveSessionContent
+    let isStale: Bool
 
     var body: some View {
-        if state.phase == .resting, let range = restRange(state) {
+        if let range = state.restRange(isStale: isStale) {
             RestRing(range: range)
         } else {
             Image(systemName: "dumbbell.fill").foregroundStyle(Look.chalk)
@@ -457,10 +465,4 @@ private struct RestRing: View {
         .progressViewStyle(.circular)
         .tint(Look.hot)
     }
-}
-
-/// The rest as a range a timer can run over. Nil unless it is a real span.
-private func restRange(_ state: LiveSessionContent) -> ClosedRange<Date>? {
-    guard let start = state.restStart, let end = state.restEnd, start <= end else { return nil }
-    return start...end
 }

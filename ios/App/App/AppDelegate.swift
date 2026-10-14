@@ -53,6 +53,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         link.onWatchWorkoutNotStarted = { context in
             MainActor.assumeIsolated { LiveSessionActivities.shared.phoneStartFailed(context: context) }
         }
+        // The launch's tidy-up waits for the link: the report that woke the
+        // app goes first, so a stale one on disk never ends what it feeds.
+        link.onActivated = {
+            MainActor.assumeIsolated { LiveSessionActivities.shared.linkActivated() }
+        }
         live.begin()
 
         // The watch mirrors its workout session to the phone once it runs.

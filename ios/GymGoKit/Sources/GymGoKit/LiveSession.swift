@@ -59,6 +59,18 @@ public struct LiveSessionContent: Codable, Hashable, Sendable {
     }
 }
 
+extension LiveSessionContent {
+    /// The rest to count down over, or nil: not resting, not a real span,
+    /// or the activity gone stale. Nothing heard for a while, a rest on
+    /// screen would be long over, and a ring or a 0:00 frozen at the end of
+    /// it says nothing true. Every view that draws a rest asks this, the
+    /// Dynamic Island's compact and minimal ones and the watch's included.
+    public func restRange(isStale: Bool) -> ClosedRange<Date>? {
+        guard !isStale, phase == .resting, let start = restStart, let end = restEnd, start <= end else { return nil }
+        return start...end
+    }
+}
+
 /// The set in hand, as the Live Activity names it.
 public struct LiveSessionInHand: Hashable, Sendable {
     public var exercise: String
@@ -91,6 +103,26 @@ public enum LiveSession {
     /// How long a report counts as fresh: `staleAfter(report)` in companion.ts.
     public static func staleAfter(_ report: WatchStateReport?) -> TimeInterval {
         report?.paused != nil ? pausedStaleAfter : staleAfter
+    }
+
+    /// A state report as the phone's side of the link holds it.
+    public enum Heard: Equatable, Sendable {
+        /// None heard yet.
+        case nothing
+        case report(WatchStateReport)
+        /// One this build cannot read: a value a newer watch added (only
+        /// `session` is frozen against new values), or a broken report. It
+        /// changes nothing. Taken as "no report" it would end the activity on
+        /// every report, with no way back while the phone is locked.
+        case unreadable
+    }
+
+    /// Reads a report's JSON. Reports from a build 6 watch decode too
+    /// (WatchStateReport's own decoder).
+    public static func heard(_ json: String?) -> Heard {
+        guard let json else { return .nothing }
+        guard let report = try? JSONDecoder().decode(WatchStateReport.self, from: Data(json.utf8)) else { return .unreadable }
+        return .report(report)
     }
 
     /// The Live Activity on screen, as the rule needs it.
@@ -143,8 +175,14 @@ public enum LiveSession {
         }
         if let report, report.workoutId == showing.workoutId {
             // Its own report: running and fresh, or over. A stale one has
-            // already said "Out of touch" (the stale date); this tidies up.
-            return running == showing.workoutId ? .update : .end
+            // already said "Out of touch" (the stale date); in the foreground
+            // this tidies up, and a fresh report can start it again. In the
+            // background nothing ended can come back, and a launch by the
+            // watch's message reads the report saved on disk, stale after a
+            // long gap, a moment before the fresh one: it stays for that.
+            if running == showing.workoutId { return .update }
+            if report.session == .running, !mayStart { return .nothing }
+            return .end
         }
         // Another workout's report, or none.
         if let running, let receivedAt {

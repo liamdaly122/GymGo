@@ -59,6 +59,12 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     var onStartingWatchWorkout: ((_ context: String?) -> Void)?
     /// Called on the main queue when the watch could not be asked to open GymGo after all.
     var onWatchWorkoutNotStarted: ((_ context: String?) -> Void)?
+    /// Called on the main queue once activation has finished, after the
+    /// report that was waiting for this launch, if any, has gone to
+    /// `onStateNative`; and at once where there is no WatchConnectivity.
+    /// The Live Activity's launch tidy-up waits for it, so it never judges
+    /// by the report saved on disk while a fresher one is on its way.
+    var onActivated: (() -> Void)?
 
     private let queue = DispatchQueue(label: "com.liamdaly.gymgo.watchlink")
     private let health = HKHealthStore()
@@ -91,7 +97,10 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     private var contextURL: URL { Self.folder.appendingPathComponent("watch-context.json") }
 
     func start() {
-        guard WCSession.isSupported() else { return }
+        guard WCSession.isSupported() else {
+            DispatchQueue.main.async { self.onActivated?() }
+            return
+        }
         WCSession.default.delegate = self
         WCSession.default.activate()
     }
@@ -415,13 +424,18 @@ final class WatchLink: NSObject, WCSessionDelegate, @unchecked Sendable {
     // MARK: WCSessionDelegate. Called on a background queue.
 
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        guard activationState == .activated else { return }
+        guard activationState == .activated else {
+            DispatchQueue.main.async { self.onActivated?() }
+            return
+        }
         // The watch's last state, which may have been waiting since before this launch.
         let waiting = session.receivedApplicationContext["state"] as? String
         queue.async {
             self.flushContext()
             self.flushAcks()
             if let waiting { self.receive(state: waiting) }
+            // After `receive`, which hands the report to the main queue first.
+            DispatchQueue.main.async { self.onActivated?() }
         }
     }
 
