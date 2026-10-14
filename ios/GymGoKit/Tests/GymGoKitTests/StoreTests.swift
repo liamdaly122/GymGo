@@ -96,12 +96,85 @@ private func liveContext(
     store.done(weight: 100, reps: 5)
     let rest = try #require(store.rest)
     // Delivered in the foreground: the rest ends here, as its own timer would.
-    store.restAlerts.onPresented?(rest.id)
+    #expect(store.restAlerts.onPresented?(rest.id) == false)
     #expect(store.rest == nil)
     let repeatAfterFirst = store.repeatTask
     // Its own timer, a moment later, finds it over: nothing plays again.
     store.restRanOut(id: rest.id)
     #expect(store.repeatTask == repeatAfterFirst)
+}
+
+// MARK: - One rest-over cue: the app's in front, the notification's wrist-down (W2)
+
+/// The cues the store asked for.
+@MainActor
+private final class Taps {
+    var cues: [WatchCue] = []
+    var restOvers: Int { cues.filter { $0 == .restOver }.count }
+}
+
+/// A store resting, with the app active or not (`WKApplicationState`), and the
+/// rest's notification allowed to sound or not.
+@MainActor
+private func resting(appActive: Bool, notificationSounds: Bool = true) throws -> (WatchSessionStore, RestState, Taps) {
+    let store = store()
+    store.appIsActive = { appActive }
+    store.restAlerts.soundsAllowed = notificationSounds
+    store.receive(try liveContext(sentAt: now()))
+    store.done(weight: 100, reps: 5)
+    let rest = try #require(store.rest)
+    #expect(store.restAlerts.scheduled?.id == rest.id)
+    let taps = Taps()
+    store.haptics.observe = { taps.cues.append($0) }
+    return (store, rest, taps)
+}
+
+@MainActor
+@Test func wristDownTheRestsNotificationPlaysTheCueAndTheAppDoesNot() throws {
+    // The rest's own timer first, the app frontmost but inactive.
+    let (store, rest, taps) = try resting(appActive: false)
+    store.restRanOut(id: rest.id)
+    #expect(store.rest == nil)
+    #expect(taps.restOvers == 0)
+    // The notification stays, to play it.
+    #expect(store.restAlerts.scheduled?.id == rest.id)
+    // It arrives with the app still frontmost: it sounds, and only it.
+    #expect(store.restAlerts.onPresented?(rest.id) == true)
+    #expect(taps.restOvers == 0)
+
+    // The other order: the notification first, then the timer.
+    let (other, otherRest, otherTaps) = try resting(appActive: false)
+    #expect(other.restAlerts.onPresented?(otherRest.id) == true)
+    #expect(other.rest == nil)
+    other.restRanOut(id: otherRest.id)
+    #expect(otherTaps.restOvers == 0)
+}
+
+@MainActor
+@Test func inFrontTheAppPlaysTheCueAndTheNotificationIsSilent() throws {
+    // The notification first.
+    let (store, rest, taps) = try resting(appActive: true)
+    #expect(store.restAlerts.onPresented?(rest.id) == false)
+    store.restRanOut(id: rest.id)
+    #expect(taps.restOvers == 1)
+    #expect(store.restAlerts.scheduled == nil)
+
+    // The timer first: the notification goes, and if it was already on its
+    // way it arrives silent.
+    let (other, otherRest, otherTaps) = try resting(appActive: true)
+    other.restRanOut(id: otherRest.id)
+    #expect(other.restAlerts.scheduled == nil)
+    #expect(other.restAlerts.onPresented?(otherRest.id) == false)
+    #expect(otherTaps.restOvers == 1)
+}
+
+@MainActor
+@Test func wristDownWithNoNotificationToSoundTheAppStillTries() throws {
+    // Refused, or its sound turned off: nothing else would reach the wrist.
+    let (store, rest, taps) = try resting(appActive: false, notificationSounds: false)
+    store.restRanOut(id: rest.id)
+    #expect(taps.restOvers == 1)
+    #expect(store.restAlerts.scheduled == nil)
 }
 
 // MARK: - The rest-over repeat stops with its session (C10)

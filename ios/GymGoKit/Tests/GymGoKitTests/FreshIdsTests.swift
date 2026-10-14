@@ -128,6 +128,78 @@ private func isUUIDv4(_ id: String) -> Bool {
     #expect(good.withFreshIds { "00000000-0000-4000-8000-000000000999" } == nil)
 }
 
+// MARK: - Nothing of the discarded workout's rows survives, in any field (W7)
+
+/// Every string in a JSON value, keys included, however deep.
+private func strings(in value: Any) -> [String] {
+    switch value {
+    case let string as String: [string]
+    case let array as [Any]: array.flatMap(strings(in:))
+    case let object as [String: Any]: Array(object.keys) + object.values.flatMap(strings(in:))
+    default: []
+    }
+}
+
+/// Any UUID, whatever its version: the shape every row ID has.
+private func isUUID(_ string: String) -> Bool {
+    string.wholeMatch(of: /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/) != nil
+}
+
+@Test func aStartAgainLeavesNoIdOfTheDiscardedWorkoutAnywhere() throws {
+    // Every ready offer the TypeScript side writes: a field the phone adds to
+    // the layout shows up here without anyone touching this test.
+    let data = try Data(contentsOf: fixturesFolder.appendingPathComponent("context.json"))
+    let cases = try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+    var checked = 0
+    for found in cases {
+        let name = found["name"] as? String ?? "?"
+        guard let object = found["context"] as? [String: Any],
+              (object["home"] as? [String: Any])?["ready"] is [String: Any] else { continue }
+        let ready = try #require(try WatchContext.decode(JSONSerialization.data(withJSONObject: object)).home.ready, "\(name)")
+        let old = Set(try #require(ready.mintedIds, "\(name)"))
+        let before = try layoutObject(ready)
+
+        // The rows that exist already, which the session points at and a
+        // start again keeps: the routine, the gym, the plan and the library
+        // exercises.
+        let slot = before["slot"] as? [String: Any]
+        let beforeExercises = try #require(before["exercises"] as? [[String: Any]], "\(name)")
+        let kept = [before["routineId"] as? String, before["gymId"] as? String, slot?["planId"] as? String].compactMap { $0 }
+            + beforeExercises.compactMap { $0["exerciseId"] as? String }
+
+        // Every ID in the layout is one the watch re-mints or one of those. A
+        // new ID field is neither until it is added to `LayoutIds`, or here.
+        for string in strings(in: before) where isUUID(string) {
+            #expect(old.contains(string) || kept.contains(string), "\(name): \(string) in the layout is neither re-minted nor kept")
+        }
+
+        let freshResult = ready.withFreshIds()
+        let fresh = try #require(freshResult, "\(name)")
+        let after = try layoutObject(fresh)
+        let snapshotAfter = try JSONSerialization.jsonObject(with: JSONEncoder().encode(fresh.snapshot))
+        let everywhere = strings(in: after) + strings(in: snapshotAfter)
+        // No string anywhere is the discarded workout's, or one of its
+        // exercises' or sets'.
+        for string in everywhere where old.contains(string) {
+            Issue.record("\(name): \(string) of the discarded workout is left")
+        }
+
+        // The rows that exist already are the same rows, in the same places.
+        let afterSlot = after["slot"] as? [String: Any]
+        let afterExercises = try #require(after["exercises"] as? [[String: Any]], "\(name)")
+        #expect(after["routineId"] as? String == before["routineId"] as? String, "\(name)")
+        #expect(after["gymId"] as? String == before["gymId"] as? String, "\(name)")
+        #expect(afterSlot?["planId"] as? String == slot?["planId"] as? String, "\(name)")
+        #expect(afterExercises.map { $0["exerciseId"] as? String } == beforeExercises.map { $0["exerciseId"] as? String }, "\(name)")
+        #expect(fresh.routineId == ready.routineId, "\(name)")
+        #expect(fresh.snapshot.sets.map(\.exerciseId) == ready.snapshot.sets.map(\.exerciseId), "\(name)")
+        #expect(fresh.snapshot.stations == ready.snapshot.stations, "\(name)")
+        #expect(fresh.snapshot.lifts == ready.snapshot.lifts, "\(name)")
+        checked += 1
+    }
+    #expect(checked > 0)
+}
+
 // MARK: - On the wrist
 
 @Test func aStartDiscardedOnTheWristStartsAgainUnderNewIds() throws {

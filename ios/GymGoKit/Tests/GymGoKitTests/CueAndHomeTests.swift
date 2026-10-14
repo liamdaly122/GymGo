@@ -129,3 +129,11 @@ import Testing
     phone.apply(try context(state: "running"))
     #expect(phone.todayCard(now: minute(6), timeZone: london).kind == .runningOnPhone)
 }
+
+@Test func endingAStrayRecordingSaysOnTheButtonThatItIsNotSaved() {
+    // End throws the Health workout away; it used to save it. A lifter who
+    // reads only the button must not expect it saved.
+    #expect(StrayRecording.endLabel.localizedCaseInsensitiveContains("not saved"))
+    #expect(StrayRecording.endSpoken.localizedCaseInsensitiveContains("not saved"))
+    #expect(StrayRecording.endSpoken.localizedCaseInsensitiveContains("Health"))
+}

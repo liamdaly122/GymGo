@@ -15,11 +15,14 @@ import WatchKit
 public final class Haptics {
     public var enabled = true
     private var playing: Task<Void, Never>?
+    /// Each cue as it is asked for, for the tests, where nothing taps.
+    var observe: (@MainActor (WatchCue) -> Void)?
 
     public init() {}
 
     public func play(_ cue: WatchCue) {
         guard enabled else { return }
+        observe?(cue)
         playing?.cancel()
         let steps = cue.steps
         playing = Task { @MainActor in

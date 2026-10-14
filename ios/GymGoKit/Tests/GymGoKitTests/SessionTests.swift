@@ -45,6 +45,35 @@ private func snapshot(_ name: String) throws -> WatchSnapshot {
     #expect(backOff.weight == 97.5 && backOff.reps == 7)
 }
 
+@Test func aNumberTypedIntoABackOffOnThePhoneBeatsTheTarget() throws {
+    // The phone keeps a typed number over every placeholder, field by field
+    // (`startingNumbers`), and sends `source` "typed" when nothing in the set
+    // came from one: a typed field above zero, an untyped one empty.
+    let original = try snapshot("a superset and a pyramid")
+    let backOff = try #require(original.sets.firstIndex { $0.label == "Set 2 of 3 · Back-off" })
+
+    var both = original
+    both.sets[backOff].source = "typed"
+    both.sets[backOff].weight = 95
+    both.sets[backOff].reps = 6
+    var session = WatchSession(snapshot: both)
+    _ = session.logSetInHand(weight: 110, reps: 5, at: minute(1))
+    let typed = try #require(session.setInHand)
+    #expect(typed.set.label == "Set 2 of 3 · Back-off")
+    #expect(typed.weight == 95 && typed.reps == 6)
+
+    // Only the reps typed, and nothing for the weight to start at: the weight
+    // aims off the top set, as the phone's placeholder would.
+    var repsOnly = original
+    repsOnly.sets[backOff].source = "typed"
+    repsOnly.sets[backOff].weight = nil
+    repsOnly.sets[backOff].reps = 6
+    var other = WatchSession(snapshot: repsOnly)
+    _ = other.logSetInHand(weight: 110, reps: 5, at: minute(1))
+    let half = try #require(other.setInHand)
+    #expect(half.weight == 97.5 && half.reps == 6)
+}
+
 @Test func flashesARecordOnlyWhenOneIsBroken() throws {
     var session = WatchSession(snapshot: try snapshot("two straight lifts"))
     // The marks to beat are 100kg and an estimated 116.7kg.

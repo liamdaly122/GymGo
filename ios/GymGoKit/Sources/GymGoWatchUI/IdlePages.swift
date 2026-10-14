@@ -116,22 +116,26 @@ struct TodayPage: View {
 
     /// The phone opened the app for a workout and none followed: Health is
     /// recording with nothing behind it. Say so, and offer to end it: not
-    /// saved, since nothing logged stands behind it.
+    /// saved, since nothing logged stands behind it, and the button says
+    /// that itself (`StrayRecording`). One whose workout the phone ended
+    /// ends by itself once it has waited (`strayRecordingWait`).
     private var strayRecording: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Recording a workout in Health")
+            Text(StrayRecording.caption)
                 .font(Theme.text(12))
                 .foregroundStyle(Theme.muted)
             Button {
                 store.endStrayRecording()
             } label: {
-                Text("End")
+                Text(StrayRecording.endLabel)
                     .font(Theme.display(20))
                     .textCase(.uppercase)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .frame(maxWidth: .infinity, minHeight: 40)
             }
             .raisedButton()
-            .accessibilityLabel("End the Health workout, not saved")
+            .accessibilityLabel(StrayRecording.endSpoken)
         }
     }
 }

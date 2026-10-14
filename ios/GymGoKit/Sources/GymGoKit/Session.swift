@@ -161,7 +161,15 @@ public struct WatchSession: Codable, Sendable, Equatable {
         // Rule 2: a back-off set aims off today's top set, once it is logged.
         if let scheme = set.scheme, let top = history(of: set.exerciseId).first(where: { $0.setId == scheme.topSetId }) {
             let target = schemeTarget(top: (top.weight, top.reps), steps: scheme.stepsFromTop, loading: lift.loading, ladder: lift.ladder)
-            return (target.weight, target.reps)
+            // A number typed on the phone beats the target, field by field,
+            // as it beats every placeholder there (`startingNumbers` in
+            // src/domain/setHints.ts). The list says which only when nothing
+            // in the set came from a placeholder: `source` "typed", where a
+            // typed field is above zero and an untyped one has nothing.
+            guard set.source == "typed" else { return (target.weight, target.reps) }
+            let weight = set.weight.flatMap { $0 > 0 ? $0 : nil } ?? target.weight
+            let reps = set.reps.flatMap { $0 > 0 ? $0 : nil } ?? target.reps
+            return (weight, reps)
         }
         // Rule 1: from the second set on, start at the set just done.
         if set.carries, let carried = carriedSet(history(of: set.exerciseId)) {

@@ -42,6 +42,17 @@ public struct TodayCard: Equatable, Sendable {
     public var canStart: Bool { kind == .ready }
 }
 
+/// A Health workout recording with no session behind it, as the Today page
+/// words it when it offers to end it. Ending it throws it away: the button
+/// says so itself, not only to VoiceOver, since End used to save.
+public enum StrayRecording {
+    public static let caption = "Recording a workout in Health"
+    /// The button's visible text.
+    public static let endLabel = "End, not saved"
+    /// The button's accessible name.
+    public static let endSpoken = "End the Health workout, not saved"
+}
+
 /// "YYYY-MM-DD" for a moment, on the calendar of this time zone.
 public func localDay(_ date: Date, timeZone: TimeZone = .current) -> String {
     var calendar = Calendar(identifier: .gregorian)
