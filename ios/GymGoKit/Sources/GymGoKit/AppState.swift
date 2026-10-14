@@ -9,9 +9,13 @@ public struct RestState: Codable, Sendable, Equatable {
     /// Its length, with any +30 s added: the 10-second cue needs 20 or more.
     public var seconds: Int
     public var upNext: UpNext
-    /// The lift whose set it follows, so Up next can be worded again when the
-    /// set in hand moves during the rest. Nil in a rest saved by build 6.
+    /// The lift whose set it follows. Nil in a rest saved by build 6. Read
+    /// only for a rest saved before `afterStation`.
     public var after: String? = nil
+    /// The station whose set it follows (`WatchSession.stationKey(of:)`), so
+    /// Up next can be worded again, the phone's way, when the set in hand
+    /// moves during the rest. Nil in a rest saved before it.
+    public var afterStation: [String]? = nil
 }
 
 /// What the watch shows once a session ends: on the wrist, or on the phone.
@@ -347,7 +351,7 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         if let seconds = outcome.restSeconds {
             rest = RestState(
                 id: eventId, startedAt: date, endsAt: date.addingTimeInterval(TimeInterval(seconds)), seconds: seconds,
-                upNext: outcome.upNext, after: outcome.set.exerciseId
+                upNext: outcome.upNext, after: outcome.set.exerciseId, afterStation: running.stationKey(of: outcome.set)
             )
         } else {
             rest = nil
@@ -429,13 +433,14 @@ public struct WatchAppState: Codable, Sendable, Equatable {
         guard owner == .watch, var running = session, let newlySkipped = change(&running) else { return false }
         session = running
         if var current = rest {
-            current.upNext = running.upNext(afterLift: current.after)
+            current.upNext = running.upNext(after: current)
             rest = current
         } else if let last = running.lastLoggedSet, let follower = running.set(after: last),
                   newlySkipped.contains(follower.id), let seconds = running.restHandedOn(after: last) {
             rest = RestState(
                 id: restId, startedAt: date, endsAt: date.addingTimeInterval(TimeInterval(seconds)), seconds: seconds,
-                upNext: running.upNext(afterLift: last.exerciseId), after: last.exerciseId
+                upNext: running.upNext(afterStation: last.station), after: last.exerciseId,
+                afterStation: running.stationKey(of: last)
             )
         }
         return true

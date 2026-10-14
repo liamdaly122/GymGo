@@ -131,14 +131,10 @@ struct RestView: View {
         }
     }
 
-    /// Up next was worded when the rest began, or when the set in hand last
-    /// moved; a newer list from the phone may have moved the numbers since.
-    /// When the next set is the same lift, say what the set screen will
-    /// actually start at.
+    /// `SetInHand.upNextDetail(after:)`: at the same station, what the set
+    /// screen will start at now; from another, the station's outline.
     private var upNextDetail: String {
-        guard let next = store.setInHand, next.lift.name == rest.upNext.name,
-              let reps = next.reps, reps > 0 else { return rest.upNext.detail }
-        return next.screenDetail
+        store.setInHand?.upNextDetail(after: rest) ?? rest.upNext.detail
     }
 }
 

@@ -29,13 +29,33 @@ extension SetInHand {
         return "\(stepped.from.reps) was under \(stepped.repLow), so \(formatWeight(weight))kg for \(stepped.repLow)."
     }
 
+    /// Whether the rest leads here from another station: its Up next is
+    /// this station's name and outline (`upNextFor`). A solo station's name
+    /// is its lift's, so the name alone cannot say.
+    private func reachedFromAnotherStation(_ rest: RestState) -> Bool {
+        rest.upNext.name == station.name && rest.upNext.detail == station.outline
+    }
+
+    /// The rest's Up next detail on the wrist. Up next was worded when the
+    /// rest began, or when the set in hand last moved; a newer list from the
+    /// phone may have moved the numbers since. When the rest leads to this
+    /// set at the station it followed, the numbers the set screen will start
+    /// at now ("Set 2 of 4 · 102.5 × 5"); from another station, its outline
+    /// as it was, which the state report, the companion and the Live
+    /// Activity say too.
+    public func upNextDetail(after rest: RestState) -> String {
+        guard !reachedFromAnotherStation(rest), rest.upNext.name == lift.name, let reps, reps > 0 else {
+            return rest.upNext.detail
+        }
+        return screenDetail
+    }
+
     /// The rest's third line, under Up next, when this is the set after it:
     /// the lift's setup note when the rest leads to a new station, else how
     /// the lift went last time ("Last 97.5 × 8") when nothing of it is done
     /// today. The setup note wins when both could show.
     public func restNote(after rest: RestState) -> String? {
-        if rest.upNext.name == station.name, rest.upNext.detail == station.outline,
-           let note = lift.setupNote, !note.isEmpty {
+        if reachedFromAnotherStation(rest), let note = lift.setupNote, !note.isEmpty {
             return note
         }
         guard firstOfLiftToday, let last = lift.lastTime else { return nil }

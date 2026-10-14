@@ -39,8 +39,8 @@ public struct SetInHand: Sendable, Equatable {
     /// "Set 2 of 4" counts within the lift; this counts the session.
     public var position: Int
     public var remaining: Int
-    /// Nothing of this lift is done today yet, on either device: the rest
-    /// before it may say how it went last time.
+    /// Nothing of this lift is done today yet, on either device, warm-ups
+    /// included: the rest before it may say how it went last time.
     public var firstOfLiftToday: Bool
 }
 
@@ -207,21 +207,62 @@ public struct WatchSession: Codable, Sendable, Equatable {
             set: set, lift: lift, weight: numbers.weight, reps: numbers.reps, source: numbers.source, stepped: numbers.stepped,
             station: snapshot.stations[set.station],
             position: loggedOnList + 1, remaining: remainingSets.count,
-            firstOfLiftToday: history(of: set.exerciseId).isEmpty
+            firstOfLiftToday: firstOfLiftToday(set.exerciseId)
         )
     }
 
+    /// No set of this lift logged today, on either device, warm-ups included.
+    /// The phone's `doneToday` holds working sets only, and `history` only
+    /// the wrist's sets still on the list, so a warm-up logged here would
+    /// stop counting once the phone confirms it: `loggedHere` keeps it.
+    private func firstOfLiftToday(_ exerciseId: String) -> Bool {
+        (snapshot.lifts[exerciseId]?.doneToday ?? []).isEmpty
+            && !loggedHere.values.contains(exerciseId)
+            && history(of: exerciseId).isEmpty
+    }
+
     /// What the rest says is next (`upNextFor`, rule 5): the set in hand,
-    /// worded from the station of `exerciseId`, the lift the rest followed.
-    public func upNext(afterLift exerciseId: String?) -> UpNext {
+    /// worded from `fromStation`, the station of the set the rest followed.
+    /// Nil when that station has nothing on the list any more: the set in
+    /// hand is at another station, whatever its lift.
+    public func upNext(afterStation fromStation: Int?) -> UpNext {
         guard let next = setInHand else { return watchFinish }
-        let station = next.set.station
-        let same = exerciseId.map { snapshot.stations[station].exerciseIds.contains($0) } ?? false
         return upNextFor(
-            fromStation: same ? station : -1,
-            next: UpNextSet(station: station, name: next.lift.name, label: next.set.label, weight: next.weight, reps: next.reps),
+            fromStation: fromStation ?? -1,
+            next: UpNextSet(station: next.set.station, name: next.lift.name, label: next.set.label, weight: next.weight, reps: next.reps),
             stations: snapshot.stations
         )
+    }
+
+    /// Up next for a rest under way, worded again once the set in hand has
+    /// moved: judged by the station the rest followed, as `upNextFor` judges
+    /// it, never by the lift, since two entries can share one.
+    public func upNext(after rest: RestState) -> UpNext {
+        if let keys = rest.afterStation { return upNext(afterStation: station(keyedBy: keys)) }
+        // A rest saved before it noted its station: by the lift it followed.
+        guard let lift = rest.after, let next = setInHand,
+              snapshot.stations.indices.contains(next.set.station),
+              snapshot.stations[next.set.station].exerciseIds.contains(lift) else { return upNext(afterStation: nil) }
+        return upNext(afterStation: next.set.station)
+    }
+
+    /// What a rest remembers of the station of the set it follows: the
+    /// workout exercises at that station, by ID. An index shifts when the
+    /// phone reorders the session, and one workout exercise's sets all leave
+    /// the list once the phone has them; the station is found again by
+    /// whichever of them is still there (`station(keyedBy:)`).
+    func stationKey(of set: WatchSet) -> [String] {
+        var keys: [String] = []
+        for other in snapshot.sets where other.station == set.station && !keys.contains(other.workoutExerciseId) {
+            keys.append(other.workoutExerciseId)
+        }
+        return keys
+    }
+
+    /// The station keyed by `stationKey`, on the list as it is now. Nil once
+    /// none of its workout exercises has a set on the list.
+    func station(keyedBy keys: [String]) -> Int? {
+        snapshot.sets.first { keys.contains($0.workoutExerciseId) }?.station
     }
 
     /// "Skip this set": the set in hand, and anything hanging off it. The
@@ -381,7 +422,7 @@ public struct WatchSession: Codable, Sendable, Equatable {
         outbox.append(event)
         return LogOutcome(
             record: record, restSeconds: set.restAfter ?? restHandedOn(after: set),
-            upNext: upNext(afterLift: set.exerciseId), event: event, set: set
+            upNext: upNext(afterStation: set.station), event: event, set: set
         )
     }
 
@@ -462,21 +503,31 @@ public struct WatchSession: Codable, Sendable, Equatable {
         guard Self.date(newer.sentAt) >= Self.date(snapshot.sentAt) else { return .ignored }
         let doneOnPhone = Set(newer.lifts.values.flatMap { $0.doneToday.map(\.setId) })
         logged = logged.filter { !doneOnPhone.contains($0.key) }
-        let focusedLifts = focusedStation.flatMap { snapshot.stations.indices.contains($0) ? snapshot.stations[$0].exerciseIds : nil }
+        let focusedIndex = focusedStation
+        let focusedLifts = focusedIndex.flatMap { snapshot.stations.indices.contains($0) ? snapshot.stations[$0].exerciseIds : nil }
         snapshot = newer
         let onList = Set(newer.sets.map(\.id))
         skipped = skipped.filter { onList.contains($0) }
-        holdFocus(on: focusedLifts)
+        holdFocus(on: focusedLifts, at: focusedIndex)
         return .updated
     }
 
     /// The focus names a workout exercise by a set of it on the list. Once the
     /// phone has every set of it done, the station is found again by its
-    /// lifts; one the phone has finished hands on to where the session goes
-    /// from there, as the set in hand would.
-    private mutating func holdFocus(on lifts: [String]?) {
+    /// lifts: where it was, if a station with those lifts is still there (two
+    /// entries can share a lift), else the first with them. One the phone has
+    /// finished hands on to where the session goes from there, as the set in
+    /// hand would.
+    private mutating func holdFocus(on lifts: [String]?, at previous: Int?) {
         guard let key = focus, station(ofWorkoutExercise: key) == nil else { return }
-        guard let lifts, let index = snapshot.stations.firstIndex(where: { $0.exerciseIds == lifts }) else {
+        guard let lifts else {
+            focus = nil
+            return
+        }
+        let stations = snapshot.stations
+        let index = previous.flatMap { stations.indices.contains($0) && stations[$0].exerciseIds == lifts ? $0 : nil }
+            ?? stations.firstIndex { $0.exerciseIds == lifts }
+        guard let index else {
             focus = nil
             return
         }
