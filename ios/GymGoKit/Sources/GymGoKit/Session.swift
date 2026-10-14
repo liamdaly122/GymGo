@@ -1,19 +1,6 @@
 import Foundation
 
-/// What the watch tells the phone. Each event carries its own ID, so a copy
-/// that arrives twice (once by `sendMessage`, once by `transferUserInfo`) is
-/// applied once. Times are ISO 8601 in UTC, as everywhere else in GymGo.
-public struct WatchEvent: Codable, Sendable, Equatable, Identifiable {
-    public enum Kind: String, Codable, Sendable { case completeSet, skipRest, finish }
-
-    public var id: String
-    public var kind: Kind
-    public var workoutId: String
-    public var setId: String?
-    public var weight: Double?
-    public var reps: Int?
-    public var at: String
-}
+// WatchEvent lives in Protocol.swift, with the rest of the contract.
 
 /// What logging a set did: whether it was a record, and the rest that follows.
 public struct LogOutcome: Sendable, Equatable {

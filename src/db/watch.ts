@@ -66,16 +66,9 @@ export async function watchSnapshotFor(
   });
 }
 
-/** What the watch sends: mirrors `WatchEvent` in ios/GymGoKit/Sources/GymGoKit/Session.swift. */
-export interface WatchEvent {
-  id: string;
-  kind: 'completeSet' | 'skipRest' | 'finish';
-  workoutId: string;
-  setId?: string | null;
-  weight?: number | null;
-  reps?: number | null;
-  at: string;
-}
+/** What the watch sends: the contract is in src/domain/watchProtocol.ts. */
+export type { WatchEvent } from '@/domain/watchProtocol';
+import type { WatchEvent } from '@/domain/watchProtocol';
 
 export type WatchEventOutcome = 'applied' | 'skipped';
 
