@@ -72,7 +72,7 @@ struct RestView: View {
                         .textCase(.uppercase)
                         .foregroundStyle(Theme.chalk)
                         .lineLimit(1)
-                    if let note = nextSetupNote {
+                    if let note = store.setInHand?.restNote(after: rest) {
                         Text(note)
                             .font(Theme.text(11))
                             .foregroundStyle(Theme.muted)
@@ -88,15 +88,18 @@ struct RestView: View {
 
             if !dimmed {
                 HStack(spacing: 6) {
-                    Button {
-                        store.addRest()
-                    } label: {
-                        Text("+30s")
-                            .font(Theme.display(18))
-                            .frame(maxWidth: .infinity, minHeight: 40)
+                    // For 5 s after the set: "Logged · Undo" in the place of +30s.
+                    UndoOr(store: store, height: 40) {
+                        Button {
+                            store.addRest()
+                        } label: {
+                            Text("+30s")
+                                .font(Theme.display(18))
+                                .frame(maxWidth: .infinity, minHeight: 40)
+                        }
+                        .raisedButton()
+                        .accessibilityLabel("Add 30 seconds")
                     }
-                    .raisedButton()
-                    .accessibilityLabel("Add 30 seconds")
 
                     Button {
                         store.skipRest()
@@ -128,22 +131,14 @@ struct RestView: View {
         }
     }
 
-    /// The phone wrote "Set 2 of 3 · 100 × 5" before the set just done; the
-    /// watch's own rules (carry forward, the back-off target) may have moved
-    /// the numbers since. When the next set is the same lift, say what the
-    /// set screen will actually start at.
+    /// Up next was worded when the rest began, or when the set in hand last
+    /// moved; a newer list from the phone may have moved the numbers since.
+    /// When the next set is the same lift, say what the set screen will
+    /// actually start at.
     private var upNextDetail: String {
         guard let next = store.setInHand, next.lift.name == rest.upNext.name,
-              let weight = next.weight, let reps = next.reps, reps > 0 else { return rest.upNext.detail }
-        return "\(next.set.label) · \(formatLogged(weight, reps))"
-    }
-
-    /// The next lift's setup note, when the rest leads to a new station.
-    private var nextSetupNote: String? {
-        guard let next = store.setInHand,
-              rest.upNext.name == next.station.name, rest.upNext.detail == next.station.outline,
-              let note = next.lift.setupNote, !note.isEmpty else { return nil }
-        return note
+              let reps = next.reps, reps > 0 else { return rest.upNext.detail }
+        return next.screenDetail
     }
 }
 

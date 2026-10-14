@@ -24,10 +24,13 @@ struct SetInHandView: View {
     @State private var showingLift = false
     @FocusState private var crownFocused: Bool
 
-    private var ladder: [Double] { hand.lift.ladder.isEmpty ? [0] : hand.lift.ladder }
+    // The dial is GymGoKit's (`SetDial`), the one rule for the numbers on
+    // screen, which the Action button's Done and the state report read too.
+    private var dial: SetDial { hand.dial }
+    private var ladder: [Double] { dial.ladder }
     private var index: Int { min(max(Int(weightIndex.rounded()), 0), ladder.count - 1) }
-    private var weight: Double { ladder[index] }
-    private var repCount: Int { min(max(Int(reps.rounded()), 0), 50) }
+    private var weight: Double { dial.weight(at: weightIndex) }
+    private var repCount: Int { dial.reps(reps) }
 
     // Sized from the screen: 49mm is 205 points wide, 41mm 176.
     private var compact: Bool { Theme.screenWidth < 190 }
@@ -52,9 +55,13 @@ struct SetInHandView: View {
                     .frame(width: (Theme.screenWidth * 0.34).rounded())
             }
             if !dimmed {
-                HStack(spacing: gap) {
-                    stepper(-1)
-                    stepper(1)
+                // For 5 s after a set: "Logged · Undo" where the steppers go.
+                // The Crown still moves the numbers.
+                UndoOr(store: store, height: buttonHeight) {
+                    HStack(spacing: gap) {
+                        stepper(-1)
+                        stepper(1)
+                    }
                 }
                 doneButton
             }
@@ -122,7 +129,7 @@ struct SetInHandView: View {
             .buttonStyle(.plain)
             .padding(.trailing, clockWidth)
             .accessibilityAddTraits(.isHeader)
-            .accessibilityHint("Shows the lift's notes and today's sets")
+            .accessibilityHint("Shows the plan, last time, today's sets, and skipping")
 
             HStack(spacing: 4) {
                 if let rest = store.rest {
@@ -148,7 +155,10 @@ struct SetInHandView: View {
                         .minimumScaleFactor(0.7)
                         .accessibilityLabel("New record. \(recordLine(record))")
                 } else {
-                    Text("\(hand.set.label) · \(hand.set.station + 1)/\(max(1, store.session?.snapshot.stations.count ?? 1))")
+                    // "Set 1 of 4 · Go up" while the numbers are the plan's
+                    // suggestion, "Set 2 of 4 · Lighter" after a step-down,
+                    // else "Set 2 of 4 · 2/6".
+                    Text(hand.headerLine(stations: store.session?.snapshot.stations.count ?? 1))
                         .font(Theme.text(12))
                         .foregroundStyle(Theme.muted)
                         .lineLimit(1)
@@ -245,23 +255,18 @@ struct SetInHandView: View {
     }
 
     /// The numbers the session list and the watch's rules chose, or what was
-    /// dialled in for this set before the screen went away.
+    /// dialled in for this set before the screen went away
+    /// (`SetInHand.dialled`, the rule the Action button's Done reads too).
     private func reset() {
-        if let draft = store.draft, draft.setId == hand.set.id {
-            weightIndex = draft.weightIndex
-            reps = draft.reps
-            field = draft.onReps ? .reps : .weight
-        } else {
-            let target = hand.weight ?? 0
-            weightIndex = Double(ladder.lastIndex { $0 <= target + 1e-9 } ?? 0)
-            reps = Double(hand.reps ?? 0)
-            field = (hand.reps ?? 0) > 0 ? .weight : .reps
-        }
+        let dialled = hand.dialled(store.draft)
+        weightIndex = dialled.weightIndex
+        reps = dialled.reps
+        field = dialled.onReps ? .reps : .weight
         crownFocused = true
     }
 
     private func keepDraft() {
-        store.draft = WatchSessionStore.SetDraft(setId: hand.set.id, weightIndex: weightIndex, reps: reps, onReps: field == .reps)
+        store.draft = SetDraft(setId: hand.set.id, weightIndex: weightIndex, reps: reps, onReps: field == .reps)
     }
 }
 
@@ -297,10 +302,13 @@ struct RepsGrid: View {
     }
 }
 
-/// The lift's setup note and the sets of it done today.
+/// The lift: why the numbers are what they are, how it went last time, its
+/// setup note and the sets of it done today; and the way out of the set in
+/// hand, Skip this set or Done with this lift.
 struct LiftSheet: View {
     let store: WatchSessionStore
     let hand: SetInHand
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         let done = doneToday
@@ -314,20 +322,31 @@ struct LiftSheet: View {
                 Text(hand.station.outline)
                     .font(Theme.text(12))
                     .foregroundStyle(Theme.muted)
+
+                if hand.stepDownReason != nil || hand.lift.plan != nil {
+                    heading("Plan")
+                    if let reason = hand.stepDownReason {
+                        why("Lighter", reason)
+                    }
+                    if let plan = hand.lift.plan {
+                        why(plan.verb, plan.reason)
+                    }
+                }
+                if let last = hand.lift.lastTime {
+                    heading(last.heading(today: localDay(Date())))
+                    Text(last.setsLine)
+                        .font(Theme.number(20))
+                        .foregroundStyle(Theme.chalk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let note = hand.lift.setupNote, !note.isEmpty {
-                    Text("Setup")
-                        .font(Theme.text(11, semiBold: true))
-                        .textCase(.uppercase)
-                        .foregroundStyle(Theme.muted)
+                    heading("Setup")
                     Text(note)
                         .font(Theme.text(14))
                         .foregroundStyle(Theme.chalk)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Today")
-                    .font(Theme.text(11, semiBold: true))
-                    .textCase(.uppercase)
-                    .foregroundStyle(Theme.muted)
+                heading("Today")
                 if done.isEmpty {
                     Text("Nothing logged yet")
                         .font(Theme.text(13))
@@ -339,10 +358,58 @@ struct LiftSheet: View {
                             .foregroundStyle(Theme.chalk)
                     }
                 }
+
+                // Raised, not chalk: Done is still the thing to press next.
+                action("Skip this set", hint: "Moves on without logging \(hand.set.label)") {
+                    store.skipSetInHand()
+                }
+                .padding(.top, 4)
+                action("Done with this lift", hint: "Moves on, skipping the sets of it still to do") {
+                    store.doneWithLift()
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .containerBackground(Theme.ground, for: .navigation)
+    }
+
+    private func heading(_ text: String) -> some View {
+        Text(text)
+            .font(Theme.text(11, semiBold: true))
+            .textCase(.uppercase)
+            .foregroundStyle(Theme.muted)
+            .padding(.top, 2)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// A verb and what it means: "Go up", then the engine's reason.
+    private func why(_ verb: String, _ reason: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(verb)
+                .font(Theme.text(14, semiBold: true))
+                .foregroundStyle(Theme.chalk)
+            Text(reason)
+                .font(Theme.text(13))
+                .foregroundStyle(Theme.chalk)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func action(_ title: String, hint: String, _ perform: @escaping () -> Void) -> some View {
+        Button {
+            perform()
+            dismiss()
+        } label: {
+            Text(title)
+                .font(Theme.display(16))
+                .textCase(.uppercase)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity, minHeight: 40)
+        }
+        .raisedButton()
+        .accessibilityHint(hint)
     }
 
     private var doneToday: [(weight: Double, reps: Int)] {

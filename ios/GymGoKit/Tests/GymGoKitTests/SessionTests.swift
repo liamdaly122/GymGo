@@ -35,6 +35,60 @@ private func snapshot(_ name: String) throws -> WatchSnapshot {
     #expect(next.weight == 102.5 && next.reps == 4)
 }
 
+@Test func aSetThatFellShortStepsTheNextOneDown() throws {
+    // The phone did 100 × 5 on a range of 8–10, and sent the next set stepped.
+    var session = WatchSession(snapshot: try snapshot("a plan, last time, a step down and an AMRAP set"))
+    let next = try #require(session.setInHand)
+    #expect(next.set.id == "a-s1" && next.set.source == "stepped")
+    // The watch works the same step out for itself, from the phone's set.
+    #expect(next.weight == 90 && next.reps == 8 && next.source == "stepped")
+    #expect(next.stepped == StepDown(from: SetNumbers(weight: 100, reps: 5), repLow: 8))
+
+    // Short again on the wrist: 85 × 6 is an estimated 80.5 for 8, down
+    // through the plates to 80, which is more than one step (82.5).
+    _ = try log(&session, weight: 85, reps: 6, at: minute(30))
+    let after = try #require(session.setInHand)
+    #expect(after.set.id == "a-s2")
+    #expect(after.weight == 80 && after.reps == 8 && after.source == "stepped")
+    #expect(after.stepped == StepDown(from: SetNumbers(weight: 85, reps: 6), repLow: 8))
+}
+
+@Test func aSetThatMadeTheRangeCarriesAsDone() throws {
+    var session = WatchSession(snapshot: try snapshot("a plan, last time, a step down and an AMRAP set"))
+    _ = try log(&session, weight: 90, reps: 9, at: minute(30))
+    let after = try #require(session.setInHand)
+    #expect(after.weight == 90 && after.reps == 9 && after.source == "carried" && after.stepped == nil)
+}
+
+@Test func anAMRAPSetIsNeverSteppedDownFrom() throws {
+    // Marked AMRAP on the phone, and done there: carried as done.
+    var fromPhone = try snapshot("a plan, last time, a step down and an AMRAP set")
+    fromPhone.lifts["ex-a"]!.doneToday[0].amrap = true
+    let carried = try #require(WatchSession(snapshot: fromPhone).setInHand)
+    #expect(carried.weight == 100 && carried.reps == 5 && carried.source == "carried")
+
+    // Marked AMRAP on the phone, and done on the wrist: carried as done too.
+    var onWrist = try snapshot("a plan, last time, a step down and an AMRAP set")
+    let index = try #require(onWrist.sets.firstIndex { $0.id == "a-s1" })
+    onWrist.sets[index].amrap = true
+    var session = WatchSession(snapshot: onWrist)
+    _ = try log(&session, weight: 85, reps: 6, at: minute(30))
+    #expect(session.logged["a-s1"]?.isAmrap == true)
+    let next = try #require(session.setInHand)
+    #expect(next.weight == 85 && next.reps == 6 && next.source == "carried")
+}
+
+@Test func theNumbersSayWhereTheyCameFrom() throws {
+    var session = WatchSession(snapshot: try snapshot("two straight lifts"))
+    #expect(session.setInHand?.source == "suggestion")
+    _ = try log(&session, weight: 100, reps: 5, at: minute(1))
+    #expect(session.setInHand?.source == "carried")
+
+    var pyramid = WatchSession(snapshot: try snapshot("a superset and a pyramid"))
+    _ = try log(&pyramid, weight: 110, reps: 5, at: minute(1))
+    #expect(pyramid.setInHand?.source == "scheme")
+}
+
 @Test func aBackOffAimsOffTheTopSetLoggedOnTheWrist() throws {
     var session = WatchSession(snapshot: try snapshot("a superset and a pyramid"))
     #expect(session.setInHand?.set.label == "Set 1 of 3")

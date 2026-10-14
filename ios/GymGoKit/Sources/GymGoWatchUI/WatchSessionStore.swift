@@ -22,6 +22,9 @@ public final class WatchSessionStore {
     @ObservationIgnored public var sendEvent: @MainActor (WatchEvent) -> Void = { _ in }
     /// Hands a state report, as JSON, to the phone. Wired by PhoneLink.
     @ObservationIgnored public var sendState: @MainActor (String) -> Void = { _ in }
+    /// Called at the end of every save, whether or not there is a file to
+    /// save to, with the state just saved. The complications hang off it.
+    @ObservationIgnored public var onSaved: (@MainActor (WatchAppState) -> Void)?
 
     /// Internal for the tests.
     @ObservationIgnored let haptics = Haptics()
@@ -30,6 +33,8 @@ public final class WatchSessionStore {
     /// The rest-over cue once more, 8 s on. Internal for the tests.
     @ObservationIgnored var repeatTask: Task<Void, Never>?
     @ObservationIgnored private var heartbeat: Task<Void, Never>?
+    /// Closes the Undo window of the set just logged, and sends its event.
+    @ObservationIgnored private var undoTask: Task<Void, Never>?
     @ObservationIgnored private var healthChain: Task<Void, Never>?
     @ObservationIgnored private var lastReported: (key: WatchAppState.ReportKey, health: WatchStateReport.Health)?
     @ObservationIgnored private var screenAwake = true
@@ -66,7 +71,7 @@ public final class WatchSessionStore {
                 notDetermined: failure == .notDetermined
             )
             if failure != .notDetermined { self.haptics.play(.failed) }
-            self.syncRestAlert()
+            self.updateRestAlert()
             self.keepReporting()
             self.reportIfChanged()
         }
@@ -78,7 +83,11 @@ public final class WatchSessionStore {
         Task { await self.restAlerts.refreshPermission() }
         retireLegacyFile()
         if state.expireRest(now: Date()) { save() }
+        // A set whose Undo window ran out while the app was not running stays
+        // logged; its event goes with the others once the link is up.
+        if state.closeUndo(ifOverAt: Date()) != nil { save() }
         scheduleRest()
+        scheduleUndo()
         keepReporting()
     }
 
@@ -87,15 +96,10 @@ public final class WatchSessionStore {
             .appendingPathComponent("watch-state.json")
     }
 
-    /// What was dialled in for the set in hand, so the numbers survive the
-    /// set screen going away behind the rest and coming back.
-    public struct SetDraft: Equatable, Sendable {
-        public var setId: String
-        public var weightIndex: Double
-        public var reps: Double
-        public var onReps: Bool
-    }
-
+    /// What was dialled in for the set in hand (`SetDraft` in GymGoKit), so
+    /// the numbers survive the set screen going away behind the rest and
+    /// coming back, and so a Done from outside the screen (the Action
+    /// button) logs what the screen shows.
     @ObservationIgnored public var draft: SetDraft?
 
     // MARK: - What the screens read
@@ -112,6 +116,12 @@ public final class WatchSessionStore {
         let change = state.apply(context)
         guard change.applied else { return }
         haptics.enabled = state.settings.vibrate
+        // The session ended, or the phone logs now: a set held for its Undo
+        // window goes at once.
+        if let released = change.released {
+            undoTask?.cancel()
+            sendEvent(released)
+        }
 
         if let ended = change.ended {
             haptics.play(.endedOnPhone)
@@ -153,10 +163,11 @@ public final class WatchSessionStore {
         save()
     }
 
-    /// Every event not yet confirmed, to send again after a reconnection.
+    /// Every event not yet confirmed, to send again after a reconnection,
+    /// less a set still in its Undo window.
     public func unconfirmedEvents() -> [WatchEvent] {
         state.prune(now: Date())
-        return state.unconfirmed
+        return state.sendable(now: Date())
     }
 
     // MARK: - From the wrist
@@ -175,13 +186,105 @@ public final class WatchSessionStore {
         health { await self.startHealth(for: workoutId) }
     }
 
-    /// Done: logs the set in hand with these numbers and starts whatever rest follows.
+    /// Done: logs the set in hand with these numbers and starts whatever rest
+    /// follows. A set logged while the workout is paused resumes it. Its
+    /// event waits out the Undo window ("Logged · Undo", 5 s) before it goes
+    /// to the phone; the set before it, if still waiting, goes now.
     public func done(weight: Double, reps: Int) {
         touched()
         guard let result = state.logSet(weight: weight, reps: reps, at: Date()) else { return }
-        sendEvent(result.outcome.event)
+        draft = nil
+        if workout.isPaused { workout.resume() }
+        if let released = result.released { sendEvent(released) }
+        scheduleUndo()
         repeatTask?.cancel()
         haptics.play(result.cue)
+        scheduleRest()
+        save()
+        reportIfChanged()
+    }
+
+    /// "Logged · Undo", inside its window: the set is back in hand with the
+    /// numbers it was logged at, the rest it started is cancelled, and the
+    /// phone never hears of it. Past the window, the set stays logged.
+    public func undoLastSet() {
+        touched()
+        guard let entry = state.undoLastSet(at: Date()) else {
+            releaseUndo(now: Date())
+            return
+        }
+        undoTask?.cancel()
+        haptics.cancel()
+        if let hand = setInHand, hand.set.id == entry.setId {
+            draft = SetDraft(setId: entry.setId, weightIndex: Double(hand.dial.index(for: entry.weight)), reps: Double(entry.reps), onReps: false)
+        }
+        repeatTask?.cancel()
+        scheduleRest()
+        save()
+        reportIfChanged()
+    }
+
+    /// Closes the Undo window when its time is up, sending the set's event.
+    private func scheduleUndo() {
+        undoTask?.cancel()
+        guard let until = state.undo?.until else { return }
+        undoTask = Task { @MainActor [weak self] in
+            let wait = until.timeIntervalSinceNow
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+            guard !Task.isCancelled, let self else { return }
+            self.releaseUndo(now: Date())
+        }
+    }
+
+    /// The Undo window, if its time is up by `now`, closes: the set's event goes.
+    private func releaseUndo(now: Date) {
+        guard let held = state.closeUndo(ifOverAt: now) else { return }
+        sendEvent(held)
+        save()
+    }
+
+    /// Done with the numbers on the set screen (`SetInHand.numbersOnScreen`,
+    /// the same rule the screen reads), for a Done from outside it: the
+    /// Action button. False, and the failure tap, with no reps on screen,
+    /// never 0 × 0; false with nothing to log.
+    @discardableResult
+    public func logSetOnScreen() -> Bool {
+        guard let hand = setInHand else { return false }
+        let numbers = hand.numbersOnScreen(draft)
+        guard numbers.reps > 0 else {
+            haptics.play(.failed)
+            return false
+        }
+        done(weight: numbers.weight, reps: numbers.reps)
+        return true
+    }
+
+    /// "Skip this set", from the lift sheet.
+    public func skipSetInHand() {
+        touched()
+        guard state.skipSetInHand(at: Date()) else { return }
+        moved()
+    }
+
+    /// "Done with this lift": the rest of the station in hand.
+    public func doneWithLift() {
+        touched()
+        guard state.skipStationInHand(at: Date()) else { return }
+        moved()
+    }
+
+    /// A station tapped on This session. False for one with nothing to do.
+    @discardableResult
+    public func go(toStation index: Int) -> Bool {
+        touched()
+        guard state.go(toStation: index, at: Date()) else { return false }
+        moved()
+        return true
+    }
+
+    /// The set in hand moved on the wrist: a rest under way says what is next
+    /// now, or one handed on by a skipped partner has begun.
+    private func moved() {
         scheduleRest()
         save()
         reportIfChanged()
@@ -207,9 +310,13 @@ public final class WatchSessionStore {
         reportIfChanged()
     }
 
-    /// Finish and save, after the screen has asked.
+    /// Finish and save, after the screen has asked. A set still in its Undo
+    /// window goes at once, ahead of the finish that carries it.
     public func finish() {
         touched()
+        guard state.session?.isOver == false else { return }
+        undoTask?.cancel()
+        if let held = state.closeUndo() { sendEvent(held) }
         guard let event = state.finish(at: Date()) else { return }
         sendEvent(event)
         stopRestCues()
@@ -287,11 +394,13 @@ public final class WatchSessionStore {
     /// Health workout for a session adopted while the app could not.
     public func appBecameActive() {
         screenChanged(awake: true)
+        // An Undo window that ran out while the app was suspended.
+        releaseUndo(now: Date())
         if state.expireRest(now: Date()) {
             save()
             reportIfChanged()
         }
-        syncRestAlert()
+        updateRestAlert()
         restAlerts.clearDelivered()
         // Settings can turn the notification, or its sound, off at any time.
         // Read now, not behind Health's questions, which may wait on the lifter.
@@ -346,7 +455,7 @@ public final class WatchSessionStore {
         healthChain = Task { @MainActor in
             await previous?.value
             await operation()
-            self.syncRestAlert()
+            self.updateRestAlert()
             self.keepReporting()
             self.reportIfChanged()
         }
@@ -439,7 +548,7 @@ public final class WatchSessionStore {
     /// Rescheduled whenever the rest changes.
     private func scheduleRest() {
         restTask?.cancel()
-        syncRestAlert()
+        updateRestAlert()
         guard let rest = state.rest else { return }
         let cues = restCues(endsAt: rest.endsAt, seconds: rest.seconds, now: Date())
         let id = rest.id
@@ -457,11 +566,21 @@ public final class WatchSessionStore {
         }
     }
 
+    /// After every pause and resume of the Health workout (watch-platform
+    /// calls it): the rest-over notification follows, and the phone hears of
+    /// the pause at once.
+    public func syncRestAlert() {
+        updateRestAlert()
+        reportIfChanged()
+    }
+
     /// The rest-over notification follows the rest and Health: wanted while
-    /// a rest runs and no Health workout keeps the app running.
-    private func syncRestAlert() {
+    /// a rest runs and no Health workout keeps the app running. A paused
+    /// workout counts as not recording.
+    private func updateRestAlert() {
         restAlerts.sync(RestAlert.wanted(
-            for: state.rest, healthRecording: workout.isRunning, vibrate: state.settings.vibrate, now: Date()
+            for: state.rest, healthRecording: workout.isRunning && !workout.isPaused,
+            vibrate: state.settings.vibrate, now: Date()
         ))
     }
 
@@ -490,7 +609,7 @@ public final class WatchSessionStore {
         if by == .app {
             haptics.play(.restOver)
             // The notification goes, or arrives silent.
-            syncRestAlert()
+            updateRestAlert()
         }
         // `.system`: the notification stays, and plays it on the wrist.
         let endedAt = Date()
@@ -517,14 +636,17 @@ public final class WatchSessionStore {
 
     /// A report whenever what it says changes.
     private func reportIfChanged() {
-        let key = state.reportKey, health = workout.health
+        let key = state.reportKey(paused: workout.pausedAt), health = workout.health
         if let last = lastReported, last.key == key, last.health == health { return }
         report()
     }
 
     private func report() {
-        let report = state.report(at: Date(), heartRate: workout.heartRate, activeKcal: workout.activeKcal, health: workout.health)
-        lastReported = (state.reportKey, workout.health)
+        let report = state.report(
+            at: Date(), heartRate: workout.heartRate, activeKcal: workout.activeKcal, health: workout.health,
+            paused: workout.pausedAt
+        )
+        lastReported = (state.reportKey(paused: workout.pausedAt), workout.health)
         save()
         if let json = try? report.json() { sendState(json) }
     }
@@ -587,6 +709,7 @@ public final class WatchSessionStore {
     }
 
     private func save() {
+        defer { onSaved?(state) }
         guard let fileURL else { return }
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)

@@ -14,6 +14,9 @@ import WatchConnectivity
 ///   `sendMessage` when the phone is reachable (faster, and it wakes the
 ///   phone app's native side). Each event carries its own ID, so the phone
 ///   applies the second copy once. A finish carries its unconfirmed sets.
+///   A set's `completeSet` reaches here only once its 5 s Undo window has
+///   closed (the store holds it, and `unconfirmedEvents()` leaves it out of
+///   a resend), or at once on a Finish.
 /// - Out: state reports, as the watch's own application context
 ///   `["state": json]` and by `sendMessage` when reachable. Never queued:
 ///   the newest `seq` wins.

@@ -468,3 +468,14 @@ private final class OnceGate: @unchecked Sendable {
         }
     }
 }
+
+// TEMP stub (watch-logic): watch-platform builds pause and resume in
+// parallel, with these names (docs/build7-plan.md, "Seams"). They stand in so
+// WatchSessionStore builds against them. Drop this commit at the merge and
+// take watch-platform's WorkoutController.
+extension WorkoutController {
+    public var isPaused: Bool { false }
+    public var pausedAt: Date? { nil }
+    public func pause() {}
+    public func resume() {}
+}

@@ -56,16 +56,8 @@ public enum Theme {
     public static func registerFonts() { _ = registered }
 }
 
-/// A weight the way the big fields show it: no trailing zeros, no float dust.
-func formatWeight(_ weight: Double) -> String {
-    let rounded = (weight * 100).rounded() / 100
-    return rounded == rounded.rounded() ? String(Int(rounded)) : String(rounded)
-}
-
-/// "102.5 × 6", or "BW × 12" for unloaded bodyweight work.
-func formatLogged(_ weight: Double, _ reps: Int) -> String {
-    "\(weight > 0 ? formatWeight(weight) : "BW") × \(reps)"
-}
+// `formatWeight` and `formatLogged` are in GymGoKit (Stations.swift): Up next
+// and the state report word numbers there, the same way the screens do.
 
 /// "1:02:15" or "42:07"; "1:02" when only minutes may show (Always On).
 func formatElapsed(_ seconds: TimeInterval, minutesOnly: Bool = false) -> String {
