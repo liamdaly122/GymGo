@@ -314,14 +314,37 @@ extension WatchGlance {
     /// training days from today, and the session on offer, but not one done
     /// on the wrist that the phone has not heard of, on the day it was done
     /// or the day it was planned for.
+    ///
+    /// The session on offer counts on every day from when it is due through
+    /// `rollHorizon` days from today, while it is open: missed, it rolls onto
+    /// each of them in turn (the face's Today card says so at midnight with
+    /// no reload), and windows worked out today are what the Smart Stack
+    /// keeps until something invalidates them. Starting it on the wrist,
+    /// discarding it, or a phone context offering another changes these
+    /// days, and that invalidates them.
     public func trainingDays(from now: Date, timeZone: TimeZone = .current) -> [String] {
         let today = localDay(now, timeZone: timeZone)
         var days = (self.today?.week ?? [])
             .filter { ($0.state == .planned || $0.state == .today) && $0.date >= today }
             .map(\.date)
-        if let ready = self.today?.ready, !ready.used, !ready.discarded { days.append(max(ready.date, today)) }
+        if let ready = self.today?.ready, !ready.used, !ready.discarded {
+            let due = max(ready.date, today)
+            days.append(due)
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = timeZone
+            let midnight = calendar.startOfDay(for: now)
+            for offset in 1...Self.rollHorizon {
+                guard let date = calendar.date(byAdding: .day, value: offset, to: midnight) else { continue }
+                let day = localDay(date, timeZone: timeZone)
+                if day > due { days.append(day) }
+            }
+        }
         return Set(days).subtracting([doneHereDay, movedReady?.date].compactMap { $0 }).sorted()
     }
+
+    /// How many days past today a session on offer and not trained may roll
+    /// onto, as far as the Smart Stack is told: the week the timeline covers.
+    public static let rollHorizon = 6
 
     /// The hours of a training day the Smart Stack should offer GymGo: when
     /// a lifter is up, early bird to night owl. Not the small hours.
