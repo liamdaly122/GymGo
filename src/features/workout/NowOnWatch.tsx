@@ -65,7 +65,7 @@ export default function NowOnWatch({
   // Each member's next set: the watch's set in hand where it is, else its
   // first still to do, past any the watch skipped. The current member is the
   // one the watch is on, else whoever is next in the order the work is done.
-  const { watchMember, current: currentMember, targets } = companionTargets(
+  const { watchMember, current: currentMember, targets, skippedOnly } = companionTargets(
     entries.map((entry) => entry.sets),
     watchSetId,
     skipped,
@@ -121,6 +121,7 @@ export default function NowOnWatch({
           key={entry.workoutExercise.id}
           entry={entry}
           targetSetId={targets[member] ?? null}
+          skippedOnWatch={skippedOnly[member] ?? false}
           workoutId={workoutId}
           pro={pro}
           restSeconds={restFor(entry)}

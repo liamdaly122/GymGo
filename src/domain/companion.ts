@@ -185,7 +185,7 @@ export function companionTargets(
   members: ReadonlyArray<ReadonlyArray<OrderedSet>>,
   watchSetId: string | null,
   skipped: ReadonlyArray<string> = [],
-): { watchMember: number; current: number; targets: Array<string | null> } {
+): { watchMember: number; current: number; targets: Array<string | null>; skippedOnly: boolean[] } {
   const passed = new Set(skipped);
   const remaining = members.map((sets) => sets.map((set) => (passed.has(set.id) ? { ...set, completed: true } : set)));
   const lists = setInHand(remaining) ? remaining : members.map((sets) => [...sets]);
@@ -193,5 +193,7 @@ export function companionTargets(
   const watchMember = members.findIndex((sets) => sets.some((set) => set.id === watchSetId));
   const current = watchMember !== -1 ? watchMember : (setInHand(lists)?.member ?? -1);
   const targets = lists.map((sets, member) => (member === watchMember ? watchSetId : (setInHand([sets])?.setId ?? null)));
-  return { watchMember, current, targets };
+  // Nothing left to ask for only because the watch skipped what is left: not "All sets done".
+  const skippedOnly = targets.map((target, member) => target === null && members[member]!.some((set) => !set.completed));
+  return { watchMember, current, targets, skippedOnly };
 }

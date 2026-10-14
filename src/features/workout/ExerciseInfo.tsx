@@ -30,6 +30,7 @@ import { describeTempo, formatLogged, formatNumber } from './setNames';
 export default function ExerciseInfo({
   entry,
   targetSetId,
+  skippedOnWatch = false,
   workoutId,
   pro,
   restSeconds,
@@ -39,6 +40,8 @@ export default function ExerciseInfo({
   entry: WorkoutExerciseView;
   /** The set this exercise does next: the watch's set in hand, or its next unticked one. */
   targetSetId: string | null;
+  /** No set to show only because the watch skipped what is left. */
+  skippedOnWatch?: boolean;
   workoutId: string;
   pro: boolean;
   restSeconds: number;
@@ -123,7 +126,7 @@ export default function ExerciseInfo({
           </p>
         </div>
       ) : (
-        <p className="b-setlabel">All sets done</p>
+        <p className="b-setlabel">{skippedOnWatch ? 'Skipped on your watch' : 'All sets done'}</p>
       )}
 
       {/* The plan behind the numbers, one line, the full reason a tap away;
