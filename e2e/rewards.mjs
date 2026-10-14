@@ -115,6 +115,10 @@ await step('Today shows the level and the streak, and opens the Awards', async (
     throw new Error(`expected level 4 and a three-week streak, saw: ${name}`);
   }
   await p.screenshot({ path: 'e2e/shot-level-today.png' });
+  // Seeded history, today's included, is not a Finish on the watch: no "Done." owed.
+  if (await p.getByRole('region', { name: 'Finished on your watch' }).count()) {
+    throw new Error('Today offered a watch poster for seeded history');
+  }
   await strip.click();
   await p.getByRole('region', { name: 'Level' }).waitFor({ timeout: 5000 });
 });
