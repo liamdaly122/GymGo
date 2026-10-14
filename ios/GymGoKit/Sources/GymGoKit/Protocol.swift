@@ -86,7 +86,15 @@ public struct WatchReady: Codable, Sendable, Equatable {
     public var week: Week?
     public var minutes: Int
     public var exercises: [Line]
-    /// Opaque: echoed back unchanged in the startWorkout event.
+    /// The phone's `StartLayout`, as JSON: echoed back in the startWorkout
+    /// event, unchanged, except after a Discard on the wrist. The same
+    /// session then starts again under IDs the watch mints (lowercase v4
+    /// UUIDs), because the phone writes a workout ID once. Exactly three
+    /// fields are re-minted, alike in the layout and the snapshot:
+    /// `workoutId`, `exercises[].id` and `exercises[].sets[].id`
+    /// (`withFreshIds`, FreshIds.swift). An ID field added to the layout must
+    /// be added to `LayoutIds` there too, or a start again would point at the
+    /// discarded workout's rows.
     public var layout: String
     public var snapshot: WatchSnapshot
 }
@@ -113,7 +121,8 @@ public struct WatchEvent: Codable, Sendable, Equatable, Identifiable {
     public var weight: Double?
     public var reps: Int?
     public var at: String
-    /// startWorkout: the ready session's routine and its layout, echoed back.
+    /// startWorkout: the ready session's routine and its layout, echoed back
+    /// (re-minted after a Discard on the wrist: see `WatchReady.layout`).
     public var routineId: String?
     public var layout: String?
     /// finish: the unconfirmed completeSet events for this workout, in order.
