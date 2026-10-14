@@ -14,6 +14,7 @@ import type { Readiness } from './types';
 import type { ExerciseSession } from './previousPerformance';
 import { isHeavier, isTopWorkingSet } from './sets';
 import { loadableWeight, nextLoadableAbove, nextLoadableBelow, type LoadingProfile } from './plates';
+import { carryForward } from './carry';
 
 export type SuggestionKind = 'add_weight' | 'add_reps' | 'repeat' | 'deload' | 'estimate';
 
@@ -231,10 +232,20 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
    * missed still counts towards the deload. Only against a prescribed range,
    * since with none there is nothing to fall short of; never an AMRAP set,
    * which is not a target.
+   *
+   * Only a set about as heavy as the app's own step-down from the set that
+   * missed counts (within one loadable step below it): a burnout at 60% after
+   * three short sets, ramp-up sets logged as working, or a planned top single
+   * followed by back-offs well below it are not a step-down, and the top set
+   * stays the thing to build on.
    */
+  const stepTo = prescribed && lastTop.reps < prescribed.low ? carryForward([lastTop], prescribed.low, loading) : null;
+  const lowest = stepTo?.stepped ? nextLoadableBelow(stepTo.weight_kg, loading) : Infinity;
   const reachedRange =
-    prescribed && lastTop.reps < prescribed.low
-      ? closed.filter((set) => set.weight_kg < lastTop.weight_kg && set.reps >= prescribed.low)
+    prescribed && stepTo?.stepped
+      ? closed.filter(
+          (set) => set.weight_kg < lastTop.weight_kg && set.weight_kg >= lowest && set.reps >= prescribed.low,
+        )
       : [];
   const steppedTo =
     reachedRange.length > 0
@@ -319,7 +330,9 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
     signalNote = ' You logged nothing left in the tank, so hold here for now.';
   } else if (top.reps >= repRange.high) {
     kind = 'add_reps';
-    reps = top.reps;
+    // After a step-down the target stays inside the prescription, however
+    // many reps the lighter sets ran to.
+    reps = steppedTo ? repRange.high : top.reps;
   } else {
     kind = 'add_reps';
     reps = Math.min(repRange.high, top.reps + 1);
@@ -362,7 +375,12 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
   } else if (steppedTo) {
     // "100kg × 5 was under 8; 90kg × 8 worked. Go for 9."
     const worked = `${formatWeight(lastTop.weight_kg)} × ${lastTop.reps} was under ${repRange.low}; ${formatWeight(previousWeight)} × ${top.reps} worked.`;
-    reason = reps === top.reps ? `${worked} Match it on every set to earn the next jump.` : `${worked} Go for ${reps}.`;
+    reason =
+      reps === top.reps
+        ? `${worked} Match it on every set to earn the next jump.`
+        : reps < top.reps
+          ? `${worked} Match ${reps} on every set to earn the next jump.`
+          : `${worked} Go for ${reps}.`;
   } else if (reps === top.reps) {
     reason = `Match ${formatWeight(previousWeight)} × ${reps} on every set to earn the next jump.`;
   } else {

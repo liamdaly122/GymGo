@@ -363,11 +363,44 @@ describe('judging a session that had a heavy top set', () => {
     })!;
 
     expect(suggestion.kind).not.toBe('deload');
-    // And it builds from the back-offs that reached the range, not from the
-    // triple that missed it: not "120kg × 4".
-    expect(suggestion.weight_kg).toBe(100);
-    expect(suggestion.reps).toBe(8);
-    expect(suggestion.reason).toBe('120kg × 3 was under 5; 100kg × 8 worked. Match it on every set to earn the next jump.');
+    // Back-offs well below the app's own step-down are a plan, not a step
+    // down: the top set is still the thing to build on.
+    expect(suggestion.weight_kg).toBe(120);
+    expect(suggestion.reps).toBe(4);
+  });
+
+  it('builds from a lighter set only when it is about the step-down the app would give', () => {
+    const STEPS = { low: 8, high: 10 };
+    const at = (sets: Array<{ weight: number; reps: number }>) =>
+      suggestNextSet({ exercise: squat, repRange: STEPS, loading: BAR, history: [session(sets)] })!;
+
+    // A burnout at 60% after three short sets is not a step-down.
+    const burnout = at([
+      { weight: 100, reps: 6 },
+      { weight: 100, reps: 6 },
+      { weight: 100, reps: 6 },
+      { weight: 60, reps: 20 },
+    ]);
+    expect([burnout.weight_kg, burnout.reps]).toEqual([100, 7]);
+
+    // Ramp-up sets logged as working, below the top set, are not either.
+    const ramp = at([
+      { weight: 80, reps: 10 },
+      { weight: 90, reps: 10 },
+      { weight: 100, reps: 7 },
+    ]);
+    expect(ramp.weight_kg).toBe(100);
+
+    // The step-down itself, run past the top of the range: the target stays
+    // inside the prescription.
+    const stepped = at([
+      { weight: 100, reps: 6 },
+      { weight: 90, reps: 12 },
+      { weight: 90, reps: 12 },
+      { weight: 90, reps: 12 },
+    ]);
+    expect([stepped.weight_kg, stepped.reps]).toEqual([90, 10]);
+    expect(stepped.reason).toBe('100kg × 6 was under 8; 90kg × 12 worked. Match 10 on every set to earn the next jump.');
   });
 
   it('still deloads when every working set fell short, twice running', () => {
