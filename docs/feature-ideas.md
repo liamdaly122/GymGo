@@ -1,0 +1,116 @@
+# GymGo: feature ideas after build 6, checked against the code
+
+The six lenses gave 59 ideas. After merging duplicates there are 44 entries below. I checked each one against `dev` at 5c6579c. Effort uses the roadmap's sizes: S is an evening, M is a few evenings, L is a week or more. None of the ideas ranked here needs a Supabase migration. The columns they use already exist, or the data is worked out each time or kept in localStorage.
+
+## Top 5 overall, with how each would be built
+
+**1. Why this number, and last time, on the wrist** (S · wrist, coach, polish)
+The watch's set screen gets the plan's verb next to the set label ("Set 1 of 4 · Go up"). Tapping the lift name shows the one-line reason and last time's sets ("3 Oct · 97.5 × 8, 8, 7"), and the rest's Up next adds "Last 97.5 × 8" when the next set is a new lift. Liam now logs every set on the watch, but the watch only shows bare numbers. It would also show the backlog 1 and 3 problems on the wrist when they happen.
+- **Phone:** `buildWatchSnapshot` in `src/domain/watch.ts` already receives `previous` (a `PreviousPerformance` with `working_sets`) and the suggestion for every lift, but sends only weight and reps. Widen `suggestion` in `WatchEntryInput` to carry `kind` and `reason`. `src/db/watch.ts` already passes the whole `Suggestion`. Then add an optional `lastTime` to `WatchLift` and an optional `plan {verb, reason}` to `WatchSet`. Only the first working set of a lift gets `plan`, as on the phone. `VERB` lives in `src/features/workout/setPlan.ts`, which `src/domain` must not import. Move it into `src/domain`, or send `kind` and let the watch map it to a word, which is display wording rather than a rule.
+- **Contract:** update `src/domain/watchProtocol.ts`, `GymGoKit/Snapshot.swift` and `docs/watch-protocol.md`. Optional fields decode fine on a build 6 watch, so the version stays 1. Clamp the reason, and keep an eye on `CONTEXT_WARN_BYTES` (60 KB).
+- **Watch:** the `SetInHandView` header, `LiftSheet` and the `RestView` Up next.
+- **Tests:** `npm run fixtures:watch` (the snapshot and context fixtures change), then `swift test`. There is no new watch rule, and all of it works in the Simulator.
+
+**2. Step down a notch when the reps fall short** (M · wrist, coach · backlog note 3, which Liam asked for)
+Take 100 × 5 on a lift prescribed 8–10. The next set starts one loadable step lighter, at 97.5, with "Down a step: 5 was under 8", instead of offering 100 again. Lowering is the safe direction, so it fits "effort may lower but never add load".
+- **Domain:** add a pure rule beside `latestWorkingSet` in `src/domain/sets.ts`, used by `setHints.ts`, that steps down with `nextLoadableBelow`. Working straight sets only: never warm-ups, child sets, AMRAP sets or pyramid back-offs (those keep `schemeTarget`). Write tests in both directions.
+- **Watch:** this changes rule 1 (carry forward) in `GymGoKit/Rules.swift` (`carriedSet`) and `WatchSession.numbers(for:lift:)`. One step down is just the previous rung of `lift.ladder`. `WatchLift` gains an optional `repLow`. It is nil for a freestyle session, because the range comes from the live routine row in `suggestionFor`, so nothing changes there.
+- **Fixtures:** add new cases to `fixtures/watch/carry.json`. CLAUDE.md requires them before the change goes in.
+- **Liam decides:** one step or more, and what the rep target becomes.
+- **Testing:** Simulator plus unit tests.
+
+**3. Run the session your way from the wrist: jump, skip, done with this lift** (M · wrist, companion, polish)
+On the watch's This session page, tapping a station goes there now, for when the rack is taken. The lift sheet gets "Skip this set" and "Done with this lift". In a busy gym this is the main thing that still sends Liam to his bag, and roadmap 4.4 promised "Tap one to go there".
+- **Watch:** today `setInHand` is always `remainingSets.first` (`Session.swift:109`), and the `SessionListView` rows are plain text. Add a focused station and a `skipped` set to `WatchSession`, decoded with defaults like the existing older-build fields, and keep both through `receive(_:)`. Make the rows buttons, and jump only to the start of a station so superset rounds stay valid.
+- **Protocol:** none. `finishWorkout` already tidies away unlogged sets, and the state report's `setId` already moves the companion through `watchStation`.
+- **New watch rule:** after a jump, the watch has to word Up next and choose the next station itself, which is `nextStation` from `src/domain/supersets.ts`. That is a fourth rule, so it needs a fixture.
+- **Cheaper phone half to ship first:** a "Do something else first" button on the companion's Up next. A station-level move in `mutations.ts` queues every row it moves, and the watch follows the new order on the next context. The catch: a rest already running keeps its saved Up next.
+- **Testing:** Simulator for the screens; the round trip with the phone on the devices.
+
+**4. The Action button logs the set, starts the session, and pauses** (M · wrist, ecosystem · roadmap 4.4 and decision 9)
+- **The button itself:** one press of the Ultra's Action button does Done, or Skip during a rest. With no session running it starts today's session. Action plus the side button pauses and resumes the Health recording.
+- **Why now:** the roadmap's Phase 4 done-when ("some of it with the Action button, with the phone locked in a bag") has not been met. `docs/watch-protocol.md` says it is not wired up yet.
+- **Start:** a `StartWorkoutIntent` in the watch app target (`ios/App/GymGo Watch App`, not the GymGoKit package). Its `perform()` calls `WatchSessionStore.startToday()` and must start an `HKWorkoutSession`. That intent is what lists GymGo under Settings → Action Button. An `AppShortcutsProvider` adds Siri for free.
+- **Done and Skip:** the press runs the same handler as Done, which double tap already uses through `.handGestureShortcut(.primaryAction)`.
+- **Pause and Resume:** `PauseWorkoutIntent` and `ResumeWorkoutIntent` call `HKWorkoutSession.pause()` and `resume()` in `WorkoutController.swift`. Today it has no pause code; `.paused` only appears in `end()`. Add a paused flag in `AppState` and a Paused page. The rest keeps its wall-clock end time.
+- **Accidental presses:** add a 5-second "Logged · Undo". It holds back sending the event, not writing it to the watch's own log, so a crash still keeps the set.
+- **Testing:** device-only. The Simulator has no Action button, and how a press reaches a third-party app mid-workout has to be proved on the Ultra. Liam picks GymGo once in Settings. There is no change on the phone, to the protocol or to Supabase.
+
+**5. The "Done." poster after a wrist finish** (S · motivation, polish · phone only)
+When the watch finishes a session while the phone is in the bag, opening the phone shows a one-tap banner on Today ("Your session's in · see it"). The banner opens the summary with `fresh: true`, once, so the XP bar fills, a level-up gets its poster and new badges stamp in.
+- **Why it is missing:** `ActiveWorkoutScreen.tsx:189` only sets `fresh` if it was on screen when `finished_at` changed. A session started on the wrist with the phone locked never shows that screen.
+- **Build:** a pure `shouldCelebrate` rule (the newest finished workout from the last ~12 hours that has not been celebrated) in `src/domain/rewards`. Keep a `gymgo.celebrated` key in localStorage, set by both Finish paths and by the banner. Show the banner on `HomeScreen.tsx` above `LevelStrip`.
+- **Why a banner:** jumping straight to the summary could take over an open sheet or workout.
+- **Tests:** unit tests for the rule, plus one browser case that seeds a finished workout. The real watch drain only happens on the devices.
+
+## Quick wins (small, high value)
+
+1. **Why this number, and last time, on the wrist.** Top 5 #1.
+2. **The "Done." poster after a wrist finish.** Top 5 #5.
+3. **Plates per side on the watch** (S–M · wrist, polish). During the rest and in the lift sheet, the watch says what to load: "20 + 10 + 1.25 a side", "two 22.5s" or a stack pin. `WatchLift.loading` (the `LoadingProfile`) is already sent, so this ports `plateBreakdown` and `formatPlateLoad` from `src/domain/plates.ts` into `Rules.swift` with a new fixture file. The watch has no plate colours, so plain text is enough.
+4. **Today's poster shows the weights** (S · companion). The hero list and the next session's day sheet read "Back Squat 3 × 5 · 102.5kg", with a blue "+2.5" where the plan went up. Today `useSessionPreview` only reads routine rows (sets × reps), but `readySession` in `src/db/watch.ts` already works out these exact opening numbers for the watch. Only the next session can be shown honestly, and the numbers are before any low-readiness answer. The watch's Exercises page could show the same figures from `ready.snapshot`.
+5. **A rest you can read from across the rack** (S · polish, watch only). A ring drains around the rest clock, digits roll as the Crown turns, and a record stamps in. `RestView` today only turns the number blue for the last 10 seconds. Use system timer views (`ProgressView(timerInterval:)`) so Always On stays cheap, and switch the animation off when the screen is dimmed or Reduce Motion is on.
+6. **What moved since last time, per lift, on the summary** (S · motivation). Each lift gets one line on the session summary: "Bench · +1 rep at 100kg", "Squat · +2.5kg", "Row · matched". A deload or low-readiness day is labelled as lighter on purpose. The brief asks for a comparison against last time, but today only the tonnage and set-count difference is built (`summary.comparison`). It must read `previousPerformance.ts`, not re-work the rule out on this screen.
+
+## Big bets (larger, transformative)
+
+1. **Action button, start from the face, Pause/Resume.** Top 5 #4.
+2. **Run the session your way from the wrist.** Top 5 #3.
+3. **The watch's session on the Lock Screen and in the Dynamic Island** (M · companion, ecosystem). While the watch logs, the iPhone 14 Pro's Lock Screen and Dynamic Island show the rest countdown, "Up next" and the heart rate, so a glance between stations needs no unlock. `WatchLink.swift` already receives every state report in native code (`rest.endsAt`, `upNext`, `heartRate`) while the web view is frozen, and decision 6 reserved `com.liamdaly.gymgo.restactivity`. The catches:
+   - A Live Activity can only start with the app open, so a session started on the wrist with the phone locked gets none until the phone is opened.
+   - Updates must carry no alert, to keep one cue per rest.
+   - There is no App Group entitlement on either target yet, and Liam adds the extension in Xcode.
+4. **Your session's heart rate on the phone** (M · companion, coach, ecosystem, polish; four lenses proposed it). A finished session's detail screen gets a heart-rate line with a tick at each set, average and peak bpm, active kcal, and per-exercise figures. It is read from Health by the `gymgo.workout.<id>` sync identifier and never stored. The phone has no HealthKit reads at all today: `WatchLink` only calls `startWatchApp` and never asks for authorisation. So this needs a small `HealthBridge` plugin and `src/platform/health.ts`, plus a pure function in `src/domain` that matches samples to sets. Body-weight import can share the plugin later. A refused read looks like no data, so the card must say where to grant access. Device-only.
+5. **GymGo at a glance: watch complications, Smart Stack and iPhone widgets** (M per target · wrist, companion, ecosystem · roadmap Phase 7 and Phase 3 item 3). The watch face shows "PUSH · TODAY" or "Next · Fri" with the week's marks, and the iPhone Lock Screen, Home Screen and StandBy show the same card with the streak ring. The content already exists in the context's `home` block, and `todayCard(now:)` already words it for a clock days past the phone's last run. Each surface is a new target with an App Group. The phone app target does not link GymGoKit yet, and the fonts live in `GymGoWatchUI/Fonts`. The widget can offer a session the watch already did if the phone has not been opened since.
+6. **More of the session on the wrist: add a set, a warm-up ramp, fix a logged set** (L · polish). "One more set", "Warm up" (the phone's `warmupRamp`) and "Fix 100 × 8" on the watch, through new `addSets`, `removeSet` and `amendSet` events. This reverses roadmap 4.4, which kept these on the phone, so Liam has to agree. Fixing a set must re-run the record check and carry forward, and the `finish` event's carried sets must hold the corrected numbers. The Undo window in Top 5 #4 covers the commonest slip more cheaply.
+
+## Coach brain (training intelligence)
+
+1. **Step down a notch when reps fall short.** Top 5 #2.
+2. **Readiness on the wrist, with last night's evidence as an option** (M, or L with Health · wrist, coach, ecosystem, polish). Rough / OK / Good sit above Start on the watch's Today page. The phone sends a 10%-lighter number for each set in `ready`, so the watch only picks between two numbers and gains no rule. The `startWorkout` event carries `readiness`, which `replayWatchStart` writes. Today it hard-codes `readiness: null` (`mutations.ts:344`). The optional add-on reads sleep, HRV and resting heart rate and shows them next to Liam's usual figures, but never picks for him, because over-flagging Rough would hold off deloads.
+3. **Carry history across close variants, for suggestions only** (M · coach · backlog notes 1 and 4). When a swap or a rotation puts in a sibling lift, the suggestion picks up from the variant's history instead of "First time on…". It matches only when the lift family, equipment, movement pattern and primary muscle all agree. Records and "last time" stay with the exact exercise. Backlog note 1 says Liam has to decide this.
+4. **Effort on the wrist** (M · wrist, coach). A tap after a set or an exercise (Easy / Solid / Max) writes `sets.rir`, which everything logged on the watch leaves null today. Note that `loggedRir` (`progression.ts:157`) only reads RIR when every working set has one (AMRAP sets aside) and the values differ. So a skippable per-set row feeds nothing unless every set is rated, and one tap per exercise needs `loggedRir` changed to trust a lone last-set reading. It needs a new event or field, with fixtures.
+5. **Spot a stalled lift and name a way out** (M · coach). After three judgeable sessions with no movement, the reason says "Stuck at 100 × 8 for 3 sessions" and offers a fix. On a coarse stack it chases two more reps first; otherwise a reset or a swap. At block end, a stalled accessory rotates and one still climbing is offered to keep. Nothing like this exists: a stall without failing says "Match 100kg × 8" forever. Rotating a main lift's variant changes the block rule, so it is Liam's call.
+6. **This week's sets per muscle, against the goal's target** (M · coach). Sets done, sets still planned this week, and the target band, with plain flags ("Hamstrings 4 of 10–20, nothing left this week"). Progress today shows a rolling "Sets in the last 7 days" with the default 10–20 marks whatever the goal. Pick one counting convention, keep child sets counting, and give the deload week its own lower target.
+7. **Bring the deload forward when the block is wearing him down** (M · coach). When two main lifts have failed twice, the estimated maxes are sliding, or Rough came up twice, Plan offers "Take the deload next week". `plans.deload_week` is written as 5 and read by nothing, so no migration is needed, but `weekModifier` has to start reading it. It touches the schedule, the block report and the full-block XP, and may only move the deload forward from the next week boundary.
+8. **An honest "about N min", from the rests actually taken** (S · companion). The summary shows "Rested 3:20 on average, plan 2:30", and the estimate learns Liam's real pace from the gaps between `completed_at` times. `estimateDurationMinutes` is a fixed 40 s a set plus the planned rest. Liam decides whether the plan builder's time limit learns from this too, or only Today.
+9. **Short on time: trim today's session before Start** (M · polish). Tap "about 55 min", pick 30, 45 or 60, and see what goes, using `tailorPlan`'s cut order. Only the copy made at Start is trimmed, never the routine. Rows added by hand have no readable role, so they are never cut.
+
+## Nice to have
+
+1. **XP and the week's stakes on the watch** (M · wrist, motivation). "Hits your week · 7 in a row" on the Today page, and "+245 XP · Level 8" on Done. Send phone-worked-out strings rather than porting XP to the watch. The Earned block only appears after the phone has applied the finish, and the Done page should say so.
+2. **Notes for today, and last time's note next time** (S–M · companion, polish). `workouts.notes` and `workout_exercises.notes` exist and sync, `updateWorkout` and `updateWorkoutExercise` already accept `notes`, and nothing calls them with it. The detail screen even has a Notes section that can never fill. Both functions refuse a finished workout, so a note added after Finish is an exception to the immutability rule that Liam has to approve.
+3. **The week, both ways** (M · motivation). A Monday recap card that folds away, and late in the week "2 more by Sunday keeps your 6-week streak", or "a banked week covers this one". `LevelStrip` today only says "N of M this week".
+4. **Record within reach** (M · motivation). "6 reps = record" before the set. It needs the top of the rep range on `WatchLift` and a fixture. It is hidden on warm-ups, back-offs, a lift's first session, the deload and low readiness.
+5. **Body weight from Apple Health** (M · ecosystem · Phase 6.2). Smart-scale weigh-ins fill the days with no typed entry. `workouts.bodyweight_kg` is never written (always null), but `startLayout.ts` is pure, so the weight has to be passed in, not read there.
+6. **Xcode Cloud** (M · ecosystem · Phase 2.4). This is plumbing, not a feature, but it has a date: build 6 expires around 12 January 2027. `ios/App/ci_scripts` does not exist, `main` is 67 commits behind `dev`, and `vercel.json` is still there, so `main`, or the branch Xcode Cloud builds, has to be settled first.
+7. **Record history, then and now, anniversaries** (M · motivation). A records feed, record dots on the lift chart, and "3 months ago 80 × 5 → now 100 × 5". It must go through `marksBroken`.
+8. **Story mode for a block's end and a year in review** (M · motivation). Swipeable posters in front of the block report, whose regions and names stay as they are for the browser suites.
+9. **Share images** (M · motivation). A 1080 × 1350 poster through the existing share sheet in `src/platform/files.ts`. Wait for the bundled fonts with `document.fonts.load` before drawing, and upper-case the text in code.
+10. **Body weight meets strength** (M · motivation). The weight chart and a main-lift strength index on the same dates. No badges for body-weight multiples.
+11. **Effort score saved to Apple Health** (S · ecosystem, watch only). A 1–10 Crown rating on Done, linked to the workout with `relateWorkoutEffortSample`. It needs a new Health write permission. How Fitness shows it for a third-party app has to be checked on the device.
+12. **Spoken cues in AirPods** (S · wrist, device-only). Rest-over and record lines spoken at the same moment as the existing cue, through headphones only. It must not double up with the rest-over notification from `RestAlerts`.
+13. **Training-day reminders** (M · companion, ecosystem). Local notifications that know about roll-forward and the streak, off by default. Needs a notifications plugin (none is installed). `WatchLink` cancels today's reminder when a wrist finish lands.
+14. **A photo of your own setup** (M · companion). A per-gym photo of the machine kept in Documents. It is not in the Supabase backup, the export or the snapshot, only in the iCloud phone backup, and the screen must say so.
+15. **Tempo shown on the wrist** (S · coach). `WatchLift` has no tempo field, so a prescribed tempo disappears once the watch logs. Showing it as text is worth doing only if Liam sets tempos.
+
+## Probably not
+
+- **Haptic tempo metronome:** a haptic briefly pauses heart-rate collection (roadmap 4.4), it is hard to feel mid-rep, and it is a gimmick next to just showing the tempo.
+- **A "start next session" control in Control Center, on the Lock Screen and in Siri on the phone:** redundant once the watch's Start page and Action button exist. It needs a URL scheme (none exists) and careful timing against the launch restore check and the inbox drain.
+- **A muscle map body drawing:** it repeats the bars, the dataset's 17 muscles (neck, abductors, one "shoulders") do not draw cleanly at 375px, and it is a lot of design work for a glance.
+- **Ending rests when the heart rate recovers:** it overrides Liam's own "rest follows the lift" numbers.
+- **Counting reps with the watch's motion sensors:** unreliable on racked barbell lifts, and it puts numbers in the log the lifter did not choose.
+- **Starting the Live Activity remotely (push-to-start):** needs APNs and a server.
+- **Badges for body-weight multiples:** they would reward a lower body weight, not getting stronger.
+- **Readiness set automatically from HRV:** a number with nothing behind it, and every Rough session is left out of the failure count, so over-flagging delays deloads. Suggest only.
+
+## Corrections to the lens claims (checked in the code)
+
+- **Readiness on wrist starts:** the lenses said a session started on the wrist can never record readiness. It can, if the phone is opened. `CompanionView.tsx:95` shows `ReadinessControl` ("How is today going?"), which writes `workout.readiness`. `suggestionFor` reads it, so the next context lowers the watch's numbers for any lift whose first set is not logged yet. The real gap is a phone left in the bag. CLAUDE.md's "ReadinessPrompt is the only writer" is already out of date.
+- **RIR:** effort only reaches the engine when every working set (AMRAP sets aside) is rated and the values differ (`loggedRir`). Neither "ignore it and nothing is recorded" nor "one tap per exercise" feeds it as things stand.
+- **Step-down:** `WatchSet.source` is a plain `String` in `Snapshot.swift`, so a new hint source does not break decoding on an older watch. The rep range comes from the live routine row, so freestyle sessions have none.
+- **Native setup:** there is no App Group entitlement on either target, the phone app target does not link GymGoKit, and there is no URL scheme in `Info.plist`. Every widget, Live Activity and deep-link idea starts by adding these.
+- **Health on the phone:** the phone never asks for HealthKit authorisation. The `Info.plist` read string already mentions body weight and heart rate, but no code reads either.
+- **The watch's Done screen** shows time, average bpm, kcal, sets and records only (`SummaryView.swift`). **The session list** rows are not buttons. **Pause and Resume** have no code. No App Intents exist. All confirmed not built.
+- **Already on the phone, so only missing on the watch:** the companion's `ExerciseInfo` already shows the verb chip, the reason, "Last time" and `PlateDiagram`.
