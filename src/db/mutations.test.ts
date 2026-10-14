@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import Dexie from 'dexie';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from './db';
 import {
   ImmutableWorkoutError,
@@ -476,5 +477,43 @@ describe('logging the numbers on screen', () => {
       ImmutableWorkoutError,
     );
     expect((await db.sets.get(logged))!.weight_kg).toBe(100);
+  });
+
+  /**
+   * A drain applying a set from the watch while Finish is pressed on the
+   * phone. Checked first and written after, a Finish landing in between left
+   * the set ticked and deleted, which nothing could mend afterwards. Checked
+   * and written in one step, the Finish comes wholly before or wholly after.
+   */
+  it('never ticks a set that a Finish tidied away after the check', async () => {
+    const workoutId = await startFreestyleWorkout();
+    const workoutExerciseId = await addExerciseToWorkout(workoutId, EXERCISE_A);
+    await completeSetWith(await addSet(workoutExerciseId), { weight_kg: 100, reps: 5 });
+    const setId = await addSet(workoutExerciseId);
+
+    // Finish pressed on the screen, outside this write, the moment the workout has been read as open.
+    const workouts = db.workouts as unknown as { get(key: string): Promise<unknown> };
+    const read = workouts.get.bind(workouts);
+    let finishing: Promise<boolean> | null = null;
+    const spy = vi.spyOn(workouts, 'get').mockImplementation(async (key: string) => {
+      const row = await read(key);
+      finishing ??= Dexie.ignoreTransaction(() => finishWorkout(workoutId));
+      return row;
+    });
+    const logged = await completeSetWith(setId, { weight_kg: 100, reps: 4 }).then(
+      () => true,
+      (cause: unknown) => {
+        if (cause instanceof ImmutableWorkoutError) return false;
+        throw cause;
+      },
+    );
+    spy.mockRestore();
+    expect(await finishing).toBe(true);
+
+    const set = (await db.sets.get(setId))!;
+    // Logged before the Finish, which keeps it; or refused, and tidied away untouched.
+    expect(set).toMatchObject(
+      logged ? { completed: true, reps: 4, deleted_at: null } : { completed: false, deleted_at: expect.any(String) },
+    );
   });
 });

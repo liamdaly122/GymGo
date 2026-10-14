@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import Dexie from 'dexie';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from './db';
 import {
   addExerciseToWorkout,
@@ -124,6 +125,34 @@ async function shapeOf(workoutId: string) {
       const { workout_exercise_id: we, ...rest } = strip(set) as Omit<WorkoutSet, 'id' | 'created_at' | 'updated_at'>;
       return { ...rest, position: exercises.findIndex((row) => row.id === we) };
     }),
+  };
+}
+
+/**
+ * Presses Finish on the phone for a workout just after the `read`th row read
+ * from now (counting the workouts, workout exercises and sets tables), as the
+ * screen would: from outside whatever transaction made that read. `landed`
+ * puts the reads back and says whether it was pressed, once that Finish is over.
+ */
+function finishOnRead(read: number, workoutId: string): { landed(): Promise<boolean> } {
+  let reads = 0;
+  let finishing: Promise<boolean> | null = null;
+  const tables = [db.workouts, db.workout_exercises, db.sets] as unknown as { get(key: string): Promise<unknown> }[];
+  const spies = tables.map((table) => {
+    const get = table.get.bind(table);
+    return vi.spyOn(table, 'get').mockImplementation(async (key: string) => {
+      const row = await get(key);
+      if (reads++ === read) finishing = Dexie.ignoreTransaction(() => finishWorkout(workoutId));
+      return row;
+    });
+  });
+  return {
+    async landed() {
+      for (const spy of spies) spy.mockRestore();
+      if (!finishing) return false;
+      await finishing;
+      return true;
+    },
   };
 }
 
@@ -284,6 +313,39 @@ describe('a set logged on the wrist', () => {
       expect((await db.sets.get(sets[2]!))!.deleted_at).not.toBeNull();
       expect((await db.sets.get(sets[0]!))!.weight_kg).toBe(102.5);
       expect(await db.outbox.count()).toBe(0);
+    });
+
+    /**
+     * An inbox event starts a drain whenever it lands, so Finish on the phone
+     * can be pressed while one is applying a late set. The drain read the
+     * workout as open, Finish tidied the set, and the drain then ticked it:
+     * ticked and deleted, acknowledged, and beyond `reviveTidiedSet`, which
+     * leaves a ticked set alone. Wherever among the drain's reads the Finish
+     * lands, the set ends up in the finished workout and in the backup.
+     */
+    it('ends up in the workout wherever a Finish on the phone lands while it is applied', async () => {
+      let landings = 0;
+      for (let read = 0; read < 30; read += 1) {
+        const { workoutId, sets } = await session();
+        await completeSetWith(sets[0]!, { weight_kg: 100, reps: 5 }, { completedAt: minutesAgo(6) });
+        const late = event({ workoutId, setId: sets[1], weight: 100, reps: 4, at: minutesAgo(3) });
+        const finish = finishOnRead(read, workoutId);
+
+        const first = await applyWatchEvents([late]);
+        if (!(await finish.landed())) break;
+        landings += 1;
+        // Held, it goes in on the next drain; never acknowledged and lost.
+        const second = first.keep.includes(late.id) ? await applyWatchEvents([late]) : null;
+
+        const where = `Finish pressed at read ${read}`;
+        expect([...first.acknowledge, ...(second?.acknowledge ?? [])], where).toContain(late.id);
+        expect((await db.workouts.get(workoutId))!.finished_at, where).not.toBeNull();
+        expect(await db.sets.get(sets[1]!), where).toMatchObject({ completed: true, reps: 4, deleted_at: null });
+        const queued = (await db.outbox.toArray()).filter((entry) => entry.row_id === sets[1]);
+        expect(queued.at(-1), where).toMatchObject({ op: 'put', payload: { completed: true } });
+      }
+      // The drain reads the workout, the set and its exercise at the least.
+      expect(landings).toBeGreaterThanOrEqual(3);
     });
 
     it('stays out of a workout thrown away', async () => {
