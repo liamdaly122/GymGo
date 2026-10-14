@@ -218,10 +218,36 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
   const repRange: RepRange =
     prescribed ?? { low: (closedTop ?? lastTop).reps, high: (closedTop ?? lastTop).reps };
 
+  /*
+   * What to progress from: the heaviest set, unless it fell short of the
+   * range and a lighter one reached it. That is the step-down after a short
+   * set (`carryForward` in carry.ts) doing its job, or a lifter backing off
+   * by hand, and the weight that worked is the one to build on. Read from
+   * the set that missed, every session asked for one more rep at the weight
+   * just missed, and since the lighter sets end the failure streak, the
+   * deload never came either.
+   *
+   * The failure counter is left alone: a session where even the lighter sets
+   * missed still counts towards the deload. Only against a prescribed range,
+   * since with none there is nothing to fall short of; never an AMRAP set,
+   * which is not a target.
+   */
+  const reachedRange =
+    prescribed && lastTop.reps < prescribed.low
+      ? closed.filter((set) => set.weight_kg < lastTop.weight_kg && set.reps >= prescribed.low)
+      : [];
+  const steppedTo =
+    reachedRange.length > 0
+      ? reachedRange.reduce((best, set) => (isHeavier(set, best) ? set : best), reachedRange[0]!)
+      : null;
+  const top = steppedTo ?? lastTop;
+
   // An open-ended set cannot show you held the top of the range: it was taken
   // to failure by definition, so it says nothing about the prescribed work.
+  // After a step-down the set that missed is in here at another weight, so
+  // the next session holds the lighter weight rather than adding to it.
   const judged = closed.length > 0 ? closed : lastWorking;
-  const atSameWeight = judged.filter((set) => set.weight_kg === lastTop.weight_kg);
+  const atSameWeight = judged.filter((set) => set.weight_kg === top.weight_kg);
   const everySetHitTop =
     atSameWeight.length === judged.length &&
     judged.length > 0 &&
@@ -246,7 +272,7 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
   const increment = incrementFor(exercise);
   let signalNote = '';
 
-  const previousWeight = lastTop.weight_kg;
+  const previousWeight = top.weight_kg;
   let weight = previousWeight;
   let reps = repRange.low;
   let kind: SuggestionKind;
@@ -285,18 +311,18 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
           ? ` You logged ${rir} left in the tank, so this is a double jump.`
           : ` Your AMRAP beat the range by ${overshoot}, so this is a double jump.`;
     }
-  } else if (atFailure && lastTop.reps < repRange.low) {
+  } else if (atFailure && top.reps < repRange.low) {
     // Nothing left and still short of the range. Adding weight now would only
     // book another failure; hold and earn the reps first.
     kind = 'add_reps';
     reps = repRange.low;
     signalNote = ' You logged nothing left in the tank, so hold here for now.';
-  } else if (lastTop.reps >= repRange.high) {
+  } else if (top.reps >= repRange.high) {
     kind = 'add_reps';
-    reps = lastTop.reps;
+    reps = top.reps;
   } else {
     kind = 'add_reps';
-    reps = Math.min(repRange.high, lastTop.reps + 1);
+    reps = Math.min(repRange.high, top.reps + 1);
   }
 
   // Brief rule 5: a bad day scales the load, and only for this session.
@@ -333,10 +359,14 @@ export function suggestNextSet(input: ProgressionInput): Suggestion | null {
       delta > 0
         ? `You hit ${repRange.high} on every set at ${formatWeight(previousWeight)}. Add ${formatWeight(delta)}.`
         : `You hit ${repRange.high} on every set at ${formatWeight(previousWeight)}. Hold here and add reps.`;
-  } else if (reps === lastTop.reps) {
+  } else if (steppedTo) {
+    // "100kg × 5 was under 8; 90kg × 8 worked. Go for 9."
+    const worked = `${formatWeight(lastTop.weight_kg)} × ${lastTop.reps} was under ${repRange.low}; ${formatWeight(previousWeight)} × ${top.reps} worked.`;
+    reason = reps === top.reps ? `${worked} Match it on every set to earn the next jump.` : `${worked} Go for ${reps}.`;
+  } else if (reps === top.reps) {
     reason = `Match ${formatWeight(previousWeight)} × ${reps} on every set to earn the next jump.`;
   } else {
-    reason = `Last time ${formatWeight(previousWeight)} × ${lastTop.reps}. Go for ${reps}.`;
+    reason = `Last time ${formatWeight(previousWeight)} × ${top.reps}. Go for ${reps}.`;
   }
 
   reason += signalNote;

@@ -344,6 +344,7 @@ export default function ActiveWorkoutScreen() {
             pro={pro}
             defaultRest={settings?.default_rest_seconds ?? 120}
             watchSetId={watchReport.setId}
+            skipped={watchReport.skipped}
             onAdd={() => setPicking(true)}
             onToast={showToast}
           />

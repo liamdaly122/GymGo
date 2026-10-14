@@ -19,6 +19,7 @@
  * Pure. The store is src/platform/watchState.ts; screens read both through
  * `useCompanionMode`.
  */
+import { setInHand, type OrderedSet } from './supersets';
 import type { ReceivedWatchState, WatchStateReport } from './watchProtocol';
 
 /**
@@ -165,4 +166,32 @@ export function watchStation(
     station.some((member) => exercises[member]?.sets.some((set) => set.id === setId) ?? false),
   );
   return index === -1 ? null : index;
+}
+
+/**
+ * The companion's card for one station: each member's next set, the one the
+ * watch has in hand where it is, and which member is current.
+ *
+ * Read past the sets the watch skipped, since it will not ask for them: a
+ * superset's partner shows the set the watch goes to next, not one it
+ * skipped. Counted as passed rather than taken out, so the rounds stay in
+ * line; taken out, a member's later sets would slide a round earlier and the
+ * wrong half would be current. A station with only skipped sets left gets
+ * them back, as the watch does when it goes there.
+ *
+ * `members` holds one list per exercise in the station, each in set order.
+ */
+export function companionTargets(
+  members: ReadonlyArray<ReadonlyArray<OrderedSet>>,
+  watchSetId: string | null,
+  skipped: ReadonlyArray<string> = [],
+): { watchMember: number; current: number; targets: Array<string | null> } {
+  const passed = new Set(skipped);
+  const remaining = members.map((sets) => sets.map((set) => (passed.has(set.id) ? { ...set, completed: true } : set)));
+  const lists = setInHand(remaining) ? remaining : members.map((sets) => [...sets]);
+  // The member the watch is on, else whoever is next in the order the work is done.
+  const watchMember = members.findIndex((sets) => sets.some((set) => set.id === watchSetId));
+  const current = watchMember !== -1 ? watchMember : (setInHand(lists)?.member ?? -1);
+  const targets = lists.map((sets, member) => (member === watchMember ? watchSetId : (setInHand([sets])?.setId ?? null)));
+  return { watchMember, current, targets };
 }

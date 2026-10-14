@@ -1,10 +1,11 @@
 import { useId, useState } from 'react';
 import type { WorkoutExerciseView, WorkoutView } from '@/db/queries';
 import { useRecordMarks } from '@/db/queries';
+import { companionTargets } from '@/domain/companion';
 import { recordSetIds, type RecordMarks } from '@/domain/prs';
 import { restSecondsFor } from '@/domain/rest';
 import { setOrdinals } from '@/domain/sets';
-import { setInHand, supersetLabel } from '@/domain/supersets';
+import { supersetLabel } from '@/domain/supersets';
 import { addRound } from './addRound';
 import ExerciseInfo from './ExerciseInfo';
 import ExerciseSheet from './ExerciseSheet';
@@ -28,6 +29,7 @@ export default function NowOnWatch({
   pro,
   defaultRest,
   watchSetId,
+  skipped,
   kicker,
   following,
   onBack,
@@ -40,6 +42,8 @@ export default function NowOnWatch({
   defaultRest: number;
   /** The set the watch has in hand, wherever it is. */
   watchSetId: string | null;
+  /** Sets the watch skipped: it will not ask for them. */
+  skipped: readonly string[];
   /** "On your watch", "Coming up" or "Done". */
   kicker: string;
   /** This is the watch's station, so the heading is lit. */
@@ -58,13 +62,14 @@ export default function NowOnWatch({
   }));
   const badge = (member: number) => supersetLabel(sessionMembers, station[member]!);
 
-  // The member the watch is on, else whoever is next in the order the work is done.
-  const watchMember = entries.findIndex((entry) => entry.sets.some((set) => set.id === watchSetId));
-  const nextUp = setInHand(entries.map((entry) => entry.sets));
-  const currentMember = watchMember !== -1 ? watchMember : (nextUp?.member ?? -1);
-  // Each member's next set: the watch's set in hand where it is, else its first still to do.
-  const targetFor = (member: number): string | null =>
-    member === watchMember ? watchSetId : (setInHand([entries[member]!.sets])?.setId ?? null);
+  // Each member's next set: the watch's set in hand where it is, else its
+  // first still to do, past any the watch skipped. The current member is the
+  // one the watch is on, else whoever is next in the order the work is done.
+  const { watchMember, current: currentMember, targets } = companionTargets(
+    entries.map((entry) => entry.sets),
+    watchSetId,
+    skipped,
+  );
 
   // What each lift's records stood at before today, for the blue chips.
   const prior = useRecordMarks(entries.map((entry) => entry.exercise?.id), workoutId);
@@ -115,7 +120,7 @@ export default function NowOnWatch({
         <ExerciseInfo
           key={entry.workoutExercise.id}
           entry={entry}
-          targetSetId={targetFor(member)}
+          targetSetId={targets[member] ?? null}
           workoutId={workoutId}
           pro={pro}
           restSeconds={restFor(entry)}

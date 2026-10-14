@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  companionTargets,
   loggingSurface,
   openStations,
   staleAfter,
@@ -261,5 +262,37 @@ describe('openStations: which stations have work left', () => {
   it('skipping a set the session no longer has changes nothing', () => {
     expect(openStations(stations, exercises, ['gone'])).toEqual([true, true, true]);
     expect(openStations([[7]], exercises, [])).toEqual([false]);
+  });
+});
+
+describe("companionTargets: each member's next set on the companion's card", () => {
+  // A1/A2 superset of three rounds: A1 has done two, A2 one.
+  const set = (id: string, completed = false) => ({ id, type: 'working', completed, parent_set_id: null });
+  const a1 = [set('a1-1', true), set('a1-2', true), set('a1-3')];
+  const a2 = [set('a2-1', true), set('a2-2'), set('a2-3')];
+
+  it("shows the partner's next set the watch will ask for, past one it skipped", () => {
+    // A2's set 2 was skipped on the wrist, so the watch went on to A1's set 3,
+    // and the next A2 set it asks for is set 3, not the one skipped.
+    expect(companionTargets([a1, a2], 'a1-3', ['a2-2'])).toEqual({ watchMember: 0, current: 0, targets: ['a1-3', 'a2-3'] });
+    // Nothing skipped: A2's set 2 is still to come.
+    expect(companionTargets([a1, a2], 'a1-3', [])).toEqual({ watchMember: 0, current: 0, targets: ['a1-3', 'a2-2'] });
+  });
+
+  it('with the watch on no set here, the current member is the one the watch goes to next', () => {
+    // A skipped set counts as passed rather than taken out, so the rounds stay
+    // in line: round 3 starts with A1. Taken out, A2's set 3 would slide into
+    // round 2 and A2 would be marked current.
+    expect(companionTargets([a1, a2], null, ['a2-2'])).toEqual({ watchMember: -1, current: 0, targets: ['a1-3', 'a2-3'] });
+    expect(companionTargets([a1, a2], null, [])).toEqual({ watchMember: -1, current: 1, targets: ['a1-3', 'a2-2'] });
+  });
+
+  it('a member whose sets left were all skipped has nothing the watch will ask for', () => {
+    expect(companionTargets([a1, a2], 'a1-3', ['a2-2', 'a2-3']).targets).toEqual(['a1-3', null]);
+  });
+
+  it('a station with only skipped sets left gets them back, as the watch does when it goes there', () => {
+    const rows = [set('row-1', true), set('row-2'), set('row-3')];
+    expect(companionTargets([rows], null, ['row-2', 'row-3'])).toEqual({ watchMember: -1, current: 0, targets: ['row-2'] });
   });
 });
