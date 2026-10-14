@@ -79,7 +79,12 @@ export interface WatchReady {
     /** A superset's group, so members can be drawn together. Null for a solo exercise. */
     superset: string | null;
   }>;
-  /** Opaque to the watch: echoed back unchanged in the startWorkout event. */
+  /**
+   * Echoed back in the startWorkout event. Unchanged, except that after a
+   * Discard on the wrist the watch may re-mint the workout, exercise and set
+   * IDs in it and in the snapshot (FreshIds.swift). A new row ID in the
+   * layout must be added to LayoutIds there too.
+   */
   layout: string;
   /** The session as it will run. Its workout, exercise and set IDs are the layout's. */
   snapshot: WatchSnapshot;
@@ -115,7 +120,7 @@ export interface WatchEvent {
   setId?: string | null;
   weight?: number | null;
   reps?: number | null;
-  /** startWorkout: the ready session's routine and its layout, echoed back unchanged. */
+  /** startWorkout: the ready session's routine and its layout, echoed back (see WatchReady.layout). */
   routineId?: string | null;
   layout?: string | null;
   /**

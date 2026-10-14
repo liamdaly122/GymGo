@@ -42,11 +42,22 @@ to be applied.
 - **`home`**: built by the phone from the schedule, the same rules as Today.
   - `ready` is the session `currentSession` offers, laid out as it would start
     (`planRoutineStart`, nothing written) with real random UUIDs, its snapshot
-    built from those rows, and the layout as an opaque JSON string.
-    Null while a workout is open.
-  - `closed` lists every workout that **ended on the phone** in the last 24
-    hours: finished (`finished_at` set) or discarded (`deleted_at` set) after
-    being started. This is how Finish and Discard on the phone reach the watch.
+    built from those rows, and the layout as a JSON string the watch echoes
+    back in its start. Null while a workout is open.
+  - The watch uses each offer's IDs once. After a Discard on the wrist it may
+    start the same offer again under IDs it mints itself (`FreshIds.swift`):
+    lowercase v4 UUIDs for `workoutId`, `exercises[].id` and
+    `exercises[].sets[].id`, in the layout and the snapshot alike, with the
+    routine, gym, plan and library exercise IDs unchanged. Those three are
+    the only fields it rewrites, so **a new row ID added to the layout must be
+    added to `LayoutIds` in `FreshIds.swift` too.** A Discard on the phone of
+    a wrist-started session gives its offer back, as does a context listing
+    that workout in `closed` while still offering the same key.
+  - `closed` lists the newest 20 workouts that **ended on the phone**
+    (`CLOSED_KEPT` in `src/db/watch.ts`), whatever their age, newest first:
+    finished (`finished_at` set) or discarded (`deleted_at` set) after being
+    started. This is how Finish and Discard on the phone reach the watch. A
+    count rather than an age, so a watch out of touch for days still hears.
   - `week` is the current calendar week, as the phone's calendar strip shows it.
 - **`phoneClaim`**: set when the user taps "Log on this phone" for a workout.
 - **`settings`**: the phone's Sound and Vibrate switches.
@@ -55,14 +66,16 @@ to be applied.
 
 | Kind | Sent when | Phone applies it by |
 |---|---|---|
-| `startWorkout` | Start on the watch's Today page | `replayWatchStart(layout, at)`: writes exactly the workout, exercise and set rows in the layout, with `started_at = at`. Skipped if a workout with that ID already exists, even a deleted one. Filed under the block slot the layout was offered for only if that slot is still the one `planSlot` gives now; otherwise filed with the plan but no week or session index. If an empty workout is open on the phone, it is discarded first; one with sets is kept and both stay open. Exercises missing from the library are dropped with their sets. |
-| `completeSet` | Done or double tap (the Action button is not wired up yet: it needs an App Intent, roadmap 4.4) | `completeSetWith(setId, {weight, reps}, {completedAt: at})`. **Deferred** (left in the inbox, not acknowledged) while the workout row does not exist yet. Skipped if the set or workout is gone or finished, or if the set was completed at a time `>=` this one. |
+| `startWorkout` | Start on the watch's Today page | `replayWatchStart(layout, at)`: writes exactly the workout, exercise and set rows in the layout, with `started_at = at`. Skipped if a workout with that ID already exists, even a deleted one. Filed under the block slot the layout was offered for only if that slot is still the one `planSlot` gives now; otherwise filed with the plan but no week or session index. If an empty workout is open on the phone, it is discarded first; one with sets is kept and both stay open. Exercises missing from the library are dropped with their sets. The layout may carry IDs the watch minted (see `ready` above). |
+| `completeSet` | Done or double tap (the Action button is not wired up yet: it needs an App Intent, roadmap 4.4) | `completeSetWith(setId, {weight, reps}, {completedAt: at})`. **Deferred** (left in the inbox, not acknowledged) while the workout row does not exist yet. Skipped if the set or workout is gone, or if the set was completed at a time `>=` this one. In a workout **finished on the phone**, a set that Finish tidied away (its `deleted_at` equals `finished_at`) and that was logged before that Finish (`at < finished_at`) goes back in through `reviveTidiedSet`: completed with the watch's numbers and time, its exercise restored if Finish dropped it, both queued. Any other write to a finished workout is skipped. |
 | `skipRest` | Skip on the rest | Nothing to write. Acknowledged. |
-| `finish` | Finish and save on the watch | First applies `sets` (the watch's unconfirmed completeSets), deduped by ID, then `finishWorkout`. Then writes the phone's snapshot (`snapshotEverything`). |
-| `discard` | Discard on the watch (offered only before the first set is logged) | `discardWorkout`. |
+| `finish` | Finish and save on the watch | First applies `sets` (the watch's unconfirmed completeSets), deduped by ID, then `finishWorkout(id, { finishedAt: at })`: `finished_at` is when Finish was pressed, clamped to no earlier than `started_at` and the last completed set and no later than now; tidied rows get the same `deleted_at`, and `updated_at` is now. If the phone finished the workout first, the carried sets still go through as late sets (revived as above) and the finish itself is skipped. The phone's snapshot (`snapshotEverything`) is written after a finish or a revival. |
+| `discard` | Discard on the watch (offered only before the first set is logged) | `discardWorkout(id, { deletedAt: at })`, clamped to no earlier than `started_at` and no later than now. A workout already discarded is never finished afterwards: `finishWorkout` leaves it alone and returns false. |
 
-A batch is applied in this order: starts first, then everything else by
-`at`, then finishes. An event that throws is **not** acknowledged; it is
+A batch is applied in this order: starts and discards first, together in
+order of `at` (so a discarded start gives up its block slot before the next
+start asks for it), then everything else by `at`, then finishes. A workout the
+batch discards is never kept open for a start. An event that throws is **not** acknowledged; it is
 retried on the next drain, and dropped after 7 days. A deferred event older
 than 7 days is dropped too.
 
@@ -111,9 +124,13 @@ main actor.
 - **Starts** when a session starts on the watch (Start on Today), when the
   phone starts one (`startWatchApp` → `handle(_ workoutConfiguration:)`), or
   when a `live` workout is adopted while the watch app is in the foreground.
+  The phone wakes the watch once per workout, and never for a workout the
+  watch has already reported, running or ended.
   Health authorisation is asked for on the watch, in the foreground, before
   the first start. If it is refused or unavailable, the session runs without
-  HealthKit and the state reports `health: denied` or `unavailable`.
+  HealthKit and the state reports `health: denied` or `unavailable`. A start
+  that failed before Health was asked is tried again once it is granted;
+  only a failure while authorised stops the retries.
 - **Ends:** Finish on the watch, or `closed: finished` from the phone →
   `stopActivity`, `endCollection`, `finishWorkout` (saved to Health and
   Fitness, counts towards the rings), `end`. Discard on the watch, or
@@ -121,6 +138,13 @@ main actor.
   `HKMetadataKeyExternalUUID` and `HKMetadataKeySyncIdentifier`
   `gymgo.workout.<workoutId>` with `HKMetadataKeySyncVersion` 1. The phone
   never saves a copy of a workout the watch recorded.
+- **Leftovers are ended, not kept** (`healthRecordingAction` in
+  `HealthWorkout.swift`). On recovery, adoption, Start and the phone's start,
+  a recording tagged with a workout already over is saved if that workout
+  ended as a finish and thrown away if it was discarded. An untagged
+  recording with no session ends once a context sent after it began has no
+  live workout: saved under the workout that just finished if it is at least
+  60 s long, otherwise thrown away.
 - **Recovers** after a crash through `handleActiveWorkoutRecovery` and
   `recoverActiveWorkoutSession`, with the delegates and data source set again.
 - **Live metrics:** the most recent heart rate (count/min) and the summed
@@ -146,18 +170,28 @@ phone's Vibrate switch is off.
 | Record (replaces the two above) | `.success`, 700, `.success` |
 | 10 s left (rests of 20 s or more) | `.retry` |
 | 3, 2, 1 s left | `.click` each second |
-| **Rest over** | `.notification`, 600, `.notification`, 600, `.start`; once more 8 s later if the screen was not woken or touched |
+| **Rest over** | `.notification`, 600, `.notification`, 600, `.start`; once more 8 s later if the screen was not woken or touched, and only while that session still runs. While Health is not recording, the rest's end is also a local notification ("Rest over"), one per rest, replaced or removed as the rest changes and never sent with Vibrate off; delivered ones are cleared when the app comes to the front |
 | +30 s or Skip | `.click` |
 | Finished or discarded on the iPhone | `.stop`, 500, `.directionDown` |
 | Saved to Health | `.success` |
 | Workout session refused or failed, Health save failed | `.failure` |
 
+A record on a set with no rest after it (the first half of a superset) shows
+on the set screen as a blue line until the rest that ends the round, which
+leads with it.
+
+**Upgrading from build 4:** a session saved by build 4 (`session.json`) never
+comes back as running and never starts Health. Its unconfirmed events are
+sent again, so the phone still gets every set.
+
 ## Phone bugs this round fixes (from build 4)
 
 - The workout screen follows `finished_at`: when a workout it is showing
-  finishes (from the watch), it stops the rest, writes the snapshot and goes
-  to the session's detail screen, with the "Done." poster only on that
-  transition.
+  finishes (from the watch), it stops the rest and goes to the session's
+  detail screen, with the "Done." poster only on that transition. The drain
+  that applied the watch's Finish writes the snapshot; Finish on the phone
+  writes it only when that call finished the workout. Finish on the phone
+  after a drain discarded the workout goes to Today.
 - `composeWorkout` returns null for a deleted workout, so "That workout is
   gone" can show.
 - Starting a routine from the routine editor is refused while a workout is
@@ -185,6 +219,8 @@ export interface WatchDrainResult {
   keep: string[];
   /** Workouts a `finish` event finished, so the caller writes the phone's snapshot. */
   finished: string[];
+  /** Finished workouts a late set was put back into, so the caller writes the snapshot again. */
+  revived: string[];
 }
 export async function applyWatchEvents(events: readonly WatchEvent[], now?: Date): Promise<WatchDrainResult>;
 ```

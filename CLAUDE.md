@@ -58,6 +58,12 @@ Every chart, PR and progression suggestion reads from the **workout** tables,
 never from the routine tables. If this gets collapsed into one table to save
 effort, the history becomes worthless.
 
+One write reaches a finished workout, and only one: `reviveTidiedSet`, for a
+set logged on the watch before a Finish on the phone that reached the phone
+after it. It puts back only a set that Finish itself tidied away (its
+`deleted_at` equals `finished_at`), never completed, logged before that
+Finish. Without it, a set in transit when the phone's Finish landed was lost.
+
 ### 3. Child set counting
 
 A child set is any set with a non-null `parent_set_id` — drop set continuations,
@@ -335,7 +341,10 @@ the next session without writing it (`planRoutineStart` →
 the watch echoes the layout back in its start event, and `replayWatchStart`
 writes those rows, filed under the block slot only if it is still the one
 `planSlot` gives. `startWorkoutFromRoutine` is the same plan-then-persist
-path, so a tap and a wrist start produce the same rows.
+path, so a tap and a wrist start produce the same rows. After a Discard on
+the wrist the watch may start the same offer again under workout, exercise
+and set IDs it mints itself (`FreshIds.swift`), so a row ID added to the
+layout has to be added to its `LayoutIds` too.
 
 **Who logs sets is one rule:** `loggingSurface` in `src/domain/companion.ts`.
 While the watch logs, the workout screen is the companion
@@ -353,9 +362,12 @@ copy of a workout the watch recorded. The phone's Start wakes the watch app
 through `HKHealthStore.startWatchApp`.
 
 `npm run test:companion` drives the companion screen through a
-development-only seam, `window.__gymgoWatch`. HealthKit, haptics wrist-down,
-the phone waking the watch and the real WatchConnectivity round trip only
-work on real devices.
+development-only seam, `window.__gymgoWatch`. The Swift tests compile
+GymGoWatchUI too, with HealthKit and WatchKit left out, so the store's
+wiring (which cues and notifications a change starts or stops, the build-4
+upgrade) is tested on the Mac. HealthKit, haptics wrist-down, notification
+delivery, the phone waking the watch and the real WatchConnectivity round
+trip only work on real devices.
 
 ## Writes go through one place
 
@@ -558,6 +570,12 @@ actually did. The next set is then a nudge of a stepper, not two numbers typed
 again. That was the owner's first note from the gym: a lift with no history
 showed "–" on every set. Warm-ups, drops, back-offs and old 0 × 0 ticks are
 never carried.
+
+That order is one function, `setHints` in `src/domain/setHints.ts`, and the
+set in hand, the companion screen and the watch's list (`buildWatchSnapshot`)
+all read it. A typed number beats every placeholder, and each field resolves
+on its own (`startingNumbers`): a typed weight with no reps still takes its
+reps from the hint.
 
 **Focus moves on when the last rest is over, and never on a tick.**
 - **On arrival** focus is pinned to the first station with anything unticked.
