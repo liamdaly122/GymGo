@@ -102,6 +102,9 @@ await step('Today says the block is finished and offers its report', async () =>
   await p.goto(BASE + '#/', { waitUntil: 'networkidle' });
   const hero = p.getByRole('region', { name: 'Block finished' });
   await hero.waitFor({ timeout: 10000 });
+  if (await p.getByRole('region', { name: 'Finished on your watch' }).count()) {
+    throw new Error('Today offered a watch poster for seeded sessions');
+  }
   await p.screenshot({ path: 'e2e/shot-report-today.png' });
   await hero.getByRole('button', { name: 'See the block report' }).click();
   await p.getByRole('heading', { name: 'Block report' }).waitFor({ timeout: 10000 });

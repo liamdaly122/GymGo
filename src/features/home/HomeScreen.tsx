@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   useActiveWorkout,
@@ -17,9 +17,11 @@ import { Toast, useToast } from '@/components/Toast';
 import WeekStrip from '@/components/WeekStrip';
 import { formatDayLabel, formatDuration } from '@/lib/dates';
 import { useToday, scheduleDay } from '@/hooks/useToday';
+import { useWatchCelebration } from '@/hooks/useWatchCelebration';
 import { movedLabel } from '@/features/plan/blockCopy';
 import { localIsoDate, type ScheduledSession } from '@/domain/schedule';
 import type { SessionRow } from '@/db/queries';
+import type { Workout } from '@/db/schema';
 import SessionListRow from '@/components/SessionListRow';
 import RoutineSwap from '@/features/swap/RoutineSwap';
 import LevelStrip from '@/features/rewards/LevelStrip';
@@ -42,6 +44,7 @@ export default function HomeScreen() {
   const repeatable = useRepeatCandidate();
   const repeatName = useWorkoutName(repeatable?.workout.id);
   const today = useToday();
+  const watchFinish = useWatchCelebration();
 
   const next = planned?.current ?? null;
 
@@ -95,6 +98,8 @@ export default function HomeScreen() {
         {trainedToday.map((row) => (
           <DoneTodayRow key={row.workout.id} row={row} />
         ))}
+
+        {watchFinish ? <WatchFinishBanner workout={watchFinish} /> : null}
 
         <LevelStrip />
 
@@ -331,6 +336,35 @@ function DaySheet({
       ) : null}
       <Button onClick={() => void navigate(`/routines/${session.routineId}`)}>Edit session</Button>
     </Sheet>
+  );
+}
+
+/**
+ * A session finished on the wrist while no screen showed it: its "Done."
+ * poster, offered once. Blue, the highlight, because it is news; the way in
+ * is a quiet button, because chalk is the next session's Start. Gone once the
+ * poster has shown (src/lib/celebrate.ts), and after twelve hours.
+ */
+function WatchFinishBanner({ workout }: { workout: Workout }) {
+  const headingId = useId();
+  const name = useWorkoutName(workout.id);
+  const duration =
+    workout.finished_at === null ? null : Date.parse(workout.finished_at) - Date.parse(workout.started_at);
+  return (
+    <section className="watch-done" aria-labelledby={headingId}>
+      <div className="watch-done-txt">
+        <h2 id={headingId} className="kicker">
+          Finished on your watch
+        </h2>
+        <p className="t-meta">
+          {name ?? 'Workout'}
+          {duration !== null && Number.isFinite(duration) && duration > 0 ? ` · ${formatDuration(duration)}` : ''}
+        </p>
+      </div>
+      <Link to={`/history/${workout.id}`} state={{ fresh: true }} className="btn btn-secondary btn-sm shrink-0">
+        See how it went
+      </Link>
+    </section>
   );
 }
 
