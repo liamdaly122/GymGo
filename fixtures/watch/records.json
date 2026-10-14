@@ -1,0 +1,225 @@
+[
+  {
+    "name": "a first is not a record",
+    "prior": null,
+    "earlier": [],
+    "set": {
+      "weight": 100,
+      "reps": 5,
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": null
+  },
+  {
+    "name": "heavier is a weight record",
+    "prior": {
+      "weight": 100,
+      "e1rm": 116.7,
+      "unloadedReps": 0
+    },
+    "earlier": [],
+    "set": {
+      "weight": 102.5,
+      "reps": 5,
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": {
+      "kind": "weight",
+      "value": 102.5,
+      "previous": 100
+    }
+  },
+  {
+    "name": "more reps at the same weight raises the estimate",
+    "prior": {
+      "weight": 100,
+      "e1rm": 116.67,
+      "unloadedReps": 0
+    },
+    "earlier": [],
+    "set": {
+      "weight": 100,
+      "reps": 6,
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": {
+      "kind": "e1rm",
+      "value": 120,
+      "previous": 116.67
+    }
+  },
+  {
+    "name": "a tie is not a record",
+    "prior": {
+      "weight": 100,
+      "e1rm": 116.66666666666667,
+      "unloadedReps": 0
+    },
+    "earlier": [],
+    "set": {
+      "weight": 100,
+      "reps": 5,
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": null
+  },
+  {
+    "name": "already beaten earlier today",
+    "prior": {
+      "weight": 100,
+      "e1rm": 116.7,
+      "unloadedReps": 0
+    },
+    "earlier": [
+      {
+        "weight": 105,
+        "reps": 5,
+        "at": "2026-10-14T17:01:00.000Z"
+      }
+    ],
+    "set": {
+      "weight": 102.5,
+      "reps": 5,
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": null
+  },
+  {
+    "name": "beating today's earlier record again",
+    "prior": {
+      "weight": 100,
+      "e1rm": 116.7,
+      "unloadedReps": 0
+    },
+    "earlier": [
+      {
+        "weight": 102.5,
+        "reps": 5,
+        "at": "2026-10-14T17:01:00.000Z"
+      }
+    ],
+    "set": {
+      "weight": 105,
+      "reps": 5,
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": {
+      "kind": "weight",
+      "value": 105,
+      "previous": 102.5
+    }
+  },
+  {
+    "name": "a warm-up never flashes",
+    "prior": {
+      "weight": 100,
+      "e1rm": 116.7,
+      "unloadedReps": 0
+    },
+    "earlier": [],
+    "set": {
+      "weight": 120,
+      "reps": 5,
+      "type": "warmup",
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": null
+  },
+  {
+    "name": "a drop never flashes",
+    "prior": {
+      "weight": 100,
+      "e1rm": 116.7,
+      "unloadedReps": 0
+    },
+    "earlier": [],
+    "set": {
+      "weight": 120,
+      "reps": 5,
+      "type": "drop",
+      "parent": true,
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": null
+  },
+  {
+    "name": "a back-off never flashes",
+    "prior": {
+      "weight": 100,
+      "e1rm": 116.7,
+      "unloadedReps": 0
+    },
+    "earlier": [],
+    "set": {
+      "weight": 120,
+      "reps": 5,
+      "type": "back_off",
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": null
+  },
+  {
+    "name": "more unloaded reps is a rep record",
+    "prior": {
+      "weight": 0,
+      "e1rm": 0,
+      "unloadedReps": 8
+    },
+    "earlier": [],
+    "set": {
+      "weight": 0,
+      "reps": 12,
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": {
+      "kind": "reps",
+      "value": 12,
+      "previous": 8
+    }
+  },
+  {
+    "name": "weight on a lift done unloaded is a weight record",
+    "prior": {
+      "weight": 0,
+      "e1rm": 0,
+      "unloadedReps": 12
+    },
+    "earlier": [],
+    "set": {
+      "weight": 5,
+      "reps": 8,
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": {
+      "kind": "weight",
+      "value": 5,
+      "previous": 0
+    }
+  },
+  {
+    "name": "an earlier warm-up today does not raise the bar",
+    "prior": {
+      "weight": 100,
+      "e1rm": 116.7,
+      "unloadedReps": 0
+    },
+    "earlier": [
+      {
+        "weight": 110,
+        "reps": 3,
+        "type": "warmup",
+        "at": "2026-10-14T17:01:00.000Z"
+      }
+    ],
+    "set": {
+      "weight": 102.5,
+      "reps": 5,
+      "at": "2026-10-14T17:05:00.000Z"
+    },
+    "expected": {
+      "kind": "weight",
+      "value": 102.5,
+      "previous": 100
+    }
+  }
+]

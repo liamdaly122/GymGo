@@ -14,6 +14,21 @@ import type { WorkoutSet } from '@/db/schema';
  *
  * Child sets count toward volume, and never toward personal records.
  */
+/**
+ * What a continuation is called out loud.
+ *
+ * A child set inherits its parent's number — a drop hanging off set 3 is still
+ * set 3, not a fourth set — so without a name of its own it would share an
+ * accessible label with its parent and a screen reader would announce two
+ * identical controls.
+ */
+export const CHILD_NAMES: Record<string, string> = {
+  drop: 'Drop',
+  rest_pause: 'Rest-pause',
+  myo: 'Myo',
+  cluster: 'Cluster',
+};
+
 export function isChildSet(set: Pick<WorkoutSet, 'parent_set_id'>): boolean {
   return set.parent_set_id !== null;
 }

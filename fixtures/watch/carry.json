@@ -1,0 +1,153 @@
+[
+  {
+    "name": "nothing logged yet",
+    "logged": [],
+    "expected": null
+  },
+  {
+    "name": "one working set",
+    "logged": [
+      {
+        "weight": 100,
+        "reps": 5,
+        "at": "2026-10-14T17:01:00.000Z"
+      }
+    ],
+    "expected": {
+      "weight": 100,
+      "reps": 5
+    }
+  },
+  {
+    "name": "the latest, not the heaviest",
+    "logged": [
+      {
+        "weight": 105,
+        "reps": 5,
+        "at": "2026-10-14T17:01:00.000Z"
+      },
+      {
+        "weight": 100,
+        "reps": 6,
+        "at": "2026-10-14T17:04:00.000Z"
+      }
+    ],
+    "expected": {
+      "weight": 100,
+      "reps": 6
+    }
+  },
+  {
+    "name": "a warm-up is never carried",
+    "logged": [
+      {
+        "weight": 100,
+        "reps": 5,
+        "at": "2026-10-14T17:01:00.000Z"
+      },
+      {
+        "weight": 60,
+        "reps": 5,
+        "type": "warmup",
+        "at": "2026-10-14T17:03:00.000Z"
+      }
+    ],
+    "expected": {
+      "weight": 100,
+      "reps": 5
+    }
+  },
+  {
+    "name": "a drop is never carried",
+    "logged": [
+      {
+        "weight": 100,
+        "reps": 5,
+        "at": "2026-10-14T17:01:00.000Z"
+      },
+      {
+        "weight": 80,
+        "reps": 8,
+        "type": "drop",
+        "parent": true,
+        "at": "2026-10-14T17:02:00.000Z"
+      }
+    ],
+    "expected": {
+      "weight": 100,
+      "reps": 5
+    }
+  },
+  {
+    "name": "a back-off is never carried",
+    "logged": [
+      {
+        "weight": 100,
+        "reps": 5,
+        "at": "2026-10-14T17:01:00.000Z"
+      },
+      {
+        "weight": 90,
+        "reps": 7,
+        "type": "back_off",
+        "at": "2026-10-14T17:03:00.000Z"
+      }
+    ],
+    "expected": {
+      "weight": 100,
+      "reps": 5
+    }
+  },
+  {
+    "name": "an empty tick is not a number",
+    "logged": [
+      {
+        "weight": 100,
+        "reps": 5,
+        "at": "2026-10-14T17:01:00.000Z"
+      },
+      {
+        "weight": 0,
+        "reps": 0,
+        "at": "2026-10-14T17:05:00.000Z"
+      }
+    ],
+    "expected": {
+      "weight": 100,
+      "reps": 5
+    }
+  },
+  {
+    "name": "a tie goes to the later set",
+    "logged": [
+      {
+        "weight": 100,
+        "reps": 5,
+        "at": "2026-10-14T17:02:00.000Z"
+      },
+      {
+        "weight": 102.5,
+        "reps": 4,
+        "at": "2026-10-14T17:02:00.000Z"
+      }
+    ],
+    "expected": {
+      "weight": 102.5,
+      "reps": 4
+    }
+  },
+  {
+    "name": "unloaded bodyweight work carries its reps",
+    "logged": [
+      {
+        "weight": 0,
+        "reps": 12,
+        "at": "2026-10-14T17:01:00.000Z"
+      }
+    ],
+    "expected": {
+      "weight": 0,
+      "reps": 12
+    }
+  }
+]
