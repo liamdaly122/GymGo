@@ -728,7 +728,9 @@ confirm would be friction for its own sake. Delete lives in the set's sheet, so
 the set in hand has none — it used to sit one thumb-width from the tick you
 press after every single set. Add set carries forward what was typed into the
 set in hand, never its placeholder: the new set gets the same suggestion as its
-own.
+own. "Add set" or "Add round" under "All sets done", and the companion's Add
+set, add an **empty** set after a working set, so the carry fills it and steps
+it down after a short set; after a pyramid's back-off they copy its numbers.
 
 ## Rest follows the lift
 
@@ -1072,6 +1074,18 @@ back-offs is a good session, and reading only the top set recorded it as a
 failure. It does *not* require the failures to be at the same weight: the brief
 says "in two consecutive sessions", and backing off and still missing is exactly
 when a deload is due.
+
+**After a step-down, the next session builds from the weight that worked.**
+When the top set fell short of the range and a lighter set reached it, the
+suggestion progresses from that lighter set ("100kg × 5 was under 8; 90kg × 8
+worked. Go for 9."), with its reps kept inside the range. Only a set about as
+heavy as the app's own step-down from the one that missed counts (within one
+loadable step below `carryForward`'s answer): a burnout, ramp-up sets or a
+planned top single's back-offs are not a step-down, and the top set stays the
+thing to build on. The failure counter is unchanged, so a session where even
+the lighter sets missed still counts towards the deload. Without this, the
+step-down's in-range sets ended every failure streak and the lifter was asked
+for one more rep at the weight just missed, forever.
 
 **A cold start reasons from a lift you have done, never from a table.**
 `estimateOpeningWeight` ranks references with `swapSuggestions`, where the same

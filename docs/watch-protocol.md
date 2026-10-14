@@ -339,7 +339,13 @@ main actor.
   notification fallback is on while paused (paused counts as not
   recording); the metrics page shows Health's active time, which leaves out
   paused time (the phone's duration, `finished_at − started_at`, does not).
-  Logging a set while paused resumes. The report carries `paused`.
+  Logging a set while paused resumes once the set's Undo window closes, so
+  Undo leaves the workout paused; that held resume is kept in memory only, so
+  a crash inside those 5 seconds leaves Health paused until Resume (rare, and
+  accepted). A phone claim while paused resumes too, and a press while the
+  phone logs still resumes. Pause and resume asked for on the wrist (the
+  buttons, the intents, Crown and side) tap once each; the resume a logged set
+  or a claim causes is silent. The report carries `paused`.
 - **Mirrors to the iPhone** once its session runs
   (`startMirroringToCompanionDevice`, errors logged, never surfaced), only so
   the phone may start the Live Activity from the background (below). The
@@ -554,7 +560,10 @@ screens read it only through `useCompanionMode`.
 (5 minutes), `WATCH_PAUSED_STALE_MS` (60 minutes) and `staleAfter(report)`
 (build 7), `watchStation(stations, exercises, setId)`, and
 `openStations(stations, exercises, skipped)`, which leaves the watch's
-skipped sets out of the companion's open stations.
+skipped sets out of the companion's open stations, and
+`companionTargets(members, watchSetId, skipped)`, each member's next set on
+the companion's card, reading past skipped sets (counted as passed, so the
+rounds stay in line) and saying when a member has only skipped sets left.
 
 **The rules the watch ports** (pure, `src/domain/`):
 
