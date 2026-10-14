@@ -42,12 +42,19 @@ public struct WatchSession: Codable, Sendable, Equatable {
     public private(set) var loggedHere: [String: String] = [:]
     /// Records set on the wrist this session.
     public private(set) var records = 0
+    /// The station chosen on the wrist, by its first member's
+    /// `workoutExerciseId`: a station's index shifts when the phone reorders
+    /// the session, this does not. Nil follows the list.
+    public private(set) var focus: String?
+    /// Set IDs skipped on the wrist ("Skip this set", "Done with this lift"):
+    /// neither done nor left to do. The state report carries them.
+    public private(set) var skipped: [String] = []
 
     public init(snapshot: WatchSnapshot) {
         self.snapshot = snapshot
     }
 
-    enum CodingKeys: String, CodingKey { case snapshot, logged, outbox, finished, discarded, loggedHere, records }
+    enum CodingKeys: String, CodingKey { case snapshot, logged, outbox, finished, discarded, loggedHere, records, focus, skipped }
 
     /// Reads a session saved by any earlier build: fields added since default.
     public init(from decoder: any Decoder) throws {
@@ -59,6 +66,8 @@ public struct WatchSession: Codable, Sendable, Equatable {
         discarded = try container.decodeIfPresent(Bool.self, forKey: .discarded) ?? false
         loggedHere = try container.decodeIfPresent([String: String].self, forKey: .loggedHere) ?? [:]
         records = try container.decodeIfPresent(Int.self, forKey: .records) ?? 0
+        focus = try container.decodeIfPresent(String.self, forKey: .focus)
+        skipped = try container.decodeIfPresent([String].self, forKey: .skipped) ?? []
     }
 
     /// A planned session started on the wrist. The phone sent it ahead, with

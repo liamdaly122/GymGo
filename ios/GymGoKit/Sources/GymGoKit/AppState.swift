@@ -407,7 +407,12 @@ public struct WatchAppState: Codable, Sendable, Equatable {
             owner: owner,
             seenPhoneClaim: seenPhoneClaim,
             setId: setInHand?.set.id,
-            rest: rest.map { .init(endsAt: WatchSession.isoString($0.endsAt), upNext: $0.upNext) },
+            // Build 7's watch logic words the set in hand here; until then, none.
+            inHand: nil,
+            rest: rest.map { .init(endsAt: WatchSession.isoString($0.endsAt), startedAt: WatchSession.isoString($0.startedAt), upNext: $0.upNext) },
+            skipped: running?.skipped ?? [],
+            // Pause arrives with build 7's WorkoutController; until then, never paused.
+            paused: nil,
             heartRate: running != nil ? heartRate : nil,
             activeKcal: running != nil ? activeKcal : nil,
             health: health

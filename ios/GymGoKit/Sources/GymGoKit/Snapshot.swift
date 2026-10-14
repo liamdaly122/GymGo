@@ -5,7 +5,12 @@ import Foundation
 /// Mirrors `WatchSnapshot` in `src/domain/watch.ts`, field for field. The phone
 /// walks the session the way its own screen would and sends every set still to
 /// do, in order, with the numbers, rests and "Up next" lines already decided.
-/// The watch follows the list and keeps three rules of its own (`Rules.swift`).
+/// The watch follows the list and keeps a few rules of its own (`Rules.swift`).
+///
+/// A field added since build 6 is Optional, here and in everything saved in
+/// `watch-state.json`: a synthesised decoder throws on a missing non-Optional
+/// key, and a failed restore loses the sets the phone has not confirmed. A
+/// missing Optional decodes to nil, so readers treat nil as false or empty.
 public struct WatchSnapshot: Codable, Sendable, Equatable {
     public static let supportedVersion = 1
 
@@ -50,6 +55,9 @@ public struct WatchSet: Codable, Sendable, Equatable, Identifiable {
     public var scheme: SchemeLink?
     public var restAfter: Int?
     public var upNext: UpNext
+    /// Marked AMRAP on the phone. Sent only when true; nil is false. Rule 1
+    /// never steps down off an AMRAP set.
+    public var amrap: Bool?
 
     /// A working set or a continuation can be a record; a warm-up never is.
     public var isTopWorkingSet: Bool { type == "working" && parentSetId == nil }
@@ -60,6 +68,8 @@ public struct DoneSet: Codable, Sendable, Equatable {
     public var weight: Double
     public var reps: Int
     public var completedAt: String?
+    /// Sent only when true; nil is false.
+    public var amrap: Bool?
 }
 
 public struct WatchLift: Codable, Sendable, Equatable {
@@ -70,6 +80,62 @@ public struct WatchLift: Codable, Sendable, Equatable {
     public var priorMarks: RecordMarks?
     public var doneToday: [DoneSet]
     public var loading: LoadingProfile
+    /// Why the first set's numbers are what they are. Nil with no suggestion,
+    /// and from a build 6 phone.
+    public var plan: LiftPlan?
+    /// The last session of this lift. Nil for a first, and from a build 6 phone.
+    public var lastTime: LastTime?
+    /// Rule 1: the bottom of the rep range, which a set that fell short steps
+    /// down to. Nil for freestyle, and from a build 6 phone.
+    public var repLow: Int?
+}
+
+/// The engine's plan for a lift. Mirrors `WatchPlan` in `src/domain/watch.ts`.
+public struct LiftPlan: Codable, Sendable, Equatable {
+    /// `add_weight`, `add_reps`, `repeat`, `deload` or `estimate`. A String, so
+    /// a kind a newer phone adds still decodes.
+    public var kind: String
+    /// The phone's own word for it ("Go up", "More reps", "Hold", "Back off",
+    /// "Estimate"). The watch shows this, never a wording of its own.
+    public var verb: String
+    /// Plain English, at most 320 characters.
+    public var reason: String
+
+    public init(kind: String, verb: String, reason: String) {
+        self.kind = kind
+        self.verb = verb
+        self.reason = reason
+    }
+}
+
+/// The last session of a lift. Mirrors `WatchLastTime` in `src/domain/watch.ts`.
+public struct LastTime: Codable, Sendable, Equatable {
+    /// The lifter's calendar day it was finished, "2026-10-03". `dayLabel`
+    /// words it: the phone sends no relative words, since the watch may be
+    /// days past the phone's last context.
+    public var day: String
+    /// The best working set, as the phone's previous-performance line. The
+    /// watch never re-derives that rule.
+    public var top: SetNumbers
+    /// Every working set, in the order done.
+    public var sets: [SetNumbers]
+
+    public init(day: String, top: SetNumbers, sets: [SetNumbers]) {
+        self.day = day
+        self.top = top
+        self.sets = sets
+    }
+}
+
+/// A weight and reps, as done.
+public struct SetNumbers: Codable, Sendable, Equatable {
+    public var weight: Double
+    public var reps: Int
+
+    public init(weight: Double, reps: Int) {
+        self.weight = weight
+        self.reps = reps
+    }
 }
 
 /// What one lift can be loaded with. Mirrors `LoadingProfile` in `src/domain/plates.ts`.

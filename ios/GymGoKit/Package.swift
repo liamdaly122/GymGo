@@ -3,8 +3,8 @@ import PackageDescription
 
 // GymGoKit: what the watch needs to run a session on its own.
 //
-// - GymGoKit: the snapshot the phone sends, the three rules the watch keeps
-//   for itself, and the session model. Builds and tests on the Mac with
+// - GymGoKit: the snapshot the phone sends, the rules the watch keeps for
+//   itself, and the session model. Builds and tests on the Mac with
 //   `swift test`, so the rules are checked without Xcode's interface.
 // - GymGoWatchUI: the watch's screens, styled like the app. The watch target
 //   in App.xcodeproj is a thin shell around it.

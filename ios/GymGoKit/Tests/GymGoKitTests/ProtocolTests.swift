@@ -126,6 +126,32 @@ private func fixture(_ name: String) throws -> Any {
     }
 }
 
+/// The state reports TypeScript types (fixtures/watch/state.json) decode, and
+/// the watch writes each back exactly: every key, the same nulls, and
+/// `rest.startedAt` left out where it is nil.
+@Test func theStateFixturesDecodeAndWriteBackTheSame() throws {
+    let cases = try #require(try fixture("state.json") as? [[String: Any]])
+    #expect(cases.count >= 3)
+    var reports: [String: WatchStateReport] = [:]
+    for c in cases {
+        let name = try #require(c["name"] as? String)
+        let object = try #require(c["report"] as? [String: Any])
+        let report = try JSONDecoder().decode(WatchStateReport.self, from: JSONSerialization.data(withJSONObject: object))
+        let written = try #require(try JSONSerialization.jsonObject(with: Data(report.json().utf8)) as? [String: Any])
+        #expect(NSDictionary(dictionary: written) == NSDictionary(dictionary: object), "\(name)")
+        reports[name] = report
+    }
+    let full = try #require(reports.first { $0.key.hasPrefix("every field") }?.value)
+    #expect(full.session == .running)
+    #expect(full.inHand == WatchStateReport.InHand(name: "Lift a", detail: "Set 3 of 3 · 100 × 5"))
+    #expect(full.rest?.startedAt == "2026-10-14T17:30:30.000Z")
+    #expect(full.skipped == ["a-s1", "b-s2"])
+    #expect(full.paused == "2026-10-14T17:31:00.000Z")
+    let quiet = try #require(reports.first { $0.key.hasPrefix("running with nothing new") }?.value)
+    #expect(quiet.skipped.isEmpty && quiet.paused == nil && quiet.inHand == nil)
+    #expect(quiet.rest != nil && quiet.rest?.startedAt == nil)
+}
+
 @Test func theEventFixturesDecode() throws {
     let value = try fixture("events.json")
     let found = objects(in: value, with: ["id", "kind", "workoutId", "at"])

@@ -21,7 +21,7 @@ extension WatchEvent {
 
 extension WatchStateReport {
     /// Every nullable key, written even when it is null.
-    static let nullableKeys = ["workoutId", "seenPhoneClaim", "setId", "rest", "heartRate", "activeKcal"]
+    static let nullableKeys = ["workoutId", "seenPhoneClaim", "setId", "inHand", "rest", "paused", "heartRate", "activeKcal"]
 
     public func json() throws -> String {
         let data = try JSONEncoder().encode(self)

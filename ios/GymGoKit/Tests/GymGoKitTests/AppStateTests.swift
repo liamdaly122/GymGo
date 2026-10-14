@@ -522,7 +522,9 @@ private func claim(_ workoutId: String, at: Date) -> [String: Any] {
     #expect(running.workoutId == "w-1")
     #expect(running.setId == "a-s1")
     #expect(running.rest?.endsAt == iso(minute(6).addingTimeInterval(150)))
+    #expect(running.rest?.startedAt == iso(minute(6)))
     #expect(running.rest?.upNext.name == "Lift a")
+    #expect(running.skipped.isEmpty && running.paused == nil)
     #expect(running.heartRate == 128 && running.activeKcal == 42.5)
     #expect(running.health == .recording)
     #expect(running.at == iso(minute(7)))
@@ -546,9 +548,10 @@ private func claim(_ workoutId: String, at: Date) -> [String: Any] {
     let report = state.report(at: minute(1), heartRate: nil, activeKcal: nil, health: .unavailable)
     let json = try report.json()
     let object = try #require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
-    for key in ["workoutId", "seenPhoneClaim", "setId", "rest", "heartRate", "activeKcal"] {
+    for key in ["workoutId", "seenPhoneClaim", "setId", "inHand", "rest", "paused", "heartRate", "activeKcal"] {
         #expect(object[key] is NSNull, "\(key)")
     }
+    #expect(object["skipped"] as? [String] == [])
     #expect(object["session"] as? String == "none")
     #expect(object["owner"] as? String == "watch")
     #expect(object["health"] as? String == "unavailable")

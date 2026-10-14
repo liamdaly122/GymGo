@@ -13,14 +13,18 @@ public struct LoggedSet: Codable, Sendable, Equatable {
     public var weight: Double
     public var reps: Int
     public var completedAt: Date
+    /// An AMRAP set: rule 1 never steps down off one. Optional because it is
+    /// saved in `watch-state.json` and a set saved by build 6 has none; nil is false.
+    public var isAmrap: Bool?
 
-    public init(setId: String, type: String, isChild: Bool, weight: Double, reps: Int, completedAt: Date) {
+    public init(setId: String, type: String, isChild: Bool, weight: Double, reps: Int, completedAt: Date, isAmrap: Bool? = nil) {
         self.setId = setId
         self.type = type
         self.isChild = isChild
         self.weight = weight
         self.reps = reps
         self.completedAt = completedAt
+        self.isAmrap = isAmrap
     }
 
     /// `isTopWorkingSet` in `src/domain/sets.ts`: a completed, top-level working set.

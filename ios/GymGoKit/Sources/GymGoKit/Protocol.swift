@@ -154,10 +154,26 @@ public struct WatchStateReport: Codable, Sendable, Equatable {
 
     public struct Rest: Codable, Sendable, Equatable {
         public var endsAt: String
+        /// When the rest began, so the phone's bar drains exactly. Left out
+        /// when nil (the TypeScript field is optional, not nullable).
+        public var startedAt: String?
         public var upNext: UpNext
-        public init(endsAt: String, upNext: UpNext) {
+        public init(endsAt: String, startedAt: String? = nil, upNext: UpNext) {
             self.endsAt = endsAt
+            self.startedAt = startedAt
             self.upNext = upNext
+        }
+    }
+
+    /// The set in hand, as the set screen shows it.
+    public struct InHand: Codable, Sendable, Equatable {
+        /// The lift.
+        public var name: String
+        /// "Set 2 of 4 · 100 × 5".
+        public var detail: String
+        public init(name: String, detail: String) {
+            self.name = name
+            self.detail = detail
         }
     }
 
@@ -169,14 +185,24 @@ public struct WatchStateReport: Codable, Sendable, Equatable {
     public var owner: Owner
     public var seenPhoneClaim: String?
     public var setId: String?
+    /// The set in hand as the watch's set screen shows it; nil with none.
+    public var inHand: InHand?
     public var rest: Rest?
+    /// Set IDs skipped on the wrist: neither done nor left to do. Always
+    /// written, empty when none.
+    public var skipped: [String]
+    /// When the workout was paused (watch clock, ISO), or nil while it
+    /// records. `session` stays `running` while paused: a build 6 phone
+    /// refuses a `session` value it does not know.
+    public var paused: String?
     public var heartRate: Double?
     public var activeKcal: Double?
     public var health: Health
 
     public init(
         v: Int = watchProtocolVersion, at: String, seq: Int, workoutId: String?, session: Session, owner: Owner,
-        seenPhoneClaim: String?, setId: String?, rest: Rest?, heartRate: Double?, activeKcal: Double?, health: Health
+        seenPhoneClaim: String?, setId: String?, inHand: InHand? = nil, rest: Rest?, skipped: [String] = [],
+        paused: String? = nil, heartRate: Double?, activeKcal: Double?, health: Health
     ) {
         self.v = v
         self.at = at
@@ -186,7 +212,10 @@ public struct WatchStateReport: Codable, Sendable, Equatable {
         self.owner = owner
         self.seenPhoneClaim = seenPhoneClaim
         self.setId = setId
+        self.inHand = inHand
         self.rest = rest
+        self.skipped = skipped
+        self.paused = paused
         self.heartRate = heartRate
         self.activeKcal = activeKcal
         self.health = health
