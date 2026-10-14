@@ -57,14 +57,40 @@ private struct CarryCase: Decodable {
     let cases = try load("carry.json", as: [CarryCase].self)
     #expect(cases.count > 5)
     for c in cases {
-        // The step-down is ported by the watch-logic part of build 7, which
-        // passes `repLow`, `loading` and `ladder` to `carriedSet` and drops
-        // this skip. Until then the port carries as done, which is what every
-        // case without `stepped` expects.
-        if c.expected?.stepped != nil { continue }
-        let carried = carriedSet(c.logged.enumerated().map { $1.asSet("s\($0)") })
+        let carried = carriedSet(
+            c.logged.enumerated().map { $1.asSet("s\($0)") },
+            repLow: c.repLow, loading: c.loading, ladder: c.ladder ?? []
+        )
         #expect(carried.map { Numbers(weight: $0.weight, reps: $0.reps) } == c.expected?.numbers, "\(c.name)")
+        let stepped = carried?.stepped.map { CarryCase.Stepped(from: Numbers(weight: $0.from.weight, reps: $0.from.reps), repLow: $0.repLow) }
+        #expect(stepped == c.expected?.stepped, "\(c.name): stepped")
+        // The port's own `nextLoadableBelow`, off the set carried.
+        if let below = c.below, let loading = c.loading, let from = c.expected?.stepped?.from ?? c.expected?.numbers {
+            #expect(nextLoadableBelow(from.weight, loading: loading, ladder: c.ladder ?? []) == below, "\(c.name): below")
+        }
     }
+    // Every case runs: the step-down cases are not skipped.
+    #expect(cases.filter { $0.expected?.stepped != nil }.count >= 10)
+}
+
+/// `nextLoadableBelow` per loading profile, beyond the fixtures' cases.
+@Test func oneStepDownPerLoadingProfile() {
+    let plates: [Double] = [25, 20, 15, 10, 5, 2.5, 1.25]
+    let barbell = LoadingProfile(mode: "barbell", barWeight: 20, plates: plates)
+    var ladder: [Double] = [20]
+    while ladder.last! < 140 { ladder.append(ladder.last! + 2.5) }
+    #expect(nextLoadableBelow(100, loading: barbell, ladder: ladder) == 97.5)
+    #expect(nextLoadableBelow(101, loading: barbell, ladder: ladder) == 100)
+    #expect(nextLoadableBelow(20, loading: barbell, ladder: ladder) == 20)
+    #expect(nextLoadableBelow(15, loading: barbell, ladder: ladder) == 20)
+    // Fixed steps floor at one step, never the ladder's 0 rung.
+    let stack = LoadingProfile(mode: "fixed_step", step: 5)
+    #expect(nextLoadableBelow(40, loading: stack, ladder: [0, 5, 10]) == 35)
+    #expect(nextLoadableBelow(5, loading: stack, ladder: [0, 5, 10]) == 5)
+    #expect(nextLoadableBelow(7, loading: stack, ladder: [0, 5, 10]) == 5)
+    #expect(nextLoadableBelow(26, loading: LoadingProfile(mode: "fixed_step", step: 2.5), ladder: []) == 25)
+    #expect(nextLoadableBelow(20, loading: LoadingProfile(mode: "free"), ladder: []) == 18.75)
+    #expect(nextLoadableBelow(1, loading: LoadingProfile(mode: "free"), ladder: []) == 0)
 }
 
 @Test func theStepDownCasesDecode() throws {

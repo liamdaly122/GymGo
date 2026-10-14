@@ -1,9 +1,11 @@
 import Foundation
 
-// The three rules the watch keeps for itself, because while the phone is
-// locked it cannot ask. Each is a port of one TypeScript function, held to it
-// by the cases in fixtures/watch/ (scripts/watchFixtures.ts). A fourth rule on
-// the watch needs a fixture too, or it does not go in.
+// The rules the watch keeps for itself, because while the phone is locked it
+// cannot ask. Each is a port of one TypeScript function, held to it by the
+// cases in fixtures/watch/ (scripts/watchFixtures.ts). Rules 1 to 3 are here;
+// rules 4 and 5, where the session goes and how Up next words it, are in
+// Stations.swift. A new rule on the watch needs a fixture too, or it does not
+// go in.
 
 /// A set as the rules need it: what was logged, and what kind of set it was.
 public struct LoggedSet: Codable, Sendable, Equatable {
@@ -33,15 +35,89 @@ public struct LoggedSet: Codable, Sendable, Equatable {
 
 // MARK: - Rule 1: carry forward
 
-/// `latestWorkingSet` in `src/domain/sets.ts`. From the second set on, the
-/// numbers start at the working set done most recently today. Warm-ups, drops,
-/// back-offs and an empty tick are never carried. Ties go to the later set.
-public func carriedSet(_ sets: [LoggedSet]) -> (weight: Double, reps: Int)? {
-    var latest: LoggedSet?
-    for set in sets where set.isTopWorkingSet && set.reps > 0 {
-        if latest == nil || set.completedAt >= latest!.completedAt { latest = set }
+/// Why a carried set is lighter than the set just done. Mirrors `StepDown` in
+/// `src/domain/carry.ts`.
+public struct StepDown: Codable, Sendable, Equatable {
+    /// The set just done, which fell short.
+    public var from: SetNumbers
+    /// The bottom of the range it fell short of: the reps the next set aims for.
+    public var repLow: Int
+
+    public init(from: SetNumbers, repLow: Int) {
+        self.from = from
+        self.repLow = repLow
     }
-    return latest.map { ($0.weight, $0.reps) }
+}
+
+/// What the next set starts at. Mirrors `Carried` in `src/domain/carry.ts`.
+public struct Carried: Sendable, Equatable {
+    public var weight: Double
+    public var reps: Int
+    /// Set when the set just done fell short of the range and this is lighter.
+    public var stepped: StepDown?
+
+    public init(weight: Double, reps: Int, stepped: StepDown? = nil) {
+        self.weight = weight
+        self.reps = reps
+        self.stepped = stepped
+    }
+}
+
+/// `STEP_DOWN_FLOOR`: at most this much lighter, unless one real step is already more.
+public let stepDownFloor = 0.9
+
+/// `carryForward` in `src/domain/carry.ts`. From the second set on, the
+/// numbers start at the working set done most recently today
+/// (`latestWorkingSet`: warm-ups, drops, back-offs and an empty tick are
+/// never carried; ties go to the later set), a notch lighter when it fell
+/// short of the range:
+///
+/// 1. the weight that should give `repLow` reps, by the records' estimate;
+/// 2. never more than 10% lighter than the set just done;
+/// 3. rounded down through what the equipment makes;
+/// 4. and at least one real step lighter, with the reps at `repLow`.
+///
+/// Carried exactly as done at or above `repLow`, with no `repLow` (or no
+/// loading: the carry as it was before build 7), for an AMRAP set, for 0kg,
+/// for `free` loading, and when nothing lighter can be loaded.
+public func carriedSet(_ sets: [LoggedSet], repLow: Int? = nil, loading: LoadingProfile? = nil, ladder: [Double] = []) -> Carried? {
+    var found: LoggedSet?
+    for set in sets where set.isTopWorkingSet && set.reps > 0 {
+        if found == nil || set.completedAt >= found!.completedAt { found = set }
+    }
+    guard let latest = found else { return nil }
+    let asDone = Carried(weight: latest.weight, reps: latest.reps)
+
+    guard let repLow, repLow > 0, latest.reps < repLow else { return asDone }
+    guard latest.isAmrap != true, latest.weight > 0, let loading, loading.mode != "free" else { return asDone }
+
+    let oneStep = nextLoadableBelow(latest.weight, loading: loading, ladder: ladder)
+    guard oneStep < latest.weight else { return asDone }
+
+    let forRepLow = estimate1RM(weight: latest.weight, reps: latest.reps) / (1 + Double(repLow) / 30)
+    let target = loadableWeightDown(max(forRepLow, latest.weight * stepDownFloor), loading: loading, ladder: ladder)
+    return Carried(
+        weight: min(target, oneStep), reps: repLow,
+        stepped: StepDown(from: SetNumbers(weight: latest.weight, reps: latest.reps), repLow: repLow)
+    )
+}
+
+/// `nextLoadableBelow` in `src/domain/plates.ts`: the next weight down this
+/// equipment can make. A barbell reads its ladder: the previous rung at or
+/// above the bar, the bar itself when there is none. Fixed steps never go
+/// below one step, so never to the ladder's 0 rung.
+public func nextLoadableBelow(_ weight: Double, loading: LoadingProfile, ladder: [Double]) -> Double {
+    switch loading.mode {
+    case "free":
+        return max(0, weight - 1.25)
+    case "fixed_step":
+        let step = loading.step ?? 5
+        guard step > 0 else { return weight }
+        return max(step, (weight / step - 1e-9).rounded(.up) * step - step)
+    default:
+        let bar = loading.barWeight ?? 20
+        return ladder.last(where: { $0 >= bar - 1e-9 && $0 < weight - 1e-9 }) ?? bar
+    }
 }
 
 // MARK: - Rule 2: the back-off target

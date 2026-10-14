@@ -13,6 +13,18 @@ public struct LogOutcome: Sendable, Equatable {
     public var set: WatchSet
 }
 
+/// The numbers a set starts at, and where they came from.
+public struct StartingNumbers: Sendable, Equatable {
+    public var weight: Double?
+    public var reps: Int?
+    /// In the list's words (`WatchSet.source`): the list's own source while
+    /// neither of the watch's rules replaced its numbers, else `scheme`
+    /// (rule 2), `carried` or `stepped` (rule 1).
+    public var source: String
+    /// Why a `stepped` set is lighter than the set just done.
+    public var stepped: StepDown?
+}
+
 /// The set in hand, with the numbers to start at once the watch's own rules
 /// have had their say.
 public struct SetInHand: Sendable, Equatable {
@@ -20,6 +32,9 @@ public struct SetInHand: Sendable, Equatable {
     public var lift: WatchLift
     public var weight: Double?
     public var reps: Int?
+    /// Where `weight` and `reps` came from (`StartingNumbers.source`).
+    public var source: String
+    public var stepped: StepDown?
     public var station: WatchStation
     /// "Set 2 of 4" counts within the lift; this counts the session.
     public var position: Int
@@ -104,7 +119,10 @@ public struct WatchSession: Codable, Sendable, Equatable {
     func history(of exerciseId: String) -> [LoggedSet] {
         let lift = snapshot.lifts[exerciseId]
         let fromPhone = (lift?.doneToday ?? []).map {
-            LoggedSet(setId: $0.setId, type: "working", isChild: false, weight: $0.weight, reps: $0.reps, completedAt: Self.date($0.completedAt))
+            LoggedSet(
+                setId: $0.setId, type: "working", isChild: false, weight: $0.weight, reps: $0.reps,
+                completedAt: Self.date($0.completedAt), isAmrap: $0.amrap
+            )
         }
         let phoneIds = Set(fromPhone.map(\.setId))
         let fromWrist = snapshot.sets
@@ -119,10 +137,10 @@ public struct WatchSession: Codable, Sendable, Equatable {
 
     public var setInHand: SetInHand? {
         guard !isOver, let set = remainingSets.first, let lift = snapshot.lifts[set.exerciseId] else { return nil }
-        let (weight, reps) = numbers(for: set, lift: lift)
+        let numbers = numbers(for: set, lift: lift)
         let done = snapshot.sets.count - remainingSets.count
         return SetInHand(
-            set: set, lift: lift, weight: weight, reps: reps,
+            set: set, lift: lift, weight: numbers.weight, reps: numbers.reps, source: numbers.source, stepped: numbers.stepped,
             station: snapshot.stations[set.station],
             position: done + 1, remaining: remainingSets.count
         )
@@ -165,8 +183,9 @@ public struct WatchSession: Codable, Sendable, Equatable {
     /// there is work to keep, and Finish is the way out.
     public var canDiscard: Bool { !isOver && !hasLoggedASet }
 
-    /// The phone's numbers, unless one of the watch's rules now knows better.
-    func numbers(for set: WatchSet, lift: WatchLift) -> (Double?, Int?) {
+    /// The phone's numbers, unless one of the watch's rules now knows better,
+    /// and which won.
+    func numbers(for set: WatchSet, lift: WatchLift) -> StartingNumbers {
         // Rule 2: a back-off set aims off today's top set, once it is logged.
         if let scheme = set.scheme, let top = history(of: set.exerciseId).first(where: { $0.setId == scheme.topSetId }) {
             let target = schemeTarget(top: (top.weight, top.reps), steps: scheme.stepsFromTop, loading: lift.loading, ladder: lift.ladder)
@@ -175,23 +194,31 @@ public struct WatchSession: Codable, Sendable, Equatable {
             // src/domain/setHints.ts). The list says which only when nothing
             // in the set came from a placeholder: `source` "typed", where a
             // typed field is above zero and an untyped one has nothing.
-            guard set.source == "typed" else { return (target.weight, target.reps) }
+            guard set.source == "typed" else { return StartingNumbers(weight: target.weight, reps: target.reps, source: "scheme") }
             let weight = set.weight.flatMap { $0 > 0 ? $0 : nil } ?? target.weight
             let reps = set.reps.flatMap { $0 > 0 ? $0 : nil } ?? target.reps
-            return (weight, reps)
+            return StartingNumbers(weight: weight, reps: reps, source: "typed")
         }
-        // Rule 1: from the second set on, start at the set just done.
-        if set.carries, let carried = carriedSet(history(of: set.exerciseId)) {
-            return (carried.weight, carried.reps)
+        // Rule 1: from the second set on, start at the set just done, a notch
+        // lighter when it fell short of the range.
+        if set.carries,
+           let carried = carriedSet(history(of: set.exerciseId), repLow: lift.repLow, loading: lift.loading, ladder: lift.ladder) {
+            return StartingNumbers(
+                weight: carried.weight, reps: carried.reps,
+                source: carried.stepped == nil ? "carried" : "stepped", stepped: carried.stepped
+            )
         }
-        return (set.weight, set.reps)
+        return StartingNumbers(weight: set.weight, reps: set.reps, source: set.source)
     }
 
     /// Logs the set in hand. Returns nil when there is nothing left to log.
     public mutating func logSetInHand(weight: Double, reps: Int, at date: Date = Date(), eventId: String = UUID().uuidString) -> LogOutcome? {
         guard let hand = setInHand else { return nil }
         let set = hand.set
-        let entry = LoggedSet(setId: set.id, type: set.type, isChild: set.parentSetId != nil, weight: weight, reps: reps, completedAt: date)
+        let entry = LoggedSet(
+            setId: set.id, type: set.type, isChild: set.parentSetId != nil, weight: weight, reps: reps,
+            completedAt: date, isAmrap: set.amrap == true ? true : nil
+        )
         // Rule 3: judged before it is added, against history and today's earlier sets.
         let record = setBreaksRecord(entry, prior: hand.lift.priorMarks, earlier: history(of: set.exerciseId))
         logged[set.id] = entry
