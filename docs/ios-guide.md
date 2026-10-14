@@ -781,19 +781,21 @@ iPhone. **GymGo on the watch** means our app.
 
 ### 9.2 Add the watch target (You)
 
-- [ ] In Xcode: **File > New > Target…**
-- [ ] Choose the **watchOS** tab, then **App**, then **Next**.
-- [ ] **Product Name:** `GymGo`. **Team:** Liam Daly.
-- [ ] Choose **Watch App for Existing iOS App**, and check the pop-up under
+- [x] In Xcode: **File > New > Target…**
+- [x] Choose the **watchOS** tab, then **App**, then **Next**.
+- [x] **Product Name:** `GymGo`. **Team:** Liam Daly.
+- [x] Choose **Watch App for Existing iOS App**, and check the pop-up under
       it says **App**. Click **Finish**.
-- [ ] If asked to activate the new scheme, click **Activate**.
-- [ ] Xcode adds "Watch App" to the name, so the new target and its scheme
+- [x] If asked to activate the new scheme, click **Activate**.
+- [x] Xcode adds "Watch App" to the name, so the new target and its scheme
       are called **GymGo Watch App**. Click it under TARGETS > Signing &
       Capabilities, and check the Bundle Identifier is
       `com.liamdaly.gymgo.watchkitapp` and the team is Liam Daly.
-- [ ] Still on **GymGo Watch App**, click **General** and set **Minimum
+- [x] Still on **GymGo Watch App**, click **General** and set **Minimum
       Deployments** to watchOS **26.0**. Xcode picks watchOS 27 for a new
       target, and your watch on 26.6 would refuse to install it.
+
+- [x] Add the local package `ios/GymGoKit` to the target (General > Frameworks, Libraries, and Embedded Content > + > Add Other > Add Package Dependency > Add Local), product **GymGoWatchUI**. Done 14 October 2026.
 
 ### 9.3 Capabilities and Health wording (You)
 
