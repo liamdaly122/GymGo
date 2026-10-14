@@ -22,9 +22,6 @@ public final class WatchSessionStore {
     @ObservationIgnored public var sendEvent: @MainActor (WatchEvent) -> Void = { _ in }
     /// Hands a state report, as JSON, to the phone. Wired by PhoneLink.
     @ObservationIgnored public var sendState: @MainActor (String) -> Void = { _ in }
-    /// Called at the end of every save, whether or not a state file exists:
-    /// the complications' publisher hangs off it. Wired by WatchApp.
-    @ObservationIgnored public var onSaved: ((WatchAppState) -> Void)?
 
     /// Internal for the tests.
     @ObservationIgnored let haptics = Haptics()
@@ -590,7 +587,6 @@ public final class WatchSessionStore {
     }
 
     private func save() {
-        defer { onSaved?(state) }
         guard let fileURL else { return }
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
