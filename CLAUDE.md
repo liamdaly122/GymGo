@@ -331,13 +331,24 @@ Read it before changing anything on either side of the link. In short:
   something lands, and always before Finish.
 
 **The watch walks a list the phone worked out** (`buildWatchSnapshot` in
-`src/domain/watch.ts`) and keeps exactly three rules of its own: carry
-forward, the back-off target, the record check. The back-off target never
-replaces a number typed on the phone where the list marks the set `typed`. They are held to the
-TypeScript by `fixtures/watch/`: `npm run fixtures:watch` writes them,
-Vitest fails if they fall behind, and the Swift tests run the port over the
-same cases and decode the context and event fixtures. A fourth rule on the
-watch needs a fixture too, or it does not go in.
+`src/domain/watch.ts`) and keeps exactly five rules of its own, each a port
+of one TypeScript function with a fixture file:
+- carry forward, with its step-down (`carryForward`, `carry.json`);
+- the back-off target (`schemeTarget`, `scheme.json`), which never replaces
+  a number typed on the phone where the list marks the set `typed`;
+- the record check (`setBreaksRecord`, `records.json`);
+- where the session goes after a station tapped or skipped on the wrist
+  (`nextStation`, `stations.json`);
+- how Up next words the set that follows once the wrist has left the list's
+  order (`upNextFor`, `upnext.json`).
+
+`npm run fixtures:watch` writes them, Vitest fails if they fall behind, and
+the Swift tests run the ports over the same cases and decode the snapshot,
+context, event and state fixtures. Another rule on the watch needs a fixture
+too, or it does not go in. The plan's verb and reason, last time (its day
+and best working set), the bottom of the range and AMRAP all come in the
+list, so the watch never re-derives the engine's choices or the
+previous-performance rule.
 
 **A session started on the watch is replayed exactly.** The phone lays out
 the next session without writing it (`planRoutineStart` →
@@ -564,8 +575,8 @@ the number rather than logging zero. The button says what it will log
 
 **From the second set on, the placeholder is the set just done.** In order:
 - a pyramid's scheme target;
-- the working set done most recently today (`latestWorkingSet` in
-  `src/domain/sets.ts`);
+- the working set done most recently today, a notch lighter when it fell
+  short of the range (`carryForward` in `src/domain/carry.ts`);
 - the suggestion;
 - last time.
 
@@ -573,7 +584,22 @@ So set 1 starts at the suggestion, and every set after it starts at what you
 actually did. The next set is then a nudge of a stepper, not two numbers typed
 again. That was the owner's first note from the gym: a lift with no history
 showed "–" on every set. Warm-ups, drops, back-offs and old 0 × 0 ticks are
-never carried.
+never carried (`latestWorkingSet` in `src/domain/sets.ts` picks the set).
+
+**A set that fell short of the range steps down a notch.** Asking again for
+the weight just missed is asking to miss it again, so when the set carried has
+fewer reps than the bottom of the range, the next one aims for the bottom of
+the range at the weight Epley says gives it (the records' own estimate), at
+most 10% lighter unless one real step already is, rounded down through the
+plates. 100 × 5 on 8–10 becomes 90 × 8; 100 × 7 becomes 95 × 8; a 40kg stack
+at 9 on 10–15 becomes 35 × 10. Its source is `stepped` rather than `carried`,
+and `SetHints.stepDown` holds what fell short, for the plan line ("5 was under
+8, so 90kg for 8."). It is carried exactly as done at or above the range, with
+no range (freestyle), for an AMRAP set, for unloaded work and `free` loading
+(whose numbers fall off the watch's ladder), and when nothing lighter can be
+loaded: a bare bar at 20 × 5 stays 20 × 5, because raising the target to reps
+just missed would be wrong. The watch keeps the same rule, held to it by
+`fixtures/watch/carry.json`.
 
 That order is one function, `setHints` in `src/domain/setHints.ts`, and the
 set in hand, the companion screen and the watch's list (`buildWatchSnapshot`)
