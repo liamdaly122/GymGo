@@ -75,3 +75,21 @@ let a main lift's variant rotate too (incline for flat bench) while the
 movement stays; or a per-week rotation for accessories only, which would need
 the progression engine to compare across the variant family rather than the
 exercise id.
+
+## 14 October 2026: smart coaching, saved for later
+
+Liam liked these from the build 6 brainstorm but does not want them yet. Each
+is written up, with how it would be built, under "Coach brain" in
+`docs/feature-ideas.md`. The step-down when reps fall short (note 3 above) is
+**not** here: it goes into build 7.
+
+- Readiness (Rough / OK / Good) on the watch before Start, with last night's
+  sleep, HRV and resting heart rate shown as evidence, never chosen for him.
+- Carry history across close variants of a lift, for suggestions only
+  (note 1 above; Liam decides).
+- Effort on the wrist (Easy / Solid / Max) feeding `sets.rir`.
+- Spot a lift stalled for three sessions and name a way out.
+- This week's sets per muscle against the goal's target.
+- Bring the deload forward when the block is wearing him down.
+- An honest "about N min", from the rests actually taken.
+- Short on time: trim today's session to 30, 45 or 60 minutes before Start.
