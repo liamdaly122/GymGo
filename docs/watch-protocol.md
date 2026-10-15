@@ -357,7 +357,9 @@ main actor.
 
 The intents live in the watch app target (`ios/App/GymGo Watch App/`), never
 in GymGoKit or an extension: Apple only offers the Action button to an app's
-own intents.
+own intents. Their titles, descriptions and phrases must not contain "Apple"
+(App Store Connect refuses the upload, ITMS-90626, which stopped build 7's
+first upload); "Health" alone is fine.
 
 - `StartGymGoWorkout` (`StartWorkoutIntent`, with a one-case `workoutStyle`
   parameter, "Today's Session"; without a parameter Settings offers only Open

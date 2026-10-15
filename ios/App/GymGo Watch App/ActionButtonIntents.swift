@@ -50,7 +50,7 @@ struct StartRefusal: Error, CustomLocalizedStringResourceConvertible {
 /// Settings offers only Open App.
 struct StartGymGoWorkout: StartWorkoutIntent {
     static let title: LocalizedStringResource = "Start Workout"
-    static let description = IntentDescription("Starts today's GymGo session on your watch and records it to Apple Health.")
+    static let description = IntentDescription("Starts today's GymGo session on your watch and records it to Health.")
 
     static let suggestedWorkouts: [StartGymGoWorkout] = [StartGymGoWorkout(style: .today)]
 
