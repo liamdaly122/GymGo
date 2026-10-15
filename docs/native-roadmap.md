@@ -2,7 +2,7 @@
 
 Author: Liam Daly
 Date: 7 October 2026
-Status: Phases 0, 1, 4 and 5 built and on the devices; parts of 3, 6 and 7
+Status: Phases 0, 1, 4 and 5 built and on the devices; parts of 2, 3, 6 and 7
 built. Build 8 is on TestFlight (15 October 2026). **Read "Where things stand"
 below first.** Decisions are recorded at the end.
 Builds on: `docs/build-brief.md` (version 4) and `CLAUDE.md`
@@ -64,7 +64,7 @@ TestFlight builds expire 90 days after upload: build 8 around 13 January
 | 4 | Done for round 2: the watch runs the session and records it to Health, on the devices since build 6. Build 7's features (shipped as build 8: the Action button, Pause, Undo, complications) wait on Liam's device test (guide 9.9) |
 | 5 | Done: the companion screen, sessions started from either device |
 | 6 | **Partly.** The watch saves the workouts it records to Health and Fitness, with heart rate and calories. **Not done:** saving a workout the phone logs with no watch, and reading body weight (or anything else) from Health on the phone |
-| 7 | **Partly.** Watch face complications and the Smart Stack, build 7. **Not done:** iPhone home-screen and Lock Screen widgets |
+| 7 | **Partly.** Watch face complications and the Smart Stack, shipped in build 8 and waiting on the device test (guide 9.9). **Not done:** iPhone home-screen and Lock Screen widgets |
 
 ### What is next
 
@@ -691,7 +691,7 @@ estimate.
 
 ### 4.6 The three rules the watch needs for itself
 
-*Status: three were planned here. As of build 7 there are five, with
+*Status: three were planned here. As of build 8 there are five, with
 `nextStation` and `upNextFor`, and carry forward includes the step-down; see
 `CLAUDE.md` and `docs/watch-protocol.md`, "The watch's own rules".*
 
@@ -875,7 +875,7 @@ to sit here; decision 9 moved it into Phase 5.
 | iOS reclaims web storage on a full phone | The database disappears | Supabase restore, a daily snapshot in Documents, restore on an empty launch, important keys in native storage (1.5) |
 | JavaScript frozen while the phone is locked | The watch cannot reach the app's logic | The watch walks a precomputed list; events wait in a native inbox (4.1, 4.7, 5.2) |
 | Logging on both devices at once | Two versions of one set | Event IDs, last write wins on time, the inbox drained before Finish (4.7) |
-| The Swift rules drift from the TypeScript | The watch shows a different number | Only small rules are ported (three planned; five as of build 7), held by shared fixtures (4.6) |
+| The Swift rules drift from the TypeScript | The watch shows a different number | Only small rules are ported (three planned; five as of build 8), held by shared fixtures (4.6) |
 | Test sessions uploaded into real history | Fake workouts in your records, which can never be deleted | Phase 1: stay signed out. Phase 2: wipe before the first sign-in. After that: test in real sessions, or in an empty workout that is discarded |
 | Both devices buzz at the end of a rest | Two cues for one rest | One cue per rest: the watch takes over once it runs the session (Phase 3) |
 | A TestFlight build expires after 90 days | The app stops opening | A weekly scheduled Xcode Cloud build (Phase 2) |

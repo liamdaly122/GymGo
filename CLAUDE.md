@@ -1203,8 +1203,8 @@ points at another build. Between 21:00 and 07:00 local time `test:rewards`
 fails, because the session it finishes earns Night owl or Early bird; run it
 with `TZ=Pacific/Honolulu` then (`docs/backlog.md`).
 
-**Accessible names are this app's test API.** About 4,400 lines of Playwright
-across the 18 suites key on them, so renaming one is a breaking change to the
+**Accessible names are this app's test API.** The 18 suites, about 4,400
+lines of Playwright, key on them, so renaming one is a breaking change to the
 suites even when the screen looks identical. These in particular are
 load-bearing:
 

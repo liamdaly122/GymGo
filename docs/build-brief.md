@@ -212,14 +212,14 @@ Suggestions appear as pre-filled placeholder values in the set row. Always edita
 ## Vercel setup
 
 - Import the GitHub repo, framework preset Vite, static build.
-- Push to main deploys production. Branches get preview URLs, which is the safe way to test a change before it reaches the phone I actually train with.
+- Push to main deploys production (which branch the live Vercel project actually deploys is unconfirmed: check it before the first merge into main, `docs/deploy.md`). Branches get preview URLs, which is the safe way to test a change before it reaches the phone I actually train with.
 - Environment variables VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY set in project settings for both production and preview.
 - The installed home screen app must point at the production domain only. Do not install a preview URL, or there will be two service workers and two local databases on the same phone.
 - Free Hobby plan, personal non-commercial use, which is exactly what this is.
 
 ## Known limits to design around
 
-- A web app cannot ship an Apple Watch app or read Apple Health. The native app can, and version 4 does both. A weight typed into GymGo is never overwritten by one read from Health.
+- A web app cannot ship an Apple Watch app or read Apple Health. The native app can. Version 4 ships the watch app, which saves its workouts to Health; reading body weight from Health is planned (Phase 6) and not built yet. A weight typed into GymGo is never overwritten by one read from Health.
 - Background timers on iOS are unreliable in a web app, and iOS freezes a web view's JavaScript while the phone is locked. The web app keeps the Screen Wake Lock and the timer on screen. The native app schedules a notification for the end of the rest (planned, Phase 3: not built yet), and once the watch runs the session the watch gives the cue, so the phone can sit locked in a bag. Whichever device runs the session gives one cue per rest; the other stays quiet.
 - The watch cannot ask the phone anything while the phone is locked. So the watch walks a list the phone worked out in advance, and keeps only the rules it must, five as of build 8: carry forward with its step-down, the back-off target, the record check, where the session goes after a station, and how Up next words the next set. Each is held to the TypeScript by a shared fixture, and another rule on the watch needs a fixture too, or it does not go in.
 - No exercise video library. Seed from an open dataset such as free-exercise-db or wger, check the licence terms, and store a demo link per exercise where I want one.

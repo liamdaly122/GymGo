@@ -306,7 +306,7 @@ this as the first message:
 > "Where things stand" in docs/native-roadmap.md first, then CLAUDE.md and
 > docs/ios-guide.md: they hold the plan, the decisions and the steps. I am a
 > beginner, so when a step needs me, tell me exactly what to click. Commit
-> after each working slice.
+> and push after each working slice.
 
 Then say which Part you have reached.
 
@@ -330,8 +330,9 @@ old branch. If `--continue` says there is no conversation, use Plan B (3.5).
 
 ## Part 4: Connect your iPhone and watch to Xcode
 
-*Optional now: builds 1 to 8 were all installed through TestFlight. Pair a
-device only when Claude asks to run something on it from Xcode.*
+*Optional now: every build so far has reached the devices through
+TestFlight (Part 7). Pair a device only when Claude asks to run something on
+it from Xcode.*
 
 Do this when Claude asks: the iPhone in Phase 1, the watch in Phase 4.
 
@@ -621,8 +622,9 @@ From now on, a change merged into `main` should reach your phone by itself
 catching you out.
 
 - [ ] **Claude:** adds the build script (`ios/App/ci_scripts/ci_post_clone.sh`)
-      and the other files Xcode Cloud needs on `dev`, and merges `dev` into
-      `main`.
+      and the other files Xcode Cloud needs on `dev`. Once you have said yes
+      and Vercel's Production Branch has been checked (5.2), Claude merges
+      `dev` into `main`.
 - [ ] In Xcode, open the Report navigator (the last icon in the left sidebar,
       or Cmd + 9) and click **Cloud** at the top. Click **Get Started…**.
 - [ ] **Select Product:** the iPhone app (it may be listed as **App**, the
@@ -720,7 +722,8 @@ Wait until you have trained at least once with the new app.
 
 > **Status, 15 October 2026: built differently from the plan below.** The
 > Lock Screen and Dynamic Island countdown was built in build 7 for sessions
-> the **watch** runs, as the target **GymGo Live Activity**, driven by the
+> the **watch** runs, as the target **GymGo Live ActivityExtension** (folder
+> `GymGo Live Activity`), driven by the
 > watch's reports (9.8). There is no `RestActivity` target, no Time Sensitive
 > Notifications capability and no App Group on the App target. **Do not do
 > 8.2 and 8.3 as written.** What is left of Part 8 is the phone-only

@@ -31,10 +31,10 @@ for backup and sync, and is not required to log workouts.
 | `npm run build` | Typecheck + production build |
 | `npm run preview` | Serve the production build, service worker and all |
 | `npm run test` | Unit and integration tests over the domain rules and the database |
-| `npm run test:e2e` | Drives a real browser through the whole app against `npm run dev` |
-| `npm run test:plans` | Drives the plan selector end to end against `npm run dev` |
+| `npm run test:e2e` | Drives a real browser through the whole app, against a dev server on port 5185 (`CLAUDE.md`, "Testing") |
+| `npm run test:plans` | Drives the plan selector end to end, against a dev server on port 5185 |
 | `npm run test:swap`, `test:gyms`, `test:pro`, `test:block`, `test:programme`, `test:toolkit`, `test:smart`, `test:session`, `test:rollover`, `test:planswap`, `test:report`, `test:body`, `test:rewards`, `test:companion` | The other browser suites, one per feature, against a dev server on port 5185 (`CLAUDE.md`, "Testing") |
-| `npm run test:offline` | Installs the service worker, cuts the network, logs a workout — run against `npm run preview` |
+| `npm run test:offline` | Installs the service worker, cuts the network, logs a workout — run `npm run build`, then `npm run preview -- --port 5190` |
 | `npm run test:backup` | A backup and a restore onto a new phone, against a stand-in Supabase it starts itself |
 | `npm run typecheck` | Types only |
 | `npm run seed:build` | Rebuild the seeded exercise database from the vendored dataset |
