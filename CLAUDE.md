@@ -237,14 +237,36 @@ same code. The plan, the phases and the decisions are in
 and what is next: the roadmap's first section, "Where things stand".** Keep
 it current when a build ships or a phase moves.
 
-**Shipping a build** (Liam archives and uploads; Claude prepares it):
-- The project has four targets (App, GymGo Watch App, GymGo Complications,
-  GymGo Live Activity), each with a Debug and a Release configuration. Raise
+**Shipping a build** (Liam archives and uploads from `dev`; Claude prepares
+it; `main` moves only when Liam says so):
+- The project has four targets, by Xcode's names: **App**
+  (`com.liamdaly.gymgo`), **GymGo Watch App**
+  (`com.liamdaly.gymgo.watchkitapp`), **GymGo ComplicationsExtension**
+  (folder `ios/App/GymGo Complications`,
+  `com.liamdaly.gymgo.watchkitapp.GymGo-Complications`, inside the watch
+  app) and **GymGo Live ActivityExtension** (folder `ios/App/GymGo Live
+  Activity`, `com.liamdaly.gymgo.GymGo-Live-Activity`, inside App).
+  HealthKit is on App and the watch app; the App Group
+  `group.com.liamdaly.gymgo` is on the watch app and the complications only.
+  Each target has a Debug and a Release configuration. Raise
   `CURRENT_PROJECT_VERSION` in **all eight** together: an embedded app or
   extension must match its app's build number. Every target stays at iOS /
   watchOS **26.0**; Xcode gives a new target 27.0, too new for the devices.
-- Run `npm run ios` immediately before Liam archives (build 1 shipped a stale
-  bundle with no Supabase keys).
+- Before handing over, in order: `npm run typecheck`; `npm test`; `npm run
+  fixtures:watch`, after which `git status` must show no change; every
+  browser suite (see "Testing"); `cd ios/GymGoKit && swift test`; then `npm
+  run ios` and, from the repo root, `xcodebuild -project
+  ios/App/App.xcodeproj -scheme App -destination 'generic/platform=iOS
+  Simulator' CODE_SIGNING_ALLOWED=NO build`, which builds the watch app and
+  both extensions too, and the same with `-configuration Release
+  -destination 'generic/platform=iOS'` as the device check. The watch's
+  screens alone: `cd ios/GymGoKit && xcodebuild -scheme GymGoWatchUI
+  -destination 'generic/platform=watchOS Simulator' build`.
+- Run `npm run ios` immediately before Liam archives, and before any Xcode
+  build: `ios/App/App/public` is gitignored, so Xcode bundles whatever was
+  last synced (build 1 shipped a stale bundle with no Supabase keys). Liam's
+  clicks are the guide's 7.3: scheme App, Any iOS Device, Product > Archive,
+  Distribute App > TestFlight Internal Only.
 - App Store Connect has refused two uploads: `audio` under the watch's
   `WKBackgroundModes` (it belongs under `UIBackgroundModes`; build 5) and the
   word "Apple" in an App Intent's description (build 7). After a refusal, fix
@@ -328,10 +350,15 @@ reclaimed web view does not sign the backup out. The running rest
 
 The watch app is native SwiftUI. Its logic and screens live in a Swift
 package, `ios/GymGoKit` (`GymGoKit`: the contract types, the session model,
-the whole watch state as a pure value type, the cue table; `GymGoWatchUI`:
-the screens, the HealthKit controller, haptics and the WatchConnectivity
-link). The watch target (`ios/App/GymGo Watch App`) is a thin shell around it.
-`cd ios/GymGoKit && swift test` runs its tests on the Mac.
+the whole watch state as a pure value type, the cue table, the glance and
+`TodayCard`, the Pause rules, `HealthWorkout`, `FreshIds`, and the Live
+Activity's `LiveSession` and `GymGoSessionAttributes`; `GymGoWatchUI`: the
+screens, the HealthKit controller, haptics and the WatchConnectivity link).
+The watch target (`ios/App/GymGo Watch App`) is a thin shell around
+`GymGoWatchUI`; App and both extensions link `GymGoKit` itself.
+`cd ios/GymGoKit && swift test` runs its tests on the Mac. `npm run
+fonts:watch` rebuilds the watch's TrueType fonts from `@fontsource` into
+`GymGoWatchUI/Fonts`; re-run it after a font update.
 
 **The contract is `docs/watch-protocol.md`**, with the shapes in
 `src/domain/watchProtocol.ts` and, field for field, `GymGoKit/Protocol.swift`.
@@ -1123,9 +1150,10 @@ raises.
 **Low readiness is the one thing that scales a suggested load**, by
 `LOW_READINESS_MULTIPLIER`, and it applies to a cold-start estimate too — a
 control that moved the numbers on some lifts and not others would look broken.
-`ReadinessPrompt` is the only writer of `workout.readiness`; brief rule 5 was
-implemented and unit tested for most of this project's life with no screen able
-to trigger it.
+`ReadinessPrompt` and the companion's `ReadinessControl`, which reuses its
+choices, are the only writers of `workout.readiness`, and a start on the wrist
+writes null; brief rule 5 was implemented and unit tested for most of this
+project's life with no screen able to trigger it.
 
 ## Security
 
@@ -1138,7 +1166,7 @@ to trigger it.
 
 ## Testing
 
-Three layers, each earning its place:
+Four layers, each earning its place:
 
 - `npm run test` — Vitest. `src/domain/` is pure so the counting rules are
   tested directly; `src/db/` is tested against `fake-indexeddb`, which is where
@@ -1150,6 +1178,12 @@ Three layers, each earning its place:
 - `npm run test:offline` — installs the service worker against a production
   build, cuts the network, then logs a workout. This is the gym-basement case
   the whole architecture exists for, so it is not optional before a release.
+- `cd ios/GymGoKit && swift test` — the watch's Swift: the ported rules over
+  the shared fixtures, decoding every contract fixture, and the store's
+  wiring with HealthKit and WatchKit compiled out. With it, an `xcodebuild`
+  of the App scheme, which builds the watch app and both extensions (the
+  commands are under "Shipping a build"). What only the devices can prove is
+  in the guide's Part 9 lists.
 
 The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
 `test:plans`, `test:swap`, `test:gyms`, `test:pro`, `test:block`,
@@ -1157,18 +1191,22 @@ The browser suites are split by feature: `test:e2e` (smoke, backup round trip),
 `test:rollover`, `test:planswap`, `test:report`, `test:body`, `test:companion` and
 `test:rewards`, which runs at 375 × 667 to prove a record fits the rest screen
 of the smallest phone. They expect a dev server on `127.0.0.1:5185`
-(`npx vite --port 5185`), and each takes a `BASE_URL` override.
-`test:offline` expects a preview server on `127.0.0.1:5190`
-(`npm run preview -- --port 5190`), starts none of its own, and takes
-`PREVIEW_URL` instead. `test:backup` is self-contained: it starts the
-stand-in Supabase on 54329, builds a copy of the app pointed at it, and serves
-that on 5191. Every suite launches through `e2e/browser.mjs`: Playwright's
-own Chromium (`npx playwright install chromium`, once per machine), unless
-`CHROMIUM_PATH` points at another build.
+(`npx vite --port 5185 --strictPort --host 127.0.0.1`), and each takes a
+`BASE_URL` override. `test:offline` expects a preview server on
+`127.0.0.1:5190` (`npm run build`, then `npm run preview -- --port 5190`),
+starts none of its own, and takes `PREVIEW_URL` instead. `test:backup` is
+self-contained: it starts the stand-in Supabase on 54329, builds a copy of the
+app pointed at it, and serves that on 5191. That makes 18 suites. Every suite
+launches through `e2e/browser.mjs`: Playwright's own Chromium (`npx
+playwright install chromium`, once per machine), unless `CHROMIUM_PATH`
+points at another build. Between 21:00 and 07:00 local time `test:rewards`
+fails, because the session it finishes earns Night owl or Early bird; run it
+with `TZ=Pacific/Honolulu` then (`docs/backlog.md`).
 
-**Accessible names are this app's test API.** Around 1,700 lines of Playwright
-key on them, so renaming one is a breaking change to the suites even when the
-screen looks identical. These in particular are load-bearing:
+**Accessible names are this app's test API.** About 4,400 lines of Playwright
+across the 18 suites key on them, so renaming one is a breaking change to the
+suites even when the screen looks identical. These in particular are
+load-bearing:
 
 - `Set N weight in kilograms`, `Set N repetitions` — the set in hand's fields,
   and the same fields in a set's sheet; `Warm-up N …` and `Drop under set N …`

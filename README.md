@@ -7,6 +7,12 @@ Requirements live in [`docs/build-brief.md`](docs/build-brief.md).
 Working rules for contributors (human or agent) live in [`CLAUDE.md`](CLAUDE.md).
 Notes from the gym that are not yet done live in [`docs/backlog.md`](docs/backlog.md).
 
+The iPhone and Apple Watch apps: [`docs/native-roadmap.md`](docs/native-roadmap.md)
+(start at "Where things stand") and the step-by-step
+[`docs/ios-guide.md`](docs/ios-guide.md). The iPhone app is this web build
+inside Capacitor; the watch app is native SwiftUI, its logic and screens in
+`ios/GymGoKit`. Both reach the owner's own devices through TestFlight.
+
 ## Getting started
 
 ```bash
@@ -27,13 +33,19 @@ for backup and sync, and is not required to log workouts.
 | `npm run test` | Unit and integration tests over the domain rules and the database |
 | `npm run test:e2e` | Drives a real browser through the whole app against `npm run dev` |
 | `npm run test:plans` | Drives the plan selector end to end against `npm run dev` |
+| `npm run test:swap`, `test:gyms`, `test:pro`, `test:block`, `test:programme`, `test:toolkit`, `test:smart`, `test:session`, `test:rollover`, `test:planswap`, `test:report`, `test:body`, `test:rewards`, `test:companion` | The other browser suites, one per feature, against a dev server on port 5185 (`CLAUDE.md`, "Testing") |
 | `npm run test:offline` | Installs the service worker, cuts the network, logs a workout — run against `npm run preview` |
+| `npm run test:backup` | A backup and a restore onto a new phone, against a stand-in Supabase it starts itself |
 | `npm run typecheck` | Types only |
 | `npm run seed:build` | Rebuild the seeded exercise database from the vendored dataset |
 | `npm run seed:check` | Assert every seeded exercise has a valid movement pattern |
 | `npm run templates:check` | Assert every plan the selector can offer is actually buildable |
 | `npm run icons:build` | Regenerate PWA icons from `assets/*.svg` |
 | `npm run images:build` | Rebuild the bundled exercise photos |
+| `npm run build:ios` | The production build for the iPhone app, without the service worker |
+| `npm run ios` | `build:ios`, then copies it into `ios/App`. Run before any Xcode build |
+| `npm run fixtures:watch` | Rewrite `fixtures/watch/`, which hold the watch's Swift rules to the TypeScript |
+| `npm run fonts:watch` | Rebuild the watch's TrueType fonts from `@fontsource` |
 
 ## What is built
 
