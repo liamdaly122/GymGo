@@ -5,16 +5,37 @@ Date: 7 October 2026
 Status: Phases 0, 1, 4 and 5 built and on the devices; parts of 3, 6 and 7
 built. Build 8 is on TestFlight (15 October 2026). **Read "Where things stand"
 below first.** Decisions are recorded at the end.
-Builds on: `docs/build-brief.md` (version 3) and `CLAUDE.md`
+Builds on: `docs/build-brief.md` (version 4) and `CLAUDE.md`
 Step-by-step guide for doing it: `docs/ios-guide.md`
 
 ## Where things stand (15 October 2026)
 
 **For a new chat: read this section, then `CLAUDE.md`, then
 `docs/watch-protocol.md` (the phone ⇄ watch contract). The step-by-step for
-the Mac and the devices is `docs/ios-guide.md`.** Work happens on `dev`;
-`main` is what was last declared ready for the phone and is behind `dev`
-(merging it may also redeploy the Vercel site, so ask Liam first).
+the Mac and the devices is `docs/ios-guide.md`.**
+
+**Branches.** Work happens on `dev`. Builds 3 to 8 were archived and
+uploaded by Liam from `dev` on the Mac. `main` is still at 20813b3 (build 2's
+setup, 10 October), 150 commits behind `dev` on 15 October, and no iPhone
+build comes from it yet. There are no pull requests: `dev` is merged into
+`main` by hand, and only when Liam says yes. Before the first merge, check
+which branch Vercel deploys: Vercel → Project → Settings → Git → Production
+Branch. `docs/deploy.md` says pushes to `main` deploy production, but the
+project was set up when GitHub's default branch was
+`claude/markdown-instructions-review-e0rk5v`, and the repo cannot say which
+branch it uses. The `r2*`, `b7*` and `worktree-wf_*` branches and the folders
+under `.claude/worktrees/` are left over from finished rounds, merged into
+`dev`, and safe to remove (`git branch --no-merged dev` lists any that are
+not).
+
+**Backup.** The TestFlight app has been signed in to the Supabase backup
+since build 2 (10 October; Liam: "the vibrations and supabase are now
+working"), so what is logged in it is backed up. Whether all of the
+website's history is in it (guide 7.5) has not been confirmed.
+
+**Tests, 15 October:** 950 Vitest tests in 60 files, 275 Swift tests in
+GymGoKit, and 18 browser suites (about 4,400 lines of Playwright). The
+commands to run before a build are in `CLAUDE.md`, "Shipping a build".
 
 ### Builds sent to TestFlight
 
@@ -38,11 +59,11 @@ TestFlight builds expire 90 days after upload: build 8 around 13 January
 |---|---|
 | 0 | Done (9–10 Oct) |
 | 1 | Done: the Capacitor shell, on the phone since build 1; the trial passed (decision 12) |
-| 2 | TestFlight by hand works (builds 1–8). **Not done:** Xcode Cloud, moving history across from the website, retiring Vercel |
+| 2 | TestFlight by hand works (builds 1–8, archived from `dev`), and the app has been signed in to the backup since build 2. **Not done:** Xcode Cloud, confirming the website's history is all in the app (guide 7.5), retiring Vercel |
 | 3 | **Partly.** The Lock Screen and Dynamic Island countdown exists for sessions the **watch** runs (driven natively from its reports). **Not done:** rest notifications and a countdown for a rest the **phone** logs with no watch |
-| 4 | Done, round 2 and build 7: the watch runs the session, records it to Health, Action button included |
+| 4 | Done for round 2: the watch runs the session and records it to Health, on the devices since build 6. Build 7's features (shipped as build 8: the Action button, Pause, Undo, complications) wait on Liam's device test (guide 9.9) |
 | 5 | Done: the companion screen, sessions started from either device |
-| 6 | **Partly.** Workouts are saved to Health and Fitness by the watch, with heart rate and calories. **Not done:** reading body weight (or anything else) from Health on the phone |
+| 6 | **Partly.** The watch saves the workouts it records to Health and Fitness, with heart rate and calories. **Not done:** saving a workout the phone logs with no watch, and reading body weight (or anything else) from Health on the phone |
 | 7 | **Partly.** Watch face complications and the Smart Stack, build 7. **Not done:** iPhone home-screen and Lock Screen widgets |
 
 ### What is next
@@ -63,7 +84,22 @@ TestFlight builds expire 90 days after upload: build 8 around 13 January
    `docs/backlog.md`.
 5. A small test fix offered to Liam as a separate task: `test:rewards`
    fails between 21:00 and 07:00 (the Night owl / Early bird badge changes
-   the XP it expects).
+   the XP it expects). `docs/backlog.md` has it, with the workaround.
+
+### Waiting on Liam
+
+- The build 8 device test (guide 9.9).
+- The Xcode Cloud clicks (guide 7.4), before build 8 expires.
+- Confirming the website's history is all in the app (guide 7.5), and then
+  retiring the website (7.6).
+- A yes to merging `dev` into `main`, once Vercel's production branch has
+  been checked (see "Branches" above).
+- Which lifts the previous-performance line does not recognise, and whether
+  history should carry across a lift family (backlog note 1).
+- Whether a block's change of exercises is variety enough (backlog note 4).
+- Whether the keyboard should rise by itself on the three screens that use
+  `autoFocus` (1.4, guide 6.8). No answer was recorded, so all three still
+  do.
 
 ### How the work has been done
 
@@ -72,8 +108,9 @@ against the local SDKs (Xcode 27.0's watchOS and iOS 27 SDKs, with deployment
 targets at 26.0) → a contract landed first on `dev` (shapes in TypeScript and
 Swift, fixtures, `docs/watch-protocol.md`) → builders in parallel git
 worktrees with strict file ownership → an independent check of each branch →
-a multi-angle review with skeptics → fixes → every test and both Xcode builds
-→ `npm run ios` → Liam archives. Release rules learned the hard way are in
+a multi-angle review with skeptics → fixes → every test and the Xcode builds
+(the commands are in `CLAUDE.md`, "Shipping a build") → `npm run ios` → Liam
+archives from `dev`. Release rules learned the hard way are in
 `CLAUDE.md` ("The iPhone app") and the guide's Part 12.
 
 ## The short version
@@ -98,7 +135,8 @@ a multi-angle review with skeptics → fixes → every test and both Xcode build
 
 ## Where this starts from
 
-What exists today, from reading the repo:
+What existed on 7 October 2026, from reading the repo (see "Where things
+stand" for now):
 
 - About 19,600 lines of TypeScript, 8,600 lines of unit tests (676 tests, all
   passing) and 17 browser suites (about 3,700 lines of Playwright, keyed on
@@ -168,11 +206,11 @@ type all carry across as they are.
 |---|---|---|
 | 0 | The repo works on the Mac, a `main` branch, the brief updated (**done**) | S |
 | 1 | GymGo on your iPhone as a real app, identical (**done**) | L |
-| 2 | TestFlight and Xcode Cloud; history moved across; Vercel retired (**TestFlight by hand done; the rest not**) | M |
+| 2 | TestFlight and Xcode Cloud; history moved across; Vercel retired (**TestFlight by hand done; the move across not confirmed; Xcode Cloud and retiring Vercel not**) | M |
 | 3 | Rest alerts with the phone locked; the countdown on the Lock Screen and in the Dynamic Island. The phone-only fallback once the watch runs the session (**countdown for watch sessions done; phone-only not**) | M |
-| 4 | The watch runs the session: the set, Done, the rest and the record on your wrist, Action button included, with the phone in your bag (**done**) | L |
+| 4 | The watch runs the session: the set, Done, the rest and the record on your wrist, Action button included, with the phone in your bag (**done; build 8's additions await the device test**) | L |
 | 5 | The phone as the companion while the watch logs; a session started from either device (**done**) | L |
-| 6 | Apple Health: every workout saved, body weight read (**workouts saved; body weight not**) | M |
+| 6 | Apple Health: every workout saved, body weight read (**the watch's workouts saved; phone-only workouts and body weight not**) | M |
 | 7 | Extras: complications and the Smart Stack (**done on the watch; iPhone widgets not**) | M |
 
 Sizes are rough: S is an evening, M is a few evenings, L is a week or more of
@@ -203,14 +241,19 @@ evenings.
    phone, so a burst of commits doesn't become a burst of builds. Vercel keeps
    deploying from its own branch until it is retired, so the home-screen app
    is untouched in the meantime.
+   *Status, 15 October 2026:* until Xcode Cloud exists, builds are archived
+   by hand from `dev`, and `main` has not moved since build 2. Which branch
+   Vercel deploys is not known from the repo; check Vercel → Project →
+   Settings → Git → Production Branch before the first merge into `main`
+   ("Where things stand").
 3. **Brief version 4.** The brief currently says "No feature that requires an
    app store submission or a paid developer account", and lists the Apple
    Watch as out of scope. Replace the store rule with "Distributed by
    TestFlight to my own devices only; never listed on the App Store." Move the
    Apple Watch out of "Out of scope", and rewrite "Known limits": the watch,
    Apple Health and background timers are all possible in a native app.
-4. **CLAUDE.md** gains the rules in "Rules to add to CLAUDE.md" below, as each
-   phase lands.
+4. **CLAUDE.md** gains the rules in "Rules drafted for CLAUDE.md" below, as
+   each phase lands.
 5. **Apple's agreements.** Apple updated the Developer Program License
    Agreement on 18 August 2026. Accept it at developer.apple.com/account,
    and anything pending in App Store Connect under Business, or the first
@@ -315,7 +358,8 @@ current home-screen app:
   (`src/features/gyms/GymsScreen.tsx:97`,
   `src/features/exercises/ExercisePicker.tsx:44`,
   `src/features/plan/PlanScreen.tsx:216`). Decide on the phone whether each
-  should keep it.
+  should keep it. *Status, 15 October 2026: no decision recorded; all three
+  still use it.*
 - **Scrolling and touch:** rubber-banding (the body already sets
   `overscroll-behavior-y: none`), the calendar swipe, and the tap-to-skip on
   the rest clock.
@@ -380,6 +424,12 @@ sign-in.
 - `npm test` and all 17 browser suites still pass.
 
 ## Phase 2: TestFlight, Xcode Cloud, moving across, retiring Vercel (M)
+
+> **Status, 15 October 2026.** Steps 1–3 and 5 are done: builds 1 to 8 were
+> uploaded by hand, 3 to 8 archived from `dev`. Steps 4 (Xcode Cloud) and 8
+> (retiring Vercel) are not. Step 7 is half done: the app has been signed in
+> to the backup since build 2, but nobody has checked that all of the
+> website's history is in it.
 
 1. **Info.plist:** `ITSAppUsesNonExemptEncryption` = `NO`. The app only uses
    HTTPS, which is exempt. Without it, every build waits in "Missing
@@ -451,6 +501,14 @@ sign-in.
 you touching the Mac, every count matches the old app, and Vercel is gone.
 
 ## Phase 3: Rest alerts when locked, the Lock Screen countdown (M)
+
+> **Status, 15 October 2026: built differently.** The countdown exists only
+> for sessions the watch runs, driven natively from the watch's reports
+> (decision 23; `docs/watch-protocol.md`, "The Live Activity on the iPhone").
+> Its target is GymGo Live ActivityExtension, bundle ID
+> `com.liamdaly.gymgo.GymGo-Live-Activity`, with no App Group and no Time
+> Sensitive Notifications capability. Items 1 and 3, and a countdown for a
+> rest the phone logs with no watch, are not built.
 
 The screens don't change. Each item fixes a limit the brief had to accept.
 All of it is the **phone-only fallback**: once the watch runs the session
@@ -585,6 +643,9 @@ because the watch runs one workout at a time.
   `perform()` has to start a workout session. In this phase a press with no
   session running starts the watch's session and says "Start the session on
   your iPhone"; Phase 5 lets the watch start the planned session itself.
+  *Superseded by decision 21 and `docs/watch-protocol.md` ("The Action
+  button, Pause and Siri"): a first press starts today's session when it is
+  due today.*
   **Double tap** does the same as Done while the app is on screen.
 - **The Digital Crown** moves the weight through the weights your gym can
   actually load: the same steps as the phone's steppers, from a ladder the
@@ -630,6 +691,10 @@ estimate.
 
 ### 4.6 The three rules the watch needs for itself
 
+*Status: three were planned here. As of build 7 there are five, with
+`nextStation` and `upNextFor`, and carry forward includes the step-down; see
+`CLAUDE.md` and `docs/watch-protocol.md`, "The watch's own rules".*
+
 With the phone frozen, the watch has to work out three things on its own:
 
 1. **Carry forward.** From the second set on, the placeholder is the set just
@@ -652,7 +717,9 @@ test fails.
 
 - The watch writes each action to its own log first, so a crash or a relaunch
   mid-session keeps its place. The actions are: complete set X with W × R at
-  time T, skip rest, and finish.
+  time T, skip rest, and finish. *As built, the events are start, complete
+  set, skip rest, finish (carrying the sets the phone has not confirmed) and
+  discard: `docs/watch-protocol.md`, "Watch → phone: events".*
 - Each event goes by `transferUserInfo` (queued, in order, delivered for
   certain), and by `sendMessage` as well when the phone is reachable, which
   is faster and wakes the phone app's native code. Every event carries its
@@ -743,7 +810,10 @@ Decision 9. Starting on the phone is unchanged, and the watch opens by itself
   rather than opening a second one: the watch's sets are matched onto the
   running workout's sets by station and ordinal. The snapshot says when a
   workout is running, so this only happens when the two devices were out of
-  touch.
+  touch. *As built (decision 15): no join. `replayWatchStart` writes the
+  layout's rows; an empty workout open on the phone is discarded first, and
+  one with sets is kept, so both stay open (`docs/watch-protocol.md`,
+  `startWorkout`).*
 - This touches the immutability copy and the schedule rules, so it is the
   riskiest item in the plan. It goes last in this phase, behind the companion
   screen, with its own mutation tests.
@@ -757,12 +827,19 @@ Start from the phone: the watch opens by itself.
 
 ## Phase 6: Apple Health (M)
 
+> **Status, 15 October 2026.** The watch saves the workouts it records
+> (decision 16). Not built: saving a workout the phone logs with no watch,
+> body weight from Health, the Settings switches and the privacy policy. The
+> phone uses HealthKit only to wake the watch app and to pick up its
+> mirrored session for the Live Activity; it reads nothing from Health and
+> saves nothing to it.
+
 1. **Every workout saved to Apple Health** as Traditional Strength Training,
    with the duration, heart rate and active energy.
    - With the watch: the watch's primary session saves it at Finish
      (`finishWorkout` on the builder), so it counts towards your Activity
      rings. Only the primary session saves, so there is no duplicate.
-   - Without the watch: the phone saves it.
+   - Without the watch: the phone saves it (not built).
    - Either way the workout carries GymGo's workout ID as its sync
      identifier, so saving again replaces rather than duplicates.
    - `finishWorkout` can report nothing even when it worked (when the watch
@@ -796,9 +873,9 @@ to sit here; decision 9 moved it into Phase 5.
 | Risk | What it would do | How it is handled |
 |---|---|---|
 | iOS reclaims web storage on a full phone | The database disappears | Supabase restore, a daily snapshot in Documents, restore on an empty launch, important keys in native storage (1.5) |
-| JavaScript frozen while the phone is locked | The watch cannot reach the app's logic | The watch walks a precomputed list; events wait in a native inbox (4.1, 5.2, 5.4) |
-| Logging on both devices at once | Two versions of one set | Event IDs, last write wins on time, the inbox drained before Finish (5.4) |
-| The Swift rules drift from the TypeScript | The watch shows a different number | Only three small rules are ported, held by shared fixtures (5.3) |
+| JavaScript frozen while the phone is locked | The watch cannot reach the app's logic | The watch walks a precomputed list; events wait in a native inbox (4.1, 4.7, 5.2) |
+| Logging on both devices at once | Two versions of one set | Event IDs, last write wins on time, the inbox drained before Finish (4.7) |
+| The Swift rules drift from the TypeScript | The watch shows a different number | Only small rules are ported (three planned; five as of build 7), held by shared fixtures (4.6) |
 | Test sessions uploaded into real history | Fake workouts in your records, which can never be deleted | Phase 1: stay signed out. Phase 2: wipe before the first sign-in. After that: test in real sessions, or in an empty workout that is discarded |
 | Both devices buzz at the end of a rest | Two cues for one rest | One cue per rest: the watch takes over once it runs the session (Phase 3) |
 | A TestFlight build expires after 90 days | The app stops opening | A weekly scheduled Xcode Cloud build (Phase 2) |
@@ -809,7 +886,7 @@ to sit here; decision 9 moved it into Phase 5.
 | Capacitor's prebuilt framework is still built with the iOS 26 SDK | From April 2027 Apple requires the iOS 27 SDK; one user reports an upload rejected over it | Uploads with Xcode 27 are accepted today. Watch for Capacitor 9 (due by the end of 2026) and move to it before April |
 | Xcode Cloud's "Latest Release" might not be Xcode 27 | A build on the wrong toolchain | Pick Xcode 27.0 or 27.1 by name in the workflow's Environment |
 | Two copies of the app on one phone | History split across two databases | Remove the home-screen icon after moving across (Phase 2) |
-| Both devices start the same session | Two workouts for one slot | A watch start for a routine whose workout is already running today joins it (Phase 5) |
+| Both devices start the same session | Two workouts for one slot | A watch start for a routine whose workout is already running today joins it (Phase 5). *As built (decision 15): no join; an empty workout open on the phone is discarded, one with sets is kept, and both stay open* |
 | The watch's session ends mid-workout: a flat battery, a relaunch | No way to log the rest of the session | Logging returns to the phone the moment there is no watch session (Phase 5) |
 
 ## Testing
@@ -820,7 +897,7 @@ to sit here; decision 9 moved it into Phase 5.
 - **New unit tests:** the `src/platform/` fallbacks, `buildWatchSnapshot`, the
   inbox drain (idempotent, in order, refused on a finished workout, skipping
   deleted sets), a watch start replayed with its own IDs and one that joins a
-  running workout, and the fixture generator.
+  running workout, and the fixture generator. *(No join was built; see 5.2.)*
 - **A browser suite for the companion screen** (`test:companion`): with the
   watch-session store stubbed on, the logging screen shows the session, the
   notes and the swaps and no Done bar; stubbed off, the Done bar is back and
@@ -837,7 +914,11 @@ to sit here; decision 9 moved it into Phase 5.
   Restoring from a snapshot is checked by Claude in the simulator, since it
   needs an emptied database.
 
-## Rules to add to CLAUDE.md
+## Rules drafted for CLAUDE.md
+
+*Historical: `CLAUDE.md` holds the rules as built. Where this draft differs
+(three watch rules rather than five, a watch start joining a running
+workout), `CLAUDE.md` is right.*
 
 Draft wording, to be added as each phase lands:
 
@@ -901,7 +982,11 @@ because the app moves across unchanged, they come with it:
 6. **Bundle IDs:** `com.liamdaly.gymgo` for the phone,
    `com.liamdaly.gymgo.watchkitapp` for the watch,
    `com.liamdaly.gymgo.restactivity` for the Live Activity, and the App Group
-   `group.com.liamdaly.gymgo`.
+   `group.com.liamdaly.gymgo`. *As built (14 October): the Live Activity is
+   `com.liamdaly.gymgo.GymGo-Live-Activity`, Xcode's default, so
+   `restactivity` was never used; the complications are
+   `com.liamdaly.gymgo.watchkitapp.GymGo-Complications`; the App Group is on
+   the watch app and the complications only.*
 7. **The three gaps:** still open. The first two are queued as separate
    tasks, and none of them blocks the port.
 
@@ -928,6 +1013,8 @@ because the app moves across unchanged, they come with it:
    arriving for a routine that already has today's workout running joins it
    rather than opening a second one. This is the same work the Action
    button's `StartWorkoutIntent` needs, so the two land together.
+   *Superseded in part by decision 15: there is no join, and the Action
+   button came later (decision 21).*
 10. **What the watch shows beyond the set:** the short setup note and "Up
     next". Everything else stays on the phone. Setup notes are not read by
     any workout screen today (see "Found while reading"), so the companion
