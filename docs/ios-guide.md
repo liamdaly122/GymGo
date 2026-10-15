@@ -4,16 +4,19 @@ Author: Liam Daly
 Date: 7 October 2026
 The plan behind it: `docs/native-roadmap.md`
 
-**Start here.** Read Part 1. Then do Parts 2 and 3 yourself on the Mac, in
-order (about an hour), before asking Claude for anything. When the Mac chat is
-open at the end of 3.1, type: **"Start Phase 0."** From then on Claude leads:
-it tells you when to do a numbered step here (for example "do 6.3"), and you
-tell it when you have.
+**Where you are, 15 October 2026.** Parts 2, 3, 5 and 6, 7.1 to 7.3, and
+9.2, 9.3 and 9.8 are done: builds 1 to 8 were archived and uploaded by hand,
+3 to 8 from `dev`. Next: the build 8 device test (9.9), then Xcode Cloud
+(7.4) and checking your history moved across (7.5). Part 8 was built
+differently from its steps, and Part 10 is not built; each says so at its
+top. Claude leads: it tells you when to do a numbered step here (for example
+"do 7.4"), and you tell it when you have. A fresh Claude chat starts in
+`~/Developer/GymGo` on `dev`, and reads `docs/native-roadmap.md` ("Where
+things stand") first.
 
-This guide lives on `main` and `dev`. Until you switch GitHub's default
-branch to `main` (step 5.2), the repo's front page shows an old branch
-without it, so bookmark
-https://github.com/liamdaly122/GymGo/blob/main/docs/ios-guide.md
+This guide is kept current on `dev`; the copy on `main` is the one from 10
+October. Bookmark
+https://github.com/liamdaly122/GymGo/blob/dev/docs/ios-guide.md
 
 ## How to use this guide
 
@@ -77,6 +80,8 @@ never shows up in the cloud chat.
 | Tells you exactly what to click, and when | Try the app in the gym and say what feels wrong |
 
 ## Part 2: Set up the Mac (once, about an hour)
+
+*Done by 10 October 2026 (the keys in 2.9 in time for build 2).*
 
 To open Terminal at any point: press **Cmd + Space**, type `Terminal`, press
 Enter. Type or paste a command, then press Enter to run it.
@@ -227,6 +232,9 @@ Never paste the secret or service-role key anywhere in the repo.
 
 ## Part 3: Move this chat to the Mac
 
+*Done by Plan B (3.5): the cloud chat was never teleported. To pick up
+again, use 3.6.*
+
 ### 3.1 Teleport (You)
 
 - [ ] In the cloud chat, check its last message says everything is committed
@@ -287,20 +295,20 @@ command for you.
 
 ```
 cd ~/Developer/GymGo
-git checkout claude/wonderful-galileo-6td7bh
+git checkout dev
 claude
 ```
 
-(Once Phase 0 is done, use `git checkout dev` instead of the long branch
-name.) Then paste this as the first message:
+(Phase 0 is done, so `dev` rather than the old long branch name.) Then paste
+this as the first message:
 
 > We are turning GymGo into an iPhone app and an Apple Watch companion. Read
-> docs/native-roadmap.md and docs/ios-guide.md first: they hold the plan, the
-> decisions and the steps. I am a beginner, so when a step needs me, tell me
-> exactly what to click. Start with Phase 0, and commit and push after each
-> working slice.
+> "Where things stand" in docs/native-roadmap.md first, then CLAUDE.md and
+> docs/ios-guide.md: they hold the plan, the decisions and the steps. I am a
+> beginner, so when a step needs me, tell me exactly what to click. Commit
+> after each working slice.
 
-If you have already got further, say which Part you have reached.
+Then say which Part you have reached.
 
 You can also run a fresh chat in the Claude desktop app: open the Code tab,
 choose **Local**, and pick the `~/Developer/GymGo` folder. It has a built-in
@@ -321,6 +329,9 @@ conversation without anything done on the Mac, and switch the folder to the
 old branch. If `--continue` says there is no conversation, use Plan B (3.5).
 
 ## Part 4: Connect your iPhone and watch to Xcode
+
+*Optional now: builds 1 to 8 were all installed through TestFlight. Pair a
+device only when Claude asks to run something on it from Xcode.*
 
 Do this when Claude asks: the iPhone in Phase 1, the watch in Phase 4.
 
@@ -377,6 +388,8 @@ the watch. After any update, pair the device in Device Hub again.
 
 ## Part 5: Phase 0, groundwork
 
+*Done 9–10 October 2026.*
+
 ### 5.1 What Claude does
 
 - Makes the browser tests run on a Mac. Today they look for a browser at a
@@ -394,17 +407,21 @@ Your repo has no `main` branch today. Its default branch is an old working
 branch called `claude/markdown-instructions-review-e0rk5v`. From here on,
 **`main` means "what is on your phone"**: Xcode Cloud builds every change to
 `main` and sends it to TestFlight. Claude works on a branch called `dev` and
-merges into `main` when you say a change is ready for the phone.
+merges into `main` when you say a change is ready for the phone. *Until Xcode
+Cloud exists (7.4), builds are archived by hand from `dev`, and `main` has
+not moved since build 2.*
 
 - [x] **Claude:** creates `main` and `dev` from the current branch and pushes
       both (it asks you first). Done 10 October 2026.
-- [ ] **You:** on github.com, open liamdaly122/GymGo > **Settings** (the tab
+- [x] **You:** on github.com, open liamdaly122/GymGo > **Settings** (the tab
       along the top) > **General**. Under **Default branch**, click the
       switch button (two arrows), choose `main`, click **Update**, and
-      confirm with "I understand, update the default branch".
+      confirm with "I understand, update the default branch". Done.
 
-Vercel keeps building the website as before, so the home-screen app carries on
-working until you retire it in Phase 2.
+Before the first merge into `main`, Claude checks with you which branch
+Vercel builds the website from (Vercel → Project → Settings → Git →
+Production Branch), so the home-screen app keeps working until you retire it
+in Phase 2.
 
 ### 5.3 Check (You)
 
@@ -412,6 +429,10 @@ working until you retire it in Phase 2.
       result. Everything should pass.
 
 ## Part 6: Phase 1, GymGo on your iPhone
+
+*Done 10 October 2026: build 1 was signed and archived from here. One answer
+is missing from 6.8: whether the keyboard should pop up by itself on the
+three screens listed there. Tell Claude.*
 
 ### 6.1 What Claude does
 
@@ -497,6 +518,8 @@ this whenever it wants to try something on the phone.
 
 ### 6.7 Stay signed out of backup while testing (You)
 
+*Over: the app has been signed in to the backup since build 2 (10 October).*
+
 Anything in the new app while it is signed in to backup goes into your real
 history. So for now **don't press Sign in** in the new app's Settings. Phase 2
 wipes the test data before the first sign-in.
@@ -537,6 +560,10 @@ backup.
       same is the goal.
 
 ## Part 7: Phase 2, TestFlight, Xcode Cloud and moving across
+
+*7.1 to 7.3 done 10 October 2026 (build 1); every build since has gone up the
+same way, by hand. 7.4 and 7.6 are not done, and 7.5 is half done (see its
+note).*
 
 ### 7.1 Create the app in App Store Connect (You)
 
@@ -621,8 +648,9 @@ catching you out.
 - [ ] Before the first cloud build, set its build number. Xcode Cloud counts
       its own builds from 1, and TestFlight refuses a number it already has.
       In App Store Connect > Apps > GymGo > **Xcode Cloud** > **Settings** >
-      **Build Number**, set the next build number to one more than the build
-      you uploaded in 7.3 (ask Claude which number that was).
+      **Build Number**, set the next build number to one more than the last
+      build uploaded by hand: build 8 on 15 October 2026, so 9 or higher
+      (the roadmap's build table has the latest).
 - [ ] Back in Xcode, **Start First Build**.
 - [ ] **Claude:** commits the new `xcshareddata/xcodecloud/manifest.json` file
       Xcode made.
@@ -634,6 +662,11 @@ The membership includes 25 compute hours of Xcode Cloud a month. A build of
 this app takes a small slice of that.
 
 ### 7.5 Move your history across (You)
+
+*Half done. The new app has been signed in to the backup since build 2 (10
+October), so the wipe below no longer applies: don't do it. Nobody has
+checked that all of the website's history is in the new app. Ask Claude to
+walk you through comparing the two before the website is retired.*
 
 The new app cannot see the old home-screen app's data. Each keeps its own.
 Backup is the bridge.
@@ -694,7 +727,8 @@ Wait until you have trained at least once with the new app.
 > fallback: rest notifications, and a countdown for a rest the phone logs
 > with no watch. Claude will rewrite these steps when that is built.
 
-**From here on, the new app holds your real history and backs it up.** A
+**The new app holds your real training, and has backed it up since build 2**
+(whether all of the website's older history is in it is 7.5). A
 finished session can never be deleted, and it counts towards your records,
 the plan's week, XP and the streak. So do the test lists below during real
 training sessions, with weights you actually lift. For a quick check away
@@ -705,8 +739,10 @@ then tap **Finish** > **Discard workout**. Never **Finish and save** a test.
 
 - Press **▶** in Xcode with scheme **App** and your iPhone (6.6). This is
   quickest. It replaces the TestFlight copy until the next TestFlight build.
-- Or tell Claude the change is ready for the phone. It merges into `main`,
-  and TestFlight installs it about 20 to 40 minutes later.
+- Or a TestFlight build: Claude raises the build number on all four targets
+  and runs `npm run ios`, and you archive and upload by hand (7.3).
+  TestFlight installs it once Apple has processed it. Once Xcode Cloud
+  exists (7.4), a merge into `main` does all of this.
 
 ### 8.1 What Claude does
 
@@ -781,12 +817,15 @@ iPhone. **GymGo on the watch** means our app.
 
 - Writes GymGo for the watch in Swift, styled like GymGo: near-black, big
   chalk numbers, one blue highlight.
-- Phase 4: the watch shows the set in hand and your heart rate, and counts
-  the rest down, with one tap on the wrist at the end. Starting a session on
-  the phone opens GymGo on the watch.
-- Phase 5: you log sets on the watch, with the Digital Crown for the weight,
-  and the **Action button or a double tap to log the set**. The phone takes
-  every set in the next time you open it.
+- Phase 4: the watch runs the session. You log sets on it, with the Digital
+  Crown for the weight and Done, a double tap or the **Action button** to
+  log the set. It shows your heart rate, counts the rest down with one tap
+  on the wrist at the end, and records the workout to Health. Starting a
+  session on the phone opens GymGo on the watch. The phone takes every set
+  in the next time you open it.
+- Phase 5: while the watch logs, the phone is the companion: the session,
+  notes, swaps, readiness, and **Log on this phone** to take logging back. A
+  session can start on either device.
 
 ### 9.2 Add the watch target (You)
 
@@ -888,8 +927,9 @@ the iPhone back in, and try again.
 
 Phase 4:
 
-- [ ] Start a session on the phone: GymGo opens on the watch by itself.
-- [ ] Press Done on the phone, lock the phone and pocket it. The watch counts
+- [ ] Start a session on the phone: GymGo opens on the watch by itself and
+      runs the session; the phone shows **On your watch**, with no Done bar.
+- [ ] Log a set on the watch, lock the phone and pocket it. The watch counts
       the rest down, taps your wrist once at the end, and shows the next set.
 - [ ] That rest ends with **one** tap on the wrist, not a tap and a phone
       notification as well.
@@ -902,7 +942,8 @@ Phase 5:
       Use the Crown, Done, the Action button and a double tap.
 - [ ] Open the phone: every set is there, with the right times and records,
       and it backs up.
-- [ ] Log a set on the phone: the watch keeps up.
+- [ ] Tap **Log on this phone**: the watch shows **Logging on your iPhone**,
+      and **Log here instead** on the watch hands it back.
 
 ### 9.8 Build 7: complications and the Lock Screen countdown (You)
 
@@ -910,9 +951,12 @@ Done 14 October 2026:
 
 - [x] **File > New > Target… > watchOS > Widget Extension**, named `GymGo
       Complications`, embedded in **GymGo Watch App**, with no configuration
-      intent.
+      intent. Xcode lists the target as **GymGo ComplicationsExtension**
+      (bundle ID `com.liamdaly.gymgo.watchkitapp.GymGo-Complications`).
 - [x] **File > New > Target… > iOS > Widget Extension**, named `GymGo Live
       Activity`, with **Include Live Activity** ticked, embedded in **App**.
+      Xcode lists it as **GymGo Live ActivityExtension** (bundle ID
+      `com.liamdaly.gymgo.GymGo-Live-Activity`).
 - [x] The App Group `group.com.liamdaly.gymgo` on **GymGo Watch App** and
       **GymGo Complications** (not on the Live Activity, which needs none).
 - [x] **GymGoKit** linked to **App**, **GymGo Complications** and **GymGo
@@ -938,7 +982,11 @@ In the gym:
 - [ ] A press of the Action button starts today's session.
 - [ ] A press logs the set on screen, or skips a rest. "Logged · Undo" shows
       for 5 seconds after every set.
+- [ ] Tap Undo within the 5 seconds: the set comes back to log again, and it
+      never shows on the phone.
 - [ ] Action + side pauses, and a press resumes, with a tap each time.
+- [ ] Pause during a rest and lower your wrist: the tap at the end of the
+      rest still comes.
 - [ ] Falling short of the rep range: the next set starts lighter, marked
       "Lighter".
 - [ ] The set header reads "Set 1 of 4 · Go up"; tapping the exercise's name
@@ -949,8 +997,12 @@ In the gym:
       in the Dynamic Island. Start a session on the watch with the phone
       locked: does the countdown appear by itself, or only once GymGo is
       opened? Tell Claude which.
+- [ ] Keep the phone locked for a whole session: the Lock Screen countdown
+      updates after each set.
 - [ ] The watch face shows today's session, and the rest counting down
       during a workout.
+- [ ] With the face dimmed (Always On, wrist down), the complication's
+      countdown still shows.
 - [ ] Finish on the watch with the phone in your bag: opening the phone shows
       **Finished on your watch** on Today, and **See how it went** opens the
       "Done." poster.
@@ -959,6 +1011,10 @@ In the gym:
       turn off **Auto-Launch** for GymGo.
 
 ## Part 10: Phase 6, Apple Health
+
+*Not built yet. The watch saves its own workouts to Health (Part 9); the
+phone neither reads from Health nor saves to it. A workout logged only on the
+phone is not saved to Health, and body weight is not read.*
 
 ### 10.1 What Claude does
 
@@ -996,7 +1052,9 @@ Run this short list on a new build before taking it to the gym. Do it in an
 empty workout that you end with **Finish** > **Discard workout**:
 
 - [ ] Cold start in aeroplane mode, and log a set.
-- [ ] A rest that ends with the phone locked: it buzzes.
+- [ ] A rest logged on the watch ends with one tap on the wrist. (A rest
+      logged on the phone gives no alert while the phone is locked: that is
+      Part 8's phone-only fallback, not built yet.)
 - [ ] A few sets logged on the watch with the phone in a bag, then the phone
       opened: they are all there.
 - [ ] Close the app mid-rest and reopen: the rest is still counting.
@@ -1028,7 +1086,8 @@ empty workout that you end with **Finish** > **Discard workout**:
 | An Xcode Cloud build fails at the TestFlight step with a build number error | Raise the next build number (7.4) and start the build again |
 | TestFlight says the build expired | Start a build in Xcode Cloud (Manual Start). The weekly build should prevent this |
 | Xcode 27.2 or later shows a project format option | Leave it on the classic format. The JSON one breaks Capacitor |
-| One unit test fails just after midnight | A clock quirk Phase 0 fixes. Until then, run it again after 1am |
+| `test:rewards` fails between 21:00 and 07:00 | A known bug in the test (the Night owl and Early bird badges change the XP it expects), not in the app. `docs/backlog.md` has the workaround |
+| No tap at the end of a rest with your wrist down | Health is off for GymGo and a Focus or Do Not Disturb is on: the fallback notification is not Time Sensitive, so the Focus silences it. Turn Health on for GymGo, or the Focus off |
 | Teleport fails | See 3.2 |
 | You typed a command into the Claude window by mistake | Claude reads it as a message. Say "ignore that", and use a second Terminal window (3.4) |
 | The app opens empty after an iOS update or with a full phone | Settings > Backup, sign in: it restores. Or accept the app's offer to restore its own snapshot |
@@ -1042,7 +1101,7 @@ empty workout that you end with **Finish** > **Discard workout**:
 | **Xcode** | Apple's app for building iPhone and watch apps. Claude drives it from the command line; you use its windows for a few one-off settings. |
 | **Device Hub** | Xcode 27's window for your simulators and real devices. Xcode > Open Developer Tool > Device Hub. |
 | **Project** | The Xcode file that describes the app: `ios/App/App.xcodeproj`. |
-| **Target** | One thing the project builds. GymGo will have three: the iPhone app (App), GymGo Watch App, and the widget extension for the Lock Screen countdown. |
+| **Target** | One thing the project builds. GymGo has four: the iPhone app (**App**), **GymGo Watch App**, and two widget extensions Xcode lists as **GymGo ComplicationsExtension** (the watch face) and **GymGo Live ActivityExtension** (the Lock Screen countdown). |
 | **Scheme** | Which target the Run button runs. Picked on the left of the toolbar's middle section. |
 | **Bundle ID** | The app's permanent name inside Apple's systems, like `com.liamdaly.gymgo`. Fixed for good after the first upload. |
 | **Team** | Your Apple Developer account, as Xcode sees it. Every target is signed by your team. |
@@ -1051,12 +1110,12 @@ empty workout that you end with **Finish** > **Discard workout**:
 | **Minimum Deployments** | The oldest iOS or watchOS a target will install on. For GymGo it is 26.0 everywhere. |
 | **Simulator** | A pretend iPhone or watch on the Mac. Good for most checks; Health and the phone-to-watch link need the real devices. |
 | **Developer Mode** | A switch on the iPhone and the watch that lets them run apps straight from Xcode. |
-| **Branch** | A named line of work in git. `main` is what goes to your phone; Claude works on `dev`. |
+| **Branch** | A named line of work in git. Claude works on `dev`, and builds are archived from `dev` until Xcode Cloud builds `main` (7.4). `dev` goes into `main` only when you say so. |
 | **Terminal** | The Mac app for typing commands. Cmd + Space, type Terminal, Enter. |
 | **Capacitor** | The tool that puts the existing web app inside a real iPhone app. |
 | **Web view** | The part of the iPhone app that shows the web app. It uses the same engine as Safari. |
 | **Plugin** | A small piece of Swift that lets the web app use something only an app can (vibration, files, the watch, Health). |
-| **App Group** | A folder shared by the iPhone app and its Lock Screen widget. It does not reach the watch, which is a separate device. |
+| **App Group** | A folder shared by the watch app and its complications (`group.com.liamdaly.gymgo`). The iPhone app and the Live Activity do not use one. |
 | **Archive** | A finished build, ready to send to Apple. |
 | **App Store Connect** | Apple's website where the app's record and TestFlight live. Nothing there is public unless you submit it for review, which you never will. |
 | **TestFlight** | Apple's app for installing test builds. You are the only tester. Each build lasts 90 days. |
