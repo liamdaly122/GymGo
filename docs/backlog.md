@@ -42,19 +42,12 @@ across two sessions.
 progressive overload. Within a session, if the reps drop at a weight, suggest
 a lower weight for the next set.
 
-**What exists:** `src/domain/progression.ts` reasons across sessions: it moves
-the top set against the rep range, withholds a jump or deloads after two
-failed sessions, and never adds load on effort alone. Within a session the
-placeholder is the set just done (carry-forward), which does not react to a
-drop in reps. Whether the across-session part is reaching the screen is what
-notes 1 and 2 will show.
+**Done in build 8:** the in-session half, the step-down when reps fall short
+(roadmap decision 19; `CLAUDE.md`, "A set that fell short of the range steps
+down a notch").
 
-**To design:** an in-session rule: when the reps on a set fall below the
-range at the carried weight, the next set's placeholder steps down through
-the gym's plates (`nextLoadableBelow`), with the reason saying so. Lowering is
-the safe direction, so it fits the rule that effort may withhold or lower but
-never add load. It belongs in `src/domain/` next to `latestWorkingSet`, with
-tests, and the set in hand's plan line should name it.
+**Still open:** whether the across-session suggestion
+(`src/domain/progression.ts`) reaches the screen, which note 1 will show.
 
 ### 4. How much do the exercises change, block to block?
 
@@ -81,7 +74,7 @@ exercise id.
 Liam liked these from the build 6 brainstorm but does not want them yet. Each
 is written up, with how it would be built, under "Coach brain" in
 `docs/feature-ideas.md`. The step-down when reps fall short (note 3 above) is
-**not** here: it goes into build 7.
+**not** here: it shipped in build 8.
 
 - Readiness (Rough / OK / Good) on the watch before Start, with last night's
   sleep, HRV and resting heart rate shown as evidence, never chosen for him.
@@ -111,3 +104,14 @@ bigger change than its effect is worth now:
   just done. It catches up when the event lands. The fix adds the held set to
   the state report (`held: { setId, weight, reps, at } | null`) and lays it
   over the companion's view.
+
+## 15 October 2026: a test that fails at night
+
+### `test:rewards` fails between 21:00 and 07:00
+
+The suite finishes its last session live, so after 21:00 or before 07:00
+local time that session earns Night owl or Early bird, and the XP it expects
+changes. The app is fine. Until it is fixed, run it at night as
+`TZ=Pacific/Honolulu npm run test:rewards`. The fix gives the suite's browser
+a fixed clock or time zone in `e2e/rewards.mjs`. A separate task to fix it
+was offered to Liam.

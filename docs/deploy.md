@@ -12,7 +12,13 @@ build-time secrets — a plain static host is all it needs.
    Supabase is added, set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for
    both Production and Preview. Only ever the **anon public** key — the service
    role key stays in the Supabase dashboard.
-4. **Deploy.** Pushes to `main` deploy production; branches get preview URLs.
+4. **Deploy.** Pushes to the production branch deploy production; other
+   branches get preview URLs. The production branch is set in Vercel →
+   Project → Settings → Git → Production Branch. This file used to say
+   `main`, but the project was set up when GitHub's default branch was
+   `claude/markdown-instructions-review-e0rk5v`, and the repo cannot say
+   which branch it uses now. Check it before the first merge into `main`
+   (`docs/native-roadmap.md`, "Where things stand").
 
 ## Installing on the phone
 

@@ -339,7 +339,8 @@ off Auto-Launch for GymGo in the Watch app → Smart Stack).
 
 ## Research behind this plan
 
-In the session scratchpad, `research7/`: `action.md`, `complications.md`,
-`liveactivity.md`, `app.md`, each with a skeptic's check (`*Check.md`).
-Typechecked code for the complications and the Live Activity is in
-`scratch-complications/` and `scratch-liveactivity/`.
+The research notes (on the Action button, the complications, the Live
+Activity and the app side, each with a skeptic's check) and the typechecked
+drafts of the complications and the Live Activity were in a session
+scratchpad and are not in the repo. This plan and `docs/watch-protocol.md`
+are what survives.

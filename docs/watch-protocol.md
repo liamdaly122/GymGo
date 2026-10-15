@@ -53,7 +53,7 @@ to be applied.
 
 - **`live`**: the workout open on the phone, built by `buildWatchSnapshot`.
   Null when none is open. If more than one is open (it should not happen; see
-  "Phone bugs to fix"), the newest.
+  "Phone bugs this round fixes (from build 4)"), the newest.
 - **`home`**: built by the phone from the schedule, the same rules as Today.
   - `ready` is the session `currentSession` offers, laid out as it would start
     (`planRoutineStart`, nothing written) with real random UUIDs, its snapshot

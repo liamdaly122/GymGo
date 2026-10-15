@@ -8,6 +8,19 @@
 > Island countdown for watch sessions. Saved for later at Liam's request: the
 > "Coach brain" ideas (also listed in `docs/backlog.md`). Everything else
 > below is still an open idea.
+>
+> The code facts below describe `dev` at 5c6579c (build 6). Since build 8
+> these are no longer true:
+> - there is an App Group, on the watch app and the complications (big bet
+>   5, "Native setup"; the Live Activity in big bet 3 needed none);
+> - the phone app target links GymGoKit (big bet 5, "Native setup");
+> - the App Intents and Pause exist, and the session list's rows are buttons
+>   ("The watch's Done screen");
+> - the Live Activity is `com.liamdaly.gymgo.GymGo-Live-Activity`, not the
+>   `restactivity` decision 6 reserved (big bet 3);
+> - `CLAUDE.md` now names `ReadinessControl` as a writer of readiness;
+> - for nice to have 6, `main` is now 150 commits behind `dev`, and build 8
+>   expires around 13 January 2027.
 
 The six lenses gave 59 ideas. After merging duplicates there are 44 entries below. I checked each one against `dev` at 5c6579c. Effort uses the roadmap's sizes: S is an evening, M is a few evenings, L is a week or more. None of the ideas ranked here needs a Supabase migration. The columns they use already exist, or the data is worked out each time or kept in localStorage.
 
