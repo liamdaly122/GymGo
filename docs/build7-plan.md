@@ -1,5 +1,17 @@
 # Build 7: the plan
 
+> **Status, 15 October 2026: built, reviewed and shipped as build 8** (build
+> 7's upload was refused for the word "Apple" in an App Intent's
+> description). Waiting for Liam's device test (`docs/ios-guide.md` 9.9).
+> Decided items are recorded as decisions 18–24 in `docs/native-roadmap.md`.
+> Changes after this plan, from the review: after a step-down the next
+> session builds from the weight that worked (decision 20); a set logged
+> while paused resumes once its Undo window closes, and a phone claim while
+> paused resumes (decision 22); the Lock Screen clock counts wall-clock time
+> (decision 23); pause and resume tap on the wrist; a drop hands its round's
+> rest on. The contract as built is `docs/watch-protocol.md`; two review
+> findings were deferred to `docs/backlog.md`.
+
 Liam asked for the brainstorm's top 5 (`docs/feature-ideas.md`), watch face
 complications and the rest countdown on the iPhone's Lock Screen, as build 7.
 The smart coaching ideas wait (`docs/backlog.md`). The research behind this

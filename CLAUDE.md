@@ -233,7 +233,24 @@ The iPhone app is this web app, unchanged, inside Capacitor. It runs the same
 React code and the same Dexie database, so it is identical because it is the
 same code. The plan, the phases and the decisions are in
 `docs/native-roadmap.md`; the step-by-step for the Mac and the devices is
-`docs/ios-guide.md`.
+`docs/ios-guide.md`. **Where the work stands, the builds sent to TestFlight
+and what is next: the roadmap's first section, "Where things stand".** Keep
+it current when a build ships or a phase moves.
+
+**Shipping a build** (Liam archives and uploads; Claude prepares it):
+- The project has four targets (App, GymGo Watch App, GymGo Complications,
+  GymGo Live Activity), each with a Debug and a Release configuration. Raise
+  `CURRENT_PROJECT_VERSION` in **all eight** together: an embedded app or
+  extension must match its app's build number. Every target stays at iOS /
+  watchOS **26.0**; Xcode gives a new target 27.0, too new for the devices.
+- Run `npm run ios` immediately before Liam archives (build 1 shipped a stale
+  bundle with no Supabase keys).
+- App Store Connect has refused two uploads: `audio` under the watch's
+  `WKBackgroundModes` (it belongs under `UIBackgroundModes`; build 5) and the
+  word "Apple" in an App Intent's description (build 7). After a refusal, fix
+  it and raise the build number again before the retry.
+- After an upload, record the build in the roadmap's table and give Liam the
+  device test list for it (the guide's Part 9).
 
 - **Two builds from one source.** `npm run build:ios` is `vite build --mode
   ios`, which leaves out the PWA plugin: WKWebView does not run a service

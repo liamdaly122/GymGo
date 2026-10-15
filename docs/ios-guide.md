@@ -685,6 +685,15 @@ Wait until you have trained at least once with the new app.
 
 ## Part 8: Phase 3, rest alerts and the Lock Screen countdown
 
+> **Status, 15 October 2026: built differently from the plan below.** The
+> Lock Screen and Dynamic Island countdown was built in build 7 for sessions
+> the **watch** runs, as the target **GymGo Live Activity**, driven by the
+> watch's reports (9.8). There is no `RestActivity` target, no Time Sensitive
+> Notifications capability and no App Group on the App target. **Do not do
+> 8.2 and 8.3 as written.** What is left of Part 8 is the phone-only
+> fallback: rest notifications, and a countdown for a rest the phone logs
+> with no watch. Claude will rewrite these steps when that is built.
+
 **From here on, the new app holds your real history and backs it up.** A
 finished session can never be deleted, and it counts towards your records,
 the plan's week, XP and the streak. So do the test lists below during real
@@ -801,30 +810,37 @@ iPhone. **GymGo on the watch** means our app.
 
 On the **GymGo Watch App** target, Signing & Capabilities:
 
-- [ ] **+ Capability** > **HealthKit**. Don't tick Clinical Health Records.
-- [ ] **+ Capability** > **Background Modes** > tick **Workout processing**,
+Done 14 October 2026. (Audio ended up in the watch's `UIBackgroundModes`,
+which Claude set in `GymGo-Watch-App-Info.plist` after build 5 was refused
+for having it under `WKBackgroundModes`.)
+
+- [x] **+ Capability** > **HealthKit**. Don't tick Clinical Health Records.
+- [x] **+ Capability** > **Background Modes** > tick **Workout processing**,
       and also tick **Audio** (needed for the tap on the wrist while your arm
       is down).
 
 On the **App** target, Signing & Capabilities:
 
-- [ ] **+ Capability** > **HealthKit**. Leave Clinical Health Records and
+- [x] **+ Capability** > **HealthKit**. Leave Clinical Health Records and
       Background Delivery unticked.
 
 The Health wording: iOS shows these sentences when GymGo asks to use Apple
 Health. On **both** the App and the GymGo Watch App targets, click the
 **Info** tab, hover over a row, click the small **+**, and add:
 
-- [ ] **Privacy - Health Share Usage Description:** `GymGo reads your body
+- [x] **Privacy - Health Share Usage Description:** `GymGo reads your body
       weight from Apple Health and your heart rate during a workout.`
-- [ ] **Privacy - Health Update Usage Description:** `GymGo saves your
+- [x] **Privacy - Health Update Usage Description:** `GymGo saves your
       finished workouts to Apple Health.`
 
 Claude can add the wording instead if you prefer. Ask it.
 
-- [ ] Tell Claude 9.2 and 9.3 are done.
+- [x] Tell Claude 9.2 and 9.3 are done.
 
 ### 9.4 Run it on the watch (You)
+
+Optional: every watch build so far has been installed through TestFlight
+instead (9.6).
 
 - [ ] Connect the watch (Part 4.2). Keep the iPhone plugged in.
 - [ ] In the toolbar, choose the scheme **GymGo Watch App** and your watch as
@@ -837,9 +853,15 @@ Claude can add the wording instead if you prefer. Ask it.
 ### 9.5 The Action button and double tap (You)
 
 - [ ] On the watch: Settings > **Action Button** > **Action: Workout** >
-      **App: GymGo**. During a GymGo workout, pressing the Action button then
-      logs the set in hand. GymGo only appears in that list once Claude has
-      added it in Phase 5; if it isn't there, tell Claude.
+      **App: GymGo** > **First Press: Today's Session** (built in build 7;
+      do this once build 8 is installed). Choose Today's Session, not Open
+      App: with Open App a press only opens GymGo and nothing starts.
+      - With no workout running, a press starts today's session, if it is
+        due today.
+      - During a workout (Health must be recording), a press logs the set on
+        screen, skips a rest, or resumes a pause. It never finishes.
+      - **Action + side button together** pause and resume.
+      - If GymGo isn't in the list, tell Claude.
 - [ ] On the watch: Settings > **Gestures** > turn on **Double Tap**. Double
       tap works while GymGo is on screen. It does not work in Low Power Mode.
 
@@ -881,6 +903,60 @@ Phase 5:
 - [ ] Open the phone: every set is there, with the right times and records,
       and it backs up.
 - [ ] Log a set on the phone: the watch keeps up.
+
+### 9.8 Build 7: complications and the Lock Screen countdown (You)
+
+Done 14 October 2026:
+
+- [x] **File > New > Target… > watchOS > Widget Extension**, named `GymGo
+      Complications`, embedded in **GymGo Watch App**, with no configuration
+      intent.
+- [x] **File > New > Target… > iOS > Widget Extension**, named `GymGo Live
+      Activity`, with **Include Live Activity** ticked, embedded in **App**.
+- [x] The App Group `group.com.liamdaly.gymgo` on **GymGo Watch App** and
+      **GymGo Complications** (not on the Live Activity, which needs none).
+- [x] **GymGoKit** linked to **App**, **GymGo Complications** and **GymGo
+      Live Activity** (General > Frameworks and Libraries > +).
+- Claude then set every target to iOS / watchOS 26.0 (Xcode 27 picks 27.0,
+  too new for the devices) and the same build number, and replaced Xcode's
+  template files.
+
+### 9.9 Build 8: setup and the test list (You)
+
+Build 8 is build 7's features (uploaded 15 October 2026). Once it is
+installed:
+
+- [ ] The Action button: 9.5.
+- [ ] Long-press the watch face > **Edit** > swipe to the complications > tap
+      a slot > **GymGo**. GymGo also appears in the Smart Stack (turn the
+      Digital Crown up from the face).
+- [ ] Allow Live Activities on the iPhone if asked, and Health and
+      notifications on the watch.
+
+In the gym:
+
+- [ ] A press of the Action button starts today's session.
+- [ ] A press logs the set on screen, or skips a rest. "Logged · Undo" shows
+      for 5 seconds after every set.
+- [ ] Action + side pauses, and a press resumes, with a tap each time.
+- [ ] Falling short of the rep range: the next set starts lighter, marked
+      "Lighter".
+- [ ] The set header reads "Set 1 of 4 · Go up"; tapping the exercise's name
+      shows last time.
+- [ ] On This session, tap another exercise to go there. In the exercise's
+      sheet, **Skip this set** and **Done with this lift**.
+- [ ] Lock the phone during a rest: the countdown is on the Lock Screen and
+      in the Dynamic Island. Start a session on the watch with the phone
+      locked: does the countdown appear by itself, or only once GymGo is
+      opened? Tell Claude which.
+- [ ] The watch face shows today's session, and the rest counting down
+      during a workout.
+- [ ] Finish on the watch with the phone in your bag: opening the phone shows
+      **Finished on your watch** on Today, and **See how it went** opens the
+      "Done." poster.
+- [ ] If the iPhone's Live Activity card pops up over GymGo on the watch:
+      the Watch app on the iPhone > **Smart Stack** > **Live Activities** >
+      turn off **Auto-Launch** for GymGo.
 
 ## Part 10: Phase 6, Apple Health
 
@@ -941,6 +1017,10 @@ empty workout that you end with **Finish** > **Discard workout**:
 | A watch install hangs | Quit Xcode, restart both devices, plug the iPhone in, try again. Or install through TestFlight |
 | The devices vanished from Device Hub after an iOS update | Pair them again. Every OS update needs it |
 | Upload fails with "PLA Update available" | Accept the agreement (2.4), wait a few minutes, try again |
+| Upload refused: "Invalid Info.plist value … WKBackgroundModes" (ITMS-90362) | Build 5 hit this: `audio` belongs under `UIBackgroundModes` in the watch's Info.plist. Give Claude the logs; it fixes it and raises the build number |
+| Upload refused: "Invalid Siri Support … cannot contain 'apple'" (ITMS-90626) | Build 7 hit this: no App Intent title, description or phrase may say "Apple". Give Claude the message; it fixes it and raises the build number |
+| An upload was refused and you try again | Claude raises the build number on every target first, so the retry cannot clash with the refused one |
+| The Action button does nothing during a workout | Settings > Action Button > First Press must be **Today's Session**, not Open App, and Health must be recording (9.5) |
 | A build says "Missing Compliance" in TestFlight | Click Manage, answer that the app only uses standard encryption (HTTPS). Claude's setting stops this happening again |
 | App Store Connect says the name is taken | Try a variant. The home-screen name stays GymGo |
 | GymGo isn't listed in TestFlight | Open Apple's invitation email on the iPhone and tap View in TestFlight. Check TestFlight is signed in with the same Apple account |

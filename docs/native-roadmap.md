@@ -2,9 +2,79 @@
 
 Author: Liam Daly
 Date: 7 October 2026
-Status: Agreed, nothing built yet. Decisions are recorded at the end.
+Status: Phases 0, 1, 4 and 5 built and on the devices; parts of 3, 6 and 7
+built. Build 8 is on TestFlight (15 October 2026). **Read "Where things stand"
+below first.** Decisions are recorded at the end.
 Builds on: `docs/build-brief.md` (version 3) and `CLAUDE.md`
 Step-by-step guide for doing it: `docs/ios-guide.md`
+
+## Where things stand (15 October 2026)
+
+**For a new chat: read this section, then `CLAUDE.md`, then
+`docs/watch-protocol.md` (the phone ⇄ watch contract). The step-by-step for
+the Mac and the devices is `docs/ios-guide.md`.** Work happens on `dev`;
+`main` is what was last declared ready for the phone and is behind `dev`
+(merging it may also redeploy the Vercel site, so ask Liam first).
+
+### Builds sent to TestFlight
+
+| Build | Date | What it was |
+|---|---|---|
+| 1 | 10 Oct | The first iPhone build. Shipped without the Supabase keys (the bundle predated `.env.local`) and with no haptics (a plugin bug) |
+| 2 | 10 Oct | Keys in, haptics through impact taps |
+| 3 | 10 Oct | The side-lateral estimate fix and "first time on" wording. Liam: "pretty much the same as the Vercel app" (decision 12) |
+| 4 | 14 Oct | The first watch app: the link, the list, logging on the wrist. Feedback recorded below ("Feedback from build 4") |
+| 5 | 14 Oct | **Refused by App Store Connect**: `audio` was under `WKBackgroundModes` (ITMS-90362). Fixed and resent as build 6 |
+| 6 | 14 Oct | Round 2, everything from build 4's feedback: Health workout with heart rate and calories, strong haptics, the new set screen, the watch's home pages and Start on the wrist, the phone as the companion, Finish and Discard both ways, then two review-and-fix rounds. Liam: the watch app is "actually amazing" |
+| 7 | 15 Oct | **Refused**: an App Intent's description contained "Apple" (ITMS-90626). Fixed and resent as build 8 |
+| 8 | 15 Oct | Build 7's features (`docs/build7-plan.md`): why this number and last time on the wrist, the step-down when reps fall short, skip / jump / Done with this lift on the wrist, the Action button (start, log, skip, resume) with Pause and Siri, 5 s Undo, the "Done." poster after a wrist finish, watch face complications, the iPhone Lock Screen / Dynamic Island countdown (Live Activity). Uploaded; **waiting for Liam's device test** (guide 9.9) |
+
+TestFlight builds expire 90 days after upload: build 8 around 13 January
+2027. Xcode Cloud (Phase 2) is what keeps a build alive without the Mac.
+
+### The phases
+
+| Phase | State |
+|---|---|
+| 0 | Done (9–10 Oct) |
+| 1 | Done: the Capacitor shell, on the phone since build 1; the trial passed (decision 12) |
+| 2 | TestFlight by hand works (builds 1–8). **Not done:** Xcode Cloud, moving history across from the website, retiring Vercel |
+| 3 | **Partly.** The Lock Screen and Dynamic Island countdown exists for sessions the **watch** runs (driven natively from its reports). **Not done:** rest notifications and a countdown for a rest the **phone** logs with no watch |
+| 4 | Done, round 2 and build 7: the watch runs the session, records it to Health, Action button included |
+| 5 | Done: the companion screen, sessions started from either device |
+| 6 | **Partly.** Workouts are saved to Health and Fitness by the watch, with heart rate and calories. **Not done:** reading body weight (or anything else) from Health on the phone |
+| 7 | **Partly.** Watch face complications and the Smart Stack, build 7. **Not done:** iPhone home-screen and Lock Screen widgets |
+
+### What is next
+
+1. **Liam's device results for build 8** (guide 9.9). Several things could
+   only be proved on the Ultra 2 and the iPhone: the Action button's next
+   action, Pause with Action + side, the Live Activity updating from the
+   background and starting through HealthKit mirroring with the phone
+   locked, complications on a real face, haptics wrist-down while paused.
+   Fix whatever they show first.
+2. Xcode Cloud (Phase 2, guide 7.4), before build 8 expires.
+3. Candidates Liam has seen and chosen to wait on: the **smart coaching**
+   ideas (`docs/backlog.md`, 14 October), the rest of `docs/feature-ideas.md`
+   (iPhone widgets, the session's heart rate on the phone, notes, the weekly
+   recap and others), Phase 3's phone-only rest alerts, Phase 6's body
+   weight from Health.
+4. Two review findings deliberately deferred, and the older gym notes:
+   `docs/backlog.md`.
+5. A small test fix offered to Liam as a separate task: `test:rewards`
+   fails between 21:00 and 07:00 (the Night owl / Early bird badge changes
+   the XP it expects).
+
+### How the work has been done
+
+Each round has followed the same shape, and it has worked: research checked
+against the local SDKs (Xcode 27.0's watchOS and iOS 27 SDKs, with deployment
+targets at 26.0) → a contract landed first on `dev` (shapes in TypeScript and
+Swift, fixtures, `docs/watch-protocol.md`) → builders in parallel git
+worktrees with strict file ownership → an independent check of each branch →
+a multi-angle review with skeptics → fixes → every test and both Xcode builds
+→ `npm run ios` → Liam archives. Release rules learned the hard way are in
+`CLAUDE.md` ("The iPhone app") and the guide's Part 12.
 
 ## The short version
 
@@ -96,14 +166,14 @@ type all carry across as they are.
 
 | Phase | What you get | Size |
 |---|---|---|
-| 0 | The repo works on the Mac, a `main` branch, the brief updated | S |
-| 1 | GymGo on your iPhone as a real app, identical | L |
-| 2 | TestFlight and Xcode Cloud; history moved across; Vercel retired | M |
-| 3 | Rest alerts with the phone locked; the countdown on the Lock Screen and in the Dynamic Island. The phone-only fallback once the watch runs the session | M |
-| 4 | The watch runs the session: the set, Done, the rest and the record on your wrist, Action button included, with the phone in your bag | L |
-| 5 | The phone as the companion while the watch logs; a session started from either device | L |
-| 6 | Apple Health: every workout saved, body weight read | M |
-| 7 | Extras: complications and the Smart Stack | M |
+| 0 | The repo works on the Mac, a `main` branch, the brief updated (**done**) | S |
+| 1 | GymGo on your iPhone as a real app, identical (**done**) | L |
+| 2 | TestFlight and Xcode Cloud; history moved across; Vercel retired (**TestFlight by hand done; the rest not**) | M |
+| 3 | Rest alerts with the phone locked; the countdown on the Lock Screen and in the Dynamic Island. The phone-only fallback once the watch runs the session (**countdown for watch sessions done; phone-only not**) | M |
+| 4 | The watch runs the session: the set, Done, the rest and the record on your wrist, Action button included, with the phone in your bag (**done**) | L |
+| 5 | The phone as the companion while the watch logs; a session started from either device (**done**) | L |
+| 6 | Apple Health: every workout saved, body weight read (**workouts saved; body weight not**) | M |
+| 7 | Extras: complications and the Smart Stack (**done on the watch; iPhone widgets not**) | M |
 
 Sizes are rough: S is an evening, M is a few evenings, L is a week or more of
 evenings.
@@ -912,4 +982,53 @@ The first build with the watch app, used on the iPhone 14 Pro and the Ultra 2:
    workout was saved.
 
 Items 1, 2, 3 and 4 complete Phase 4; 5 and 7 are bugs in the link; 6 is
-Phase 5.1, brought forward. All seven are the next round of work.
+Phase 5.1, brought forward. All seven were built in round 2 and shipped in
+build 6.
+
+## Decisions (14 October 2026, round 2)
+
+14. **The phone never logs a set while the watch runs the session**; the
+    watch does the timer, sets, reps and weight. The phone is the companion:
+    exercise details, swaps, readiness and Pro settings, what is coming up.
+    "Log on this phone" takes logging back. One rule decides it:
+    `loggingSurface` in `src/domain/companion.ts`.
+15. **A session can start on either device.** The phone lays out the next
+    session with real IDs without writing it; the watch echoes the layout
+    back when it starts, and the phone replays exactly those rows.
+16. **The watch records the workout to Health** (an `HKWorkoutSession`); the
+    phone never saves a copy. Finish or Discard on either device ends it on
+    both.
+17. **The watch shows the setup note and Up next** beyond the set in hand
+    (Liam: "we can always adjust later").
+
+## Decisions (14–15 October 2026, build 7)
+
+18. **Build 7 is the brainstorm's top 5 plus watch face complications and
+    the Lock Screen countdown** (`docs/feature-ideas.md`, `docs/build7-plan.md`).
+    The smart coaching ideas wait (`docs/backlog.md`).
+19. **The step-down when reps fall short:** the next set drops to the weight
+    that should give the bottom of the range (Epley), at least one loadable
+    step and at most 10% lighter unless one step is more; unchanged when
+    nothing lighter can be loaded, for AMRAP, bodyweight-plus-load kit and
+    with no range. It is part of the carry-forward rule on both devices.
+20. **After a step-down the next session builds from the weight that
+    worked** (`stepDownSets` in `progression.ts`), found by the review:
+    otherwise the step-down's in-range sets ended every failure streak and
+    the deload rule never fired. The failure counter is unchanged.
+21. **The Action button:** the first press starts today's session only when
+    it is due today (never "Start early"); during a session a press logs the
+    set on screen, skips a rest, or resumes a pause, and never finishes.
+    Action + side pauses and resumes. Every set logged on the wrist has a 5 s
+    Undo, and its event waits for the window to close.
+22. **Logging a set while paused resumes** (once its Undo window closes); a
+    phone claim while paused resumes too. Pause and resume asked for on the
+    wrist tap once each.
+23. **The Lock Screen countdown is driven natively from the watch's
+    reports** (the web view is frozen while the phone is locked), started at
+    the phone's Start, on opening GymGo, or through HealthKit workout
+    mirroring for a wrist start. Its clock is wall-clock time, like the
+    phone's own duration. A countdown for a rest the phone logs with no watch
+    is not built.
+24. **Complications read a glance file** the watch app writes to the App
+    Group `group.com.liamdaly.gymgo`; one rule words the Today card for the
+    app and the face. System fonts on the face.

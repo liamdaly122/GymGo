@@ -1,5 +1,14 @@
 # GymGo: feature ideas after build 6, checked against the code
 
+> **Status, 15 October 2026.** Built and shipped in build 8 (`docs/build7-plan.md`):
+> the whole top 5 (why this number and last time on the wrist, the step-down,
+> running the session your way from the wrist, the Action button with Pause
+> and Siri, the "Done." poster after a wrist finish), watch face
+> complications and the Smart Stack, and the iPhone Lock Screen / Dynamic
+> Island countdown for watch sessions. Saved for later at Liam's request: the
+> "Coach brain" ideas (also listed in `docs/backlog.md`). Everything else
+> below is still an open idea.
+
 The six lenses gave 59 ideas. After merging duplicates there are 44 entries below. I checked each one against `dev` at 5c6579c. Effort uses the roadmap's sizes: S is an evening, M is a few evenings, L is a week or more. None of the ideas ranked here needs a Supabase migration. The columns they use already exist, or the data is worked out each time or kept in localStorage.
 
 ## Top 5 overall, with how each would be built
